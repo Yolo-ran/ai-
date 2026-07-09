@@ -37,17 +37,21 @@ public class GestureSocketServer extends WebSocketServer {
     public void onMessage(WebSocket conn, String message) {
         try {
             JSONObject json = new JSONObject(message);
-            String gesture = json.optString("gesture", "");
+            String rawGesture = json.optString("gesture", "");
             double confidence = json.optDouble("confidence", 0.0);
             String hand = json.optString("hand", "UNKNOWN");
+            GestureCommand command = GestureCommandResolver.resolve(rawGesture);
 
             String state = AppStateManager.getInstance().getCurrentState();
-            LOGGER.info(() -> "收到手势指令: " + gesture + ", confidence=" + confidence + ", hand=" + hand);
+            LOGGER.info(() -> "收到手势指令: raw=" + rawGesture
+                    + ", mapped=" + command
+                    + ", confidence=" + confidence
+                    + ", hand=" + hand);
 
             if ("LOGIN".equals(state)) {
-                loginController.handleAgentCommand(gesture, confidence, hand);
+                loginController.handleAgentCommand(command, confidence, hand);
             } else if ("LOBBY".equals(state)) {
-                lobbyController.handleAgentCommand(gesture, confidence, hand);
+                lobbyController.handleAgentCommand(command, confidence, hand);
             }
         } catch (Exception ex) {
             LOGGER.log(Level.WARNING, "解析手势报文失败: " + message, ex);
