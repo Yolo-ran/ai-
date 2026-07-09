@@ -1,7 +1,11 @@
 package com.gesturegame.common;
 
+import org.json.JSONObject;
+
+import java.util.Locale;
+
 /**
- * 手势检测结果数据对象，包含坐标、速度和当前手势类型。
+ * 手势数据合同对象，描述 Python 识别端发给 Java 端的一帧标准数据。
  */
 public class GestureData {
 
@@ -12,6 +16,7 @@ public class GestureData {
     private double velocityX;
     private double velocityY;
     private GestureType gesture;
+    private double confidence;
     private boolean handDetected;
 
     public GestureData() {
@@ -26,6 +31,18 @@ public class GestureData {
                        double velocityY,
                        GestureType gesture,
                        boolean handDetected) {
+        this(handX, handY, prevHandX, prevHandY, velocityX, velocityY, gesture, 0.0, handDetected);
+    }
+
+    public GestureData(double handX,
+                       double handY,
+                       double prevHandX,
+                       double prevHandY,
+                       double velocityX,
+                       double velocityY,
+                       GestureType gesture,
+                       double confidence,
+                       boolean handDetected) {
         this.handX = handX;
         this.handY = handY;
         this.prevHandX = prevHandX;
@@ -33,7 +50,23 @@ public class GestureData {
         this.velocityX = velocityX;
         this.velocityY = velocityY;
         this.gesture = gesture;
+        this.confidence = confidence;
         this.handDetected = handDetected;
+    }
+
+    public static GestureData fromJson(String json) {
+        JSONObject object = new JSONObject(json);
+        GestureData data = new GestureData();
+        data.setHandX(object.optDouble("handX", 0.0));
+        data.setHandY(object.optDouble("handY", 0.0));
+        data.setPrevHandX(object.optDouble("prevHandX", data.getHandX()));
+        data.setPrevHandY(object.optDouble("prevHandY", data.getHandY()));
+        data.setVelocityX(object.optDouble("velocityX", 0.0));
+        data.setVelocityY(object.optDouble("velocityY", 0.0));
+        data.setGesture(parseGesture(object.optString("gesture", "none")));
+        data.setConfidence(object.optDouble("confidence", 0.0));
+        data.setHandDetected(object.optBoolean("handDetected", false));
+        return data;
     }
 
     public double getHandX() {
@@ -92,11 +125,38 @@ public class GestureData {
         this.gesture = gesture;
     }
 
+    public double getConfidence() {
+        return confidence;
+    }
+
+    public void setConfidence(double confidence) {
+        this.confidence = confidence;
+    }
+
     public boolean isHandDetected() {
         return handDetected;
     }
 
     public void setHandDetected(boolean handDetected) {
         this.handDetected = handDetected;
+    }
+
+    private static GestureType parseGesture(String rawGesture) {
+        if (rawGesture == null || rawGesture.isBlank()) {
+            return GestureType.NONE;
+        }
+
+        switch (rawGesture.trim().toLowerCase(Locale.ROOT)) {
+            case "fist":
+                return GestureType.FIST;
+            case "open":
+                return GestureType.OPEN;
+            case "peace":
+                return GestureType.PEACE;
+            case "pointing":
+                return GestureType.POINTING;
+            default:
+                return GestureType.NONE;
+        }
     }
 }
