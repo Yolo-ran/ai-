@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ProgressIndicator?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.VBox?>
+<?import javafx.scene.shape.Circle?>
+
+<StackPane prefHeight="720.0" prefWidth="1280.0" stylesheets="@../css/app.css"
+           xmlns="http://javafx.com/javafx/17"
+           xmlns:fx="http://javafx.com/fxml/1"
+           fx:controller="com.gesturegame.ui.LoginController"
+           styleClass="login-root">
+    <children>
+        <VBox alignment="CENTER" maxWidth="420.0" spacing="28.0" styleClass="login-panel">
+            <padding>
+                <Insets bottom="42.0" left="36.0" right="36.0" top="42.0" />
+            </padding>
+            <children>
+                <Circle radius="58.0" styleClass="bio-icon" />
+                <Label styleClass="title-label" text="Gesture Sign In" />
+                <Label fx:id="statusLabel" styleClass="status-label" text="正在等待手势签入..." wrapText="true" />
+                <ProgressIndicator fx:id="confirmProgress" maxHeight="92.0" maxWidth="92.0"
+                                   prefHeight="92.0" prefWidth="92.0" progress="-1.0"
+                                   styleClass="confirm-progress" />
+            </children>
+        </VBox>
+    </children>
+</StackPane>
