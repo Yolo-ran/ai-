@@ -1,15 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <?import javafx.geometry.Insets?>
+<?import javafx.scene.canvas.Canvas?>
 <?import javafx.scene.control.Label?>
 <?import javafx.scene.image.ImageView?>
 <?import javafx.scene.layout.AnchorPane?>
 <?import javafx.scene.layout.HBox?>
-<?import javafx.scene.layout.Pane?>
 <?import javafx.scene.layout.StackPane?>
 <?import javafx.scene.layout.VBox?>
 <?import javafx.scene.shape.Rectangle?>
-<?import java.lang.String?>
 
 <AnchorPane prefHeight="720.0" prefWidth="1280.0" stylesheets="@../css/app.css"
             xmlns="http://javafx.com/javafx/17"
@@ -17,114 +16,46 @@
             fx:controller="com.gesturegame.ui.LobbyController"
             styleClass="lobby-root">
     <children>
-        <VBox alignment="TOP_CENTER" spacing="24.0" AnchorPane.bottomAnchor="28.0"
-              AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0" AnchorPane.topAnchor="28.0">
+        <Canvas fx:id="lobbyCanvas" width="1280.0" height="720.0"
+                AnchorPane.bottomAnchor="0.0" AnchorPane.leftAnchor="0.0"
+                AnchorPane.rightAnchor="0.0" AnchorPane.topAnchor="0.0" />
+
+        <VBox alignment="TOP_CENTER" spacing="8.0"
+              AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0" AnchorPane.topAnchor="26.0">
             <children>
                 <Label styleClass="lobby-title" text="AI Gesture Game Lobby" />
-                <Label styleClass="lobby-subtitle" text="左右挥手切换游戏，握拳进入当前卡片，张手返回登录页" />
-                <StackPane prefHeight="448.0" prefWidth="1040.0">
-                    <children>
-                        <Pane maxHeight="430.0" maxWidth="1000.0" minHeight="430.0" minWidth="1000.0"
-                              prefHeight="430.0" prefWidth="1000.0" styleClass="viewport-pane">
-                            <clip>
-                                <Rectangle arcHeight="40.0" arcWidth="40.0" height="430.0" width="1000.0" />
-                            </clip>
-                            <children>
-                                <HBox fx:id="gameCardContainer" layoutX="20.0" layoutY="25.0" spacing="20.0">
-                                    <children>
-                                        <VBox fx:id="card0" alignment="CENTER" prefHeight="380.0" prefWidth="300.0">
-                                            <styleClass>
-                                                <String fx:value="game-card" />
-                                                <String fx:value="card-fruit" />
-                                            </styleClass>
-                                            <children>
-                                                <Label styleClass="card-title" text="Catch Fruit" />
-                                                <Label styleClass="card-desc" text="手势控制篮子，接住水果并躲开炸弹" wrapText="true" />
-                                            </children>
-                                        </VBox>
-                                        <VBox fx:id="card1" alignment="CENTER" prefHeight="380.0" prefWidth="300.0">
-                                            <styleClass>
-                                                <String fx:value="game-card" />
-                                                <String fx:value="card-rps" />
-                                            </styleClass>
-                                            <children>
-                                                <Label styleClass="card-title" text="RPS Game" />
-                                                <Label styleClass="card-desc" text="剪刀石头布对决，体验三秒倒计时出拳" wrapText="true" />
-                                            </children>
-                                        </VBox>
-                                        <VBox fx:id="card2" alignment="CENTER" prefHeight="380.0" prefWidth="300.0">
-                                            <styleClass>
-                                                <String fx:value="game-card" />
-                                                <String fx:value="card-bubble" />
-                                            </styleClass>
-                                            <children>
-                                                <Label styleClass="card-title" text="Pop Bubbles" />
-                                                <Label styleClass="card-desc" text="移动手势瞄准泡泡，连击破裂拿高分" wrapText="true" />
-                                            </children>
-                                        </VBox>
-                                        <VBox fx:id="card3" alignment="CENTER" prefHeight="380.0" prefWidth="300.0">
-                                            <styleClass>
-                                                <String fx:value="game-card" />
-                                                <String fx:value="card-tarot" />
-                                            </styleClass>
-                                            <children>
-                                                <Label styleClass="card-title" text="Tarot Game" />
-                                                <Label styleClass="card-desc" text="手势选牌翻牌，探索神秘的塔罗命运" wrapText="true" />
-                                            </children>
-                                        </VBox>
-                                        <VBox fx:id="card4" alignment="CENTER" prefHeight="380.0" prefWidth="300.0">
-                                            <styleClass>
-                                                <String fx:value="game-card" />
-                                                <String fx:value="card-ninja" />
-                                            </styleClass>
-                                            <children>
-                                                <Label styleClass="card-title" text="Fruit Ninja" />
-                                                <Label styleClass="card-desc" text="用手滑动切水果，小心炸弹！" wrapText="true" />
-                                            </children>
-                                        </VBox>
-                                        <VBox fx:id="card5" alignment="CENTER" prefHeight="380.0" prefWidth="300.0">
-                                            <styleClass>
-                                                <String fx:value="game-card" />
-                                                <String fx:value="card-rhythm" />
-                                            </styleClass>
-                                            <children>
-                                                <Label styleClass="card-title" text="Rhythm Master" />
-                                                <Label styleClass="card-desc" text="手势跳舞机，按时摆出正确姿势！" wrapText="true" />
-                                            </children>
-                                        </VBox>
-                                    </children>
-                                </HBox>
-                            </children>
-                        </Pane>
-                    </children>
-                </StackPane>
-                <Label styleClass="stream-hint" text="实时画面会在右上角同步显示，便于修正你的手势姿态" />
+                <Label styleClass="lobby-subtitle" text="星河之中，挥手穿梭六颗游戏星球" />
+            </children>
+        </VBox>
+
+        <VBox alignment="BOTTOM_CENTER" spacing="12.0"
+              AnchorPane.bottomAnchor="26.0" AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0">
+            <children>
+                <Label fx:id="statusLabel" styleClass="lobby-status"
+                       text="左右挥手切换星球 · 握拳确认进入" wrapText="true" />
                 <HBox alignment="CENTER" spacing="14.0">
                     <children>
                         <Label styleClass="hint-badge" text="SWIPE_LEFT" />
                         <Label styleClass="hint-badge" text="SWIPE_RIGHT" />
                         <Label styleClass="hint-badge" text="握拳确认" />
-                        <Label styleClass="hint-badge" text="BACK" />
                     </children>
-                    <padding>
-                        <Insets top="8.0" />
-                    </padding>
                 </HBox>
             </children>
         </VBox>
+
         <StackPane AnchorPane.rightAnchor="20.0" AnchorPane.topAnchor="20.0"
-                   maxHeight="220.0" maxWidth="320.0" minHeight="220.0" minWidth="320.0"
-                   prefHeight="220.0" prefWidth="320.0" styleClass="camera-preview-panel">
+                   maxHeight="180.0" maxWidth="240.0" minHeight="180.0" minWidth="240.0"
+                   prefHeight="180.0" prefWidth="240.0" styleClass="camera-preview-panel">
             <children>
-                <ImageView fx:id="cameraView" fitHeight="184.0" fitWidth="284.0" preserveRatio="true"
+                <ImageView fx:id="cameraView" fitHeight="148.0" fitWidth="212.0" preserveRatio="true"
                            styleClass="camera-preview-image" />
-                <Rectangle arcHeight="24.0" arcWidth="24.0" fill="TRANSPARENT"
-                           height="184.0" mouseTransparent="true" stroke="#38bdf8"
-                           strokeType="INSIDE" strokeWidth="1.6" width="284.0" />
+                <Rectangle arcHeight="20.0" arcWidth="20.0" fill="TRANSPARENT"
+                           height="148.0" mouseTransparent="true" stroke="#38bdf8"
+                           strokeType="INSIDE" strokeWidth="1.4" width="212.0" />
                 <Label StackPane.alignment="TOP_LEFT" styleClass="preview-title" text="LIVE FEED" />
             </children>
             <padding>
-                <Insets left="18.0" right="18.0" top="18.0" bottom="18.0" />
+                <Insets bottom="14.0" left="14.0" right="14.0" top="14.0" />
             </padding>
         </StackPane>
     </children>

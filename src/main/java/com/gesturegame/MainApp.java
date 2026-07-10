@@ -32,6 +32,7 @@ public class MainApp extends Application {
 
     private GestureStreamServer gestureStreamServer;
     private GameRenderer gameRenderer;
+    private LobbyController lobbyController;
 
     @Override
     public void start(Stage primaryStage) throws IOException {
@@ -43,7 +44,7 @@ public class MainApp extends Application {
         FXMLLoader lobbyLoader = new FXMLLoader(Objects.requireNonNull(
                 getClass().getResource("/fxml/Lobby.fxml")));
         Parent lobbyRoot = lobbyLoader.load();
-        LobbyController lobbyController = lobbyLoader.getController();
+        lobbyController = lobbyLoader.getController();
 
         FXMLLoader gameLoader = new FXMLLoader(Objects.requireNonNull(
                 getClass().getResource("/fxml/Game.fxml")));
@@ -79,7 +80,7 @@ public class MainApp extends Application {
     }
 
     /**
-     * 启动 60fps 游戏循环：在 GAME / GAME_OVER 状态下读取最新手势并驱动游戏渲染。
+     * 启动 60fps 渲染循环：LOBBY 态驱动大厅粒子宇宙，GAME/GAME_OVER 态驱动游戏渲染。
      * GAME_OVER 复用 GAME 场景（不单独注册），仅由 {@link GameRenderer} 冻结画面与显示结算。
      */
     private void startGameLoop() {
@@ -87,17 +88,18 @@ public class MainApp extends Application {
             @Override
             public void handle(long now) {
                 String state = AppStateManager.getInstance().getCurrentState();
-                if (!AppStateManager.STATE_GAME.equals(state)
-                        && !AppStateManager.STATE_GAME_OVER.equals(state)) {
-                    return;
-                }
-                GameInterface game = AppStateManager.getInstance().getActiveGame();
                 GestureData gesture = gestureStreamServer.getLatestGesture();
-                gameRenderer.tick(gesture, game);
+                if (AppStateManager.STATE_LOBBY.equals(state)) {
+                    lobbyController.tick(gesture);
+                } else if (AppStateManager.STATE_GAME.equals(state)
+                        || AppStateManager.STATE_GAME_OVER.equals(state)) {
+                    GameInterface game = AppStateManager.getInstance().getActiveGame();
+                    gameRenderer.tick(gesture, game);
+                }
             }
         };
         gameLoop.start();
-        LOGGER.info(() -> "游戏循环已启动 (AnimationTimer)");
+        LOGGER.info(() -> "渲染循环已启动 (AnimationTimer)");
     }
 
     @Override
