@@ -5,6 +5,7 @@ import com.gesturegame.common.GestureData;
 import com.gesturegame.common.GestureType;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.paint.Color;
+import javafx.scene.text.Font;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -34,11 +35,12 @@ public class TarotGame implements GameInterface {
 
     private static final Random RANDOM = new Random();
 
-    // TODO: 定义 Card 内部类
-    // TODO: 定义牌面列表 List<Card>（3张牌）
-    // TODO: 定义当前选中的牌索引（-1=未选中）
-    // TODO: 定义翻牌动画变量（正在翻的牌、翻牌进度0.0~1.0）
-    // TODO: 定义牌面内容池（至少15条字符串）
+    private List<Card> cards;
+    private int selectedIndex = -1;
+    private Card flippingCard = null;
+    private double flipProgress = 0.0;
+    private double handCanvasX, handCanvasY;
+    private boolean handDetected;
 
     // 牌面内容示例（你可以多加点）：
     private static final String[] FORTUNES = {
@@ -85,41 +87,91 @@ public class TarotGame implements GameInterface {
         this.canvasHeight = height;
         this.score = 0;
         this.over = false;
-        // TODO: 初始化3张牌
-        // 牌的位置：均匀分布在画布水平方向
-        // 每张牌随机从 FORTUNES 中抽取（不重复）
-        // 所有牌初始为背面朝上（reversed = false）
-        // 当前选中 = -1
+        // 随机抽取3张不重复的牌面
+        List<String> shuffled = new ArrayList<>(java.util.Arrays.asList(FORTUNES));
+        Collections.shuffle(shuffled, RANDOM);
+        double cardWidth = 120;
+        double cardHeight = 180;
+        double totalWidth = cardWidth * 3 + 40 * 2;
+        double startX = (canvasWidth - totalWidth) / 2.0;
+        double cardY = 130;
+        Color[] positionColors = {
+            Color.web("#4a6fa5"), Color.web("#7b4fbf"), Color.web("#4a9e8e")
+        };
+        this.cards = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            double cx = startX + i * (cardWidth + 40);
+            cards.add(new Card(cx, cardY, cardWidth, cardHeight,
+                    shuffled.get(i), positionColors[i]));
+        }
+        this.selectedIndex = -1;
+        this.flippingCard = null;
+        this.flipProgress = 0.0;
+        this.handDetected = false;
     }
 
     @Override
     public void update(GestureData gesture) {
         if (over) return;
 
-        // TODO:
-        //
-        // 1. 手移动选牌：
-        //    if gesture.isHandDetected():
-        //      handCanvasX = gesture.getHandX() * canvasWidth
-        //      handCanvasY = gesture.getHandY() * canvasHeight
-        //      遍历3张牌：
-        //        if handX在牌的X范围内 && handY在牌的Y范围内 → 选中这张牌
-        //      如果手不在任何牌上 → 取消选中
-        //
-        // 2. 翻牌逻辑：
-        //    if gesture.getGesture() == GestureType.FIST && 有选中的牌 && 该牌未翻开:
-        //      开始翻牌动画
-        //      翻牌进度从0.0→1.0（约30帧完成）
-        //      进度0.5时：切换牌面内容（从背面→正面）
-        //      翻开后 score += 50
-        //
-        // 3. 洗牌逻辑：
-        //    if gesture.getGesture() == GestureType.OPEN:
-        //      如果所有牌都已翻开 → 重新随机抽取3张
-        //      所有牌翻回背面
-        //      取消选中
-        //
-        // 4. 全部翻开 → 可以洗牌（OPEN手势提示）
+        // 1. 手移动选牌（归一化坐标 → 画布像素）
+        if (gesture.isHandDetected()) {
+            handDetected = true;
+            handCanvasX = gesture.getHandX() * canvasWidth;
+            handCanvasY = gesture.getHandY() * canvasHeight;
+
+            selectedIndex = -1;
+            for (int i = 0; i < cards.size(); i++) {
+                Card c = cards.get(i);
+                if (handCanvasX >= c.x && handCanvasX <= c.x + c.width
+                        && handCanvasY >= c.y && handCanvasY <= c.y + c.height) {
+                    selectedIndex = i;
+                    break;
+                }
+            }
+        } else {
+            handDetected = false;
+            selectedIndex = -1;
+        }
+
+        // 翻牌动画进行中 → 更新进度
+        if (flippingCard != null) {
+            flipProgress += 1.0 / 30.0;
+            if (flipProgress >= 0.5 && !flippingCard.revealed) {
+                flippingCard.revealed = true;
+            }
+            if (flipProgress >= 1.0) {
+                flipProgress = 1.0;
+                flippingCard = null;
+                score += 50;
+            }
+        }
+
+        // 2. 翻牌：FIST + 有选中 + 该牌未翻开
+        if (flippingCard == null
+                && gesture.getGesture() == GestureType.FIST
+                && selectedIndex >= 0
+                && !cards.get(selectedIndex).revealed) {
+            flippingCard = cards.get(selectedIndex);
+            flipProgress = 0.0;
+        }
+
+        // 3. 洗牌：OPEN + 所有牌已翻开 → 重新抽3张
+        if (gesture.getGesture() == GestureType.OPEN && flippingCard == null) {
+            boolean allRevealed = true;
+            for (Card c : cards) {
+                if (!c.revealed) { allRevealed = false; break; }
+            }
+            if (allRevealed) {
+                List<String> shuffled = new ArrayList<>(java.util.Arrays.asList(FORTUNES));
+                Collections.shuffle(shuffled, RANDOM);
+                for (int i = 0; i < 3; i++) {
+                    cards.get(i).fortune = shuffled.get(i);
+                    cards.get(i).revealed = false;
+                }
+                selectedIndex = -1;
+            }
+        }
     }
 
     @Override
@@ -128,49 +180,87 @@ public class TarotGame implements GameInterface {
         gc.setFill(Color.web("#1a0033"));  // 深紫色背景，塔罗牌主题
         gc.fillRect(0, 0, canvasWidth, canvasHeight);
 
-        // TODO:
-        //
-        // 1. 画标题："🔮 塔罗牌占卜"
-        //    gc.setFill(Color.GOLD);
-        //
-        // 2. 画3张牌：
-        //    每张牌是一张矩形卡片
-        //
-        //    牌面朝下时（未翻开）：
-        //      - 深紫色底色
-        //      - 金色星星图案（可以用文字"✦"代替）
-        //      - 边框：金色虚线
-        //      gc.setFill(Color.web("#2d004d"));
-        //      gc.fillRoundRect(x, y, w, h, 15, 15);
-        //
-        //    牌面朝上时（已翻开）：
-        //      - 渐变背景（淡紫→白）
-        //      - 显示牌面含义文字（多行，自动换行）
-        //      gc.fillRoundRect(x, y, w, h, 15, 15);
-        //      gc.setFill(Color.web("#1a0033"));
-        //      gc.fillText(含义, x+10, y+30);
-        //
-        //    选中状态（手悬停）：
-        //      - 金色边框发光
-        //      gc.setStroke(Color.GOLD);
-        //      gc.setLineWidth(3);
-        //      gc.strokeRoundRect(x-3, y-3, w+6, h+6, 18, 18);
-        //
-        // 3. 翻牌动画（正在翻的牌）：
-        //    - 宽度随进度变化：cardWidth * abs(0.5 - progress) * 2
-        //    - 进度=0.5瞬间切换内容
-        //
-        // 4. 牌面位置标签（牌下方）：
-        //    "过去"  "现在"  "未来"
-        //    gc.setFill(Color.GRAY);
-        //
-        // 5. 底部提示：
-        //    "✊握拳翻牌 | ✋张开洗牌 | 手移动选择"
-        //    gc.setFill(Color.web("#deff9a"));
+        // 1. 标题
+        gc.setFill(Color.GOLD);
+        gc.setFont(Font.font(24));
+        gc.fillText("🔮 塔罗牌占卜", canvasWidth / 2.0 - 90, 50);
+
+        // 2-3. 画3张牌 + 翻牌动画
+        String[] labels = {"过去", "现在", "未来"};
+        for (int i = 0; i < cards.size(); i++) {
+            Card c = cards.get(i);
+            double displayWidth = c.width;
+            double displayX = c.x;
+
+            // 翻牌动画：宽度随进度变化
+            if (flippingCard == c) {
+                displayWidth = c.width * Math.abs(0.5 - flipProgress) * 2;
+                displayX = c.x + (c.width - displayWidth) / 2.0;
+            }
+
+            // 翻牌进度 < 0.5 时显示背面
+            boolean showFront = c.revealed && !(flippingCard == c && flipProgress < 0.5);
+
+            if (!showFront) {
+                // 牌面朝下：深紫色 + 金色星星 + 虚线边框
+                gc.setFill(Color.web("#2d004d"));
+                gc.fillRoundRect(displayX, c.y, displayWidth, c.height, 15, 15);
+                gc.setStroke(Color.GOLD);
+                gc.setLineWidth(2);
+                gc.setLineDashes(6);
+                gc.strokeRoundRect(displayX, c.y, displayWidth, c.height, 15, 15);
+                gc.setLineDashes(null);
+                gc.setFill(Color.GOLD);
+                gc.setFont(Font.font(30));
+                gc.fillText("✦", displayX + displayWidth / 2.0 - 15, c.y + c.height / 2.0 + 10);
+            } else {
+                // 牌面朝上：淡紫背景 + 含义文字
+                gc.setFill(Color.web("#e8d5f5"));
+                gc.fillRoundRect(displayX, c.y, displayWidth, c.height, 15, 15);
+                gc.setStroke(Color.web("#7b4fbf"));
+                gc.setLineWidth(2);
+                gc.setLineDashes(null);
+                gc.strokeRoundRect(displayX, c.y, displayWidth, c.height, 15, 15);
+                gc.setFill(Color.web("#1a0033"));
+                gc.setFont(Font.font(12));
+                String text = c.fortune;
+                double textY = c.y + 30;
+                int charsPerLine = Math.max(1, (int) (displayWidth / 14));
+                int start = 0;
+                while (start < text.length() && textY < c.y + c.height - 10) {
+                    int end = Math.min(start + charsPerLine, text.length());
+                    gc.fillText(text.substring(start, end), displayX + 10, textY);
+                    textY += 20;
+                    start = end;
+                }
+            }
+
+            // 选中高亮（非翻牌中的牌）
+            if (i == selectedIndex && flippingCard != c) {
+                gc.setStroke(Color.GOLD);
+                gc.setLineWidth(3);
+                gc.setLineDashes(null);
+                gc.strokeRoundRect(c.x - 3, c.y - 3, c.width + 6, c.height + 6, 18, 18);
+            }
+        }
+
+        // 4. 位置标签
+        gc.setFill(Color.GRAY);
+        gc.setFont(Font.font(14));
+        for (int i = 0; i < cards.size(); i++) {
+            Card c = cards.get(i);
+            gc.fillText(labels[i], c.x + c.width / 2.0 - 14, c.y + c.height + 25);
+        }
+
+        // 5. 底部提示
+        gc.setFill(Color.web("#deff9a"));
+        gc.setFont(Font.font(14));
+        gc.fillText("✊握拳翻牌 | ✋张开洗牌 | 手移动选择",
+                canvasWidth / 2.0 - 130, canvasHeight - 20);
 
         if (over) {
             gc.setFill(Color.GOLD);
-            gc.fillText("命运已揭示", canvasWidth/2 - 60, canvasHeight/2);
+            gc.fillText("命运已揭示", canvasWidth / 2.0 - 60, canvasHeight / 2.0);
         }
     }
 
@@ -189,13 +279,22 @@ public class TarotGame implements GameInterface {
         init(canvasWidth, canvasHeight);
     }
 
-    // TODO: 定义 Card 内部类
-    // private static class Card {
-    //     double x, y, width, height;
-    //     String fortune;        // 牌面含义文字
-    //     boolean revealed;      // 是否已翻开
-    //     boolean flipping;      // 正在翻牌动画中
-    //     double flipProgress;   // 翻牌进度 0.0~1.0
-    //     Color cardColor;       // 卡片主题色
-    // }
+    /**
+     * 塔罗牌内部类。
+     */
+    private static class Card {
+        double x, y, width, height;
+        String fortune;
+        boolean revealed = false;
+        Color cardColor;
+
+        Card(double x, double y, double width, double height, String fortune, Color cardColor) {
+            this.x = x;
+            this.y = y;
+            this.width = width;
+            this.height = height;
+            this.fortune = fortune;
+            this.cardColor = cardColor;
+        }
+    }
 }

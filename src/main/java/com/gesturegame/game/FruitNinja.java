@@ -31,7 +31,8 @@ import java.util.Random;
  * - gesture.getVelocityX/Y()   : 手移动速度
  * - gesture.isHandDetected()   : 是否检测到手
  */
-public class FruitNinja implements GameInterface {
+public class
+FruitNinja implements GameInterface {
 
     private static final Random RANDOM = new Random();
 
@@ -42,10 +43,12 @@ public class FruitNinja implements GameInterface {
     private int combo;
     private boolean over;
 
-    // TODO: 定义水果列表 List<Fruit>
-    // TODO: 定义果汁粒子列表 List<Particle>
-    // TODO: 定义刀光轨迹 LinkedList<Point2D>（最多保留15个点）
-    // TODO: 定义帧计数器（控制水果生成）
+    private List<Fruit> fruits;
+    private List<Particle> particles;
+    private LinkedList<Point2D> trail;
+    private int frameCount;
+    private int nextWaveFrame;
+    private boolean handDetected;
 
     @Override
     public String getName() {
@@ -70,60 +73,120 @@ public class FruitNinja implements GameInterface {
         this.lives = 3;
         this.combo = 0;
         this.over = false;
-        // TODO: 初始化水果列表、粒子列表、轨迹列表
+        this.fruits = new ArrayList<>();
+        this.particles = new ArrayList<>();
+        this.trail = new LinkedList<>();
+        this.frameCount = 0;
+        this.nextWaveFrame = 0;
+        this.handDetected = false;
     }
 
     @Override
     public void update(GestureData gesture) {
         if (over) return;
 
-        // TODO:
-        //
-        // 1. 更新手势轨迹：
-        //    if gesture.isHandDetected():
-        //      把当前手坐标加入轨迹列表（canvas坐标）
-        //      轨迹最多保留15个点，超出的移除旧的
-        //    else:
-        //      清空轨迹（手消失了）
-        //
-        // 2. 生成水果（每60~100帧生成一波）：
-        //    每波2~4个水果 + 15%概率1个炸弹
-        //    水果从底部弹出：
-        //      x = 画布内随机
-        //      y = canvasHeight + 30（从底部外面弹起来）
-        //      vx = 随机 -8~8（左右散射）
-        //      vy = 随机 -22~-30（向上弹）
-        //      gravity = 0.8
-        //      rotation = 随机0~360
-        //      rotationSpeed = 随机 -5~5
-        //
-        // 3. 更新所有水果：
-        //    fruit.vy += fruit.gravity;
-        //    fruit.y += fruit.vy;
-        //    fruit.x += fruit.vx;
-        //    fruit.rotation += fruit.rotationSpeed;
-        //
-        // 4. 碰撞检测（刀光切水果）：
-        //    if 轨迹有至少2个点:
-        //      遍历所有未切开的水果：
-        //        遍历轨迹中每对相邻点(prev, curr)，形成线段
-        //        计算线段到水果圆心的最短距离（点到线段距离公式）
-        //        if 距离 < 水果半径 → 切中！
-        //          fruit.sliced = true
-        //          combo++
-        //          生成果汁粒子（8~12个小圆点，从水果位置四散）
-        //          score += 10 * combo
-        //          炸弹 → 游戏立即结束
-        //
-        // 5. 更新果汁粒子：
-        //    每个粒子有vx, vy, life
-        //    life递减，粒子移动
-        //
-        // 6. 移除飞出屏幕的水果和消亡的粒子
-        //
-        // 7. 水果落到屏幕底部以下还没被切 → miss
-        //    lives--, combo归零
-        //    如果 lives<=0 → over
+        // 1. 更新手势轨迹
+        if (gesture.isHandDetected()) {
+            handDetected = true;
+            double hx = gesture.getHandX() * canvasWidth;
+            double hy = gesture.getHandY() * canvasHeight;
+            trail.add(new Point2D.Double(hx, hy));
+            while (trail.size() > 15) {
+                trail.removeFirst();
+            }
+        } else {
+            handDetected = false;
+            trail.clear();
+        }
+
+        // 2. 生成水果波（每60~100帧）
+        if (nextWaveFrame <= 0) {
+            int count = 2 + RANDOM.nextInt(3); // 2~4个水果
+            for (int i = 0; i < count; i++) {
+                fruits.add(createRandomFruit(false));
+            }
+            // 15%概率生成1个炸弹
+            if (RANDOM.nextDouble() < 0.15) {
+                fruits.add(createRandomFruit(true));
+            }
+            nextWaveFrame = 60 + RANDOM.nextInt(41);
+        }
+        nextWaveFrame--;
+
+        // 3. 更新所有水果的抛物线物理
+        for (Fruit f : fruits) {
+            f.vy += f.gravity;
+            f.y += f.vy;
+            f.x += f.vx;
+            f.rotation += f.rotationSpeed;
+        }
+
+        // 4. 碰撞检测（刀光切水果）
+        if (trail.size() >= 2 && handDetected) {
+            for (Fruit f : fruits) {
+                if (f.sliced) continue;
+                boolean hit = false;
+                for (int i = 1; i < trail.size() && !hit; i++) {
+                    Point2D prev = trail.get(i - 1);
+                    Point2D curr = trail.get(i);
+                    double dist = pointToSegmentDist(f.x, f.y,
+                            prev.getX(), prev.getY(),
+                            curr.getX(), curr.getY());
+                    if (dist < f.radius) {
+                        hit = true;
+                        if (f.isBomb) {
+                            over = true;
+                        } else {
+                            f.sliced = true;
+                            combo++;
+                            // 生成果汁粒子（8~12个）
+                            int pCount = 8 + RANDOM.nextInt(5);
+                            for (int p = 0; p < pCount; p++) {
+                                double pvx = -5 + RANDOM.nextDouble() * 10;
+                                double pvy = -5 + RANDOM.nextDouble() * 10;
+                                int life = 20 + RANDOM.nextInt(20);
+                                particles.add(new Particle(f.x, f.y, pvx, pvy, life, f.fleshColor));
+                            }
+                            score += 10 * combo;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 5. 更新果汁粒子
+        for (Particle p : particles) {
+            p.x += p.vx;
+            p.y += p.vy;
+            p.vy += 0.2; // 轻微重力
+            p.life--;
+        }
+        particles.removeIf(p -> p.life <= 0);
+
+        // 6-7. 移除飞出屏幕的水果 + 漏掉检测
+        List<Fruit> toRemove = new ArrayList<>();
+        for (Fruit f : fruits) {
+            if (f.y - f.radius > canvasHeight + 50) {
+                toRemove.add(f);
+                if (!f.sliced && !f.isBomb) {
+                    lives--;
+                    combo = 0;
+                }
+            }
+            // 横向飞出太远也移除
+            if (f.x < -100 || f.x > canvasWidth + 100) {
+                toRemove.add(f);
+            }
+        }
+        fruits.removeAll(toRemove);
+
+        // 生命归零 → 游戏结束
+        if (lives <= 0) {
+            lives = 0;
+            over = true;
+        }
+
+        frameCount++;
     }
 
     @Override
@@ -132,41 +195,104 @@ public class FruitNinja implements GameInterface {
         gc.setFill(Color.web("#0f172a"));
         gc.fillRect(0, 0, canvasWidth, canvasHeight);
 
-        // TODO:
-        //
-        // 1. 画刀光轨迹：
-        //    从旧到新画线，颜色从透明到白色渐变
-        //    for i in 1..trail.size-1:
-        //      alpha = (double)i / trail.size()
-        //      gc.setStroke(Color.rgb(255, 255, 255, alpha))
-        //      gc.setLineWidth(3 + alpha * 5)
-        //      gc.strokeLine(trail[i-1].x, trail[i-1].y, trail[i].x, trail[i].y)
-        //
-        // 2. 画所有水果：
-        //    未切开的水果：
-        //      - 彩色圆形（西瓜=绿，橙子=橙，苹果=红，柠檬=黄）
-        //      - 带旋转角度（画之前gc.save() → gc.rotate() → 画 → gc.restore()）
-        //    已切开的水果：
-        //      - 两半分开（左半向左偏移，右半向右偏移）
-        //      - 中间露出白色果肉
-        //    炸弹：
-        //      - 黑色圆形 + 红色引线
-        //      - 💀标志
-        //
-        // 3. 画果汁粒子：
-        //    - 彩色小圆点，透明度随life降低
-        //
-        // 4. HUD：
-        //    - 左上：生命❤❤❤
-        //    - 右上：分数
-        //    - 如果 combo>=3：中间显示combo数（大字，金色）
-        //
-        // 5. 如果没检测到手：屏幕中央显示"请伸出手"
+        // 1. 画刀光轨迹：从旧到新，透明→白色渐变
+        for (int i = 1; i < trail.size(); i++) {
+            double alpha = 0.3 + 0.7 * i / trail.size();
+            gc.setStroke(Color.rgb(255, 255, 255, alpha));
+            gc.setLineWidth(3 + alpha * 5);
+            Point2D prev = trail.get(i - 1);
+            Point2D curr = trail.get(i);
+            gc.strokeLine(prev.getX(), prev.getY(), curr.getX(), curr.getY());
+        }
+
+        // 2. 画所有水果
+        for (Fruit f : fruits) {
+            if (f.sliced) {
+                // 已切开：两半分开，露出果肉
+                double offset = f.radius * 0.5;
+                // 左半
+                gc.save();
+                gc.translate(f.x - offset, f.y);
+                gc.rotate(f.rotation);
+                gc.setFill(f.color);
+                gc.fillOval(-f.radius, -f.radius, f.radius * 2, f.radius * 2);
+                gc.setFill(f.fleshColor);
+                gc.fillOval((int)(-f.radius * 0.7), (int)(-f.radius * 0.7),
+                        (int)(f.radius * 1.4), (int)(f.radius * 1.4));
+                gc.restore();
+                // 右半
+                gc.save();
+                gc.translate(f.x + offset, f.y);
+                gc.rotate(f.rotation);
+                gc.setFill(f.color);
+                gc.fillOval(-f.radius, -f.radius, f.radius * 2, f.radius * 2);
+                gc.setFill(f.fleshColor);
+                gc.fillOval((int)(-f.radius * 0.7), (int)(-f.radius * 0.7),
+                        (int)(f.radius * 1.4), (int)(f.radius * 1.4));
+                gc.restore();
+            } else if (f.isBomb) {
+                // 炸弹：黑色圆 + 红色引线 + 💀
+                gc.save();
+                gc.translate(f.x, f.y);
+                gc.rotate(f.rotation);
+                gc.setFill(Color.BLACK);
+                gc.fillOval(-f.radius, -f.radius, f.radius * 2, f.radius * 2);
+                gc.setStroke(Color.RED);
+                gc.setLineWidth(2);
+                gc.strokeLine(0, -f.radius, -4, -f.radius - 10);
+                gc.setStroke(Color.GRAY);
+                gc.setLineWidth(1);
+                gc.strokeOval(-f.radius, -f.radius, f.radius * 2, f.radius * 2);
+                gc.restore();
+                gc.setFill(Color.WHITE);
+                gc.setFont(javafx.scene.text.Font.font(f.radius * 0.8));
+                gc.fillText("💀", f.x - f.radius * 0.6, f.y + f.radius * 0.35);
+            } else {
+                // 未切开：带旋转的彩色圆
+                gc.save();
+                gc.translate(f.x, f.y);
+                gc.rotate(f.rotation);
+                gc.setFill(f.color);
+                gc.fillOval(-f.radius, -f.radius, f.radius * 2, f.radius * 2);
+                // 高光
+                gc.setFill(Color.WHITE.deriveColor(0, 1, 1, 0.3));
+                gc.fillOval((int)(-f.radius * 0.4), (int)(-f.radius * 0.6),
+                        (int)(f.radius * 0.6), (int)(f.radius * 0.6));
+                gc.restore();
+            }
+        }
+
+        // 3. 画果汁粒子
+        for (Particle p : particles) {
+            double alpha = Math.max(0.0, p.life / 35.0);
+            gc.setFill(p.color.deriveColor(0, 1, 1, alpha));
+            gc.fillOval(p.x - 3, p.y - 3, 6, 6);
+        }
+
+        // 4. HUD
+        gc.setFill(Color.WHITE);
+        gc.setFont(javafx.scene.text.Font.font(18));
+        StringBuilder hearts = new StringBuilder();
+        for (int i = 0; i < lives; i++) hearts.append("❤");
+        gc.fillText(hearts.toString(), 20, 30);
+        gc.fillText("分数: " + score, canvasWidth - 120, 30);
+        if (combo >= 3) {
+            gc.setFill(Color.GOLD);
+            gc.setFont(javafx.scene.text.Font.font(36));
+            gc.fillText("COMBO x" + combo, canvasWidth / 2.0 - 80, canvasHeight / 2.0 - 40);
+        }
+
+        // 5. 未检测到手 → 提示
+        if (!handDetected && !over) {
+            gc.setFill(Color.WHITE.deriveColor(0, 1, 1, 0.6));
+            gc.setFont(javafx.scene.text.Font.font(24));
+            gc.fillText("请伸出手", canvasWidth / 2.0 - 60, canvasHeight / 2.0);
+        }
 
         if (over) {
             gc.setFill(Color.RED);
             gc.fillText("💥 切到炸弹！得分: " + score + "  握拳重新开始",
-                    canvasWidth/2 - 150, canvasHeight/2);
+                    canvasWidth / 2.0 - 150, canvasHeight / 2.0);
         }
     }
 
@@ -185,16 +311,89 @@ public class FruitNinja implements GameInterface {
         init(canvasWidth, canvasHeight);
     }
 
-    // TODO: 定义内部类
-    // private static class Fruit {
-    //     double x, y, vx, vy, gravity, rotation, rotationSpeed, radius;
-    //     Color color, fleshColor;
-    //     boolean sliced, isBomb;
-    // }
-    //
-    // private static class Particle {
-    //     double x, y, vx, vy;
-    //     int life;
-    //     Color color;
-    // }
+    // ========== 辅助方法 ==========
+
+    /** 生成一个随机水果或炸弹。 */
+    private Fruit createRandomFruit(boolean isBomb) {
+        double x = 30 + RANDOM.nextDouble() * (canvasWidth - 60);
+        double y = canvasHeight + 30;
+        double vx = -8 + RANDOM.nextDouble() * 16;
+        double vy = -22 - RANDOM.nextDouble() * 8;
+        double gravity = 0.8;
+        double rotation = RANDOM.nextDouble() * 360;
+        double rotationSpeed = -5 + RANDOM.nextDouble() * 10;
+        double radius = 25 + RANDOM.nextDouble() * 15;
+
+        if (isBomb) {
+            return new Fruit(x, y, vx, vy, gravity, rotation, rotationSpeed,
+                    radius, Color.BLACK, Color.DARKGRAY, false, true);
+        }
+
+        // 水果类型 → 颜色
+        String[] types = {"西瓜", "橙子", "苹果", "柠檬"};
+        int idx = RANDOM.nextInt(types.length);
+        Color[] colors = {Color.GREEN, Color.ORANGE, Color.RED, Color.YELLOW};
+        Color[] fleshColors = {Color.RED, Color.web("#FFD700"), Color.WHITE, Color.web("#FFFFE0")};
+        return new Fruit(x, y, vx, vy, gravity, rotation, rotationSpeed,
+                radius, colors[idx], fleshColors[idx], false, false);
+    }
+
+    /** 点到线段的最短距离。 */
+    private double pointToSegmentDist(double px, double py,
+                                       double x1, double y1,
+                                       double x2, double y2) {
+        double dx = x2 - x1;
+        double dy = y2 - y1;
+        double lenSq = dx * dx + dy * dy;
+        if (lenSq == 0) {
+            return Math.sqrt((px - x1) * (px - x1) + (py - y1) * (py - y1));
+        }
+        double t = ((px - x1) * dx + (py - y1) * dy) / lenSq;
+        t = Math.max(0, Math.min(1, t));
+        double cx = x1 + t * dx;
+        double cy = y1 + t * dy;
+        return Math.sqrt((px - cx) * (px - cx) + (py - cy) * (py - cy));
+    }
+
+    // ========== 内部类 ==========
+
+    /** 水果/炸弹。 */
+    private static class Fruit {
+        double x, y, vx, vy, gravity, rotation, rotationSpeed, radius;
+        Color color, fleshColor;
+        boolean sliced, isBomb;
+
+        Fruit(double x, double y, double vx, double vy, double gravity,
+              double rotation, double rotationSpeed, double radius,
+              Color color, Color fleshColor, boolean sliced, boolean isBomb) {
+            this.x = x;
+            this.y = y;
+            this.vx = vx;
+            this.vy = vy;
+            this.gravity = gravity;
+            this.rotation = rotation;
+            this.rotationSpeed = rotationSpeed;
+            this.radius = radius;
+            this.color = color;
+            this.fleshColor = fleshColor;
+            this.sliced = sliced;
+            this.isBomb = isBomb;
+        }
+    }
+
+    /** 果汁粒子。 */
+    private static class Particle {
+        double x, y, vx, vy;
+        int life;
+        Color color;
+
+        Particle(double x, double y, double vx, double vy, int life, Color color) {
+            this.x = x;
+            this.y = y;
+            this.vx = vx;
+            this.vy = vy;
+            this.life = life;
+            this.color = color;
+        }
+    }
 }
