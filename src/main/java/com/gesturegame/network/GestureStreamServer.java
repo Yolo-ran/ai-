@@ -25,8 +25,15 @@ import java.util.logging.Logger;
 public class GestureStreamServer extends WebSocketServer {
 
     private static final Logger LOGGER = Logger.getLogger(GestureStreamServer.class.getName());
-    private static final double SWIPE_VELOCITY_THRESHOLD = 0.035;
-    private static final long SWIPE_COOLDOWN_MS = 260L;
+    // 滑动判定：位移提交 + 方向感知锁定（防回弹误触）
+    private static final double SWIPE_ARM_VELOCITY = 0.028;
+    private static final double SWIPE_COMMIT_DISTANCE = 0.12;
+    private static final double SWIPE_ABORT_REVERSE = -0.05;
+    private static final long SWIPE_ARM_TIMEOUT_MS = 500L;
+    private static final double SWIPE_REST_VELOCITY = 0.012;
+    private static final long SWIPE_REST_MS = 180L;
+    private static final double SWIPE_NEUTRAL_RADIUS = 0.05;
+    private static final double SWIPE_VXY_RATIO = 1.3;
     private static final long LOGIN_CONFIRM_HOLD_MS = 1000L;
     private static final long LOBBY_CONFIRM_HOLD_MS = 1200L;
     private static final long LOBBY_BACK_HOLD_MS = 1500L;
@@ -40,7 +47,6 @@ public class GestureStreamServer extends WebSocketServer {
     private static final long LOGIN_ENTRY_GUARD_MS = 800L;
     private static final long LOBBY_ENTRY_GUARD_MS = 600L;
     private static final long GAME_ENTRY_GUARD_MS = 2500L;
-    private static final long SWIPE_DIR_LOCK_MS = 300L;
 
     private final LoginController loginController;
     private final LobbyController lobbyController;
@@ -48,14 +54,21 @@ public class GestureStreamServer extends WebSocketServer {
     private volatile GestureData latestGestureData = new GestureData();
     private GestureType lastHoldGesture = GestureType.NONE;
     private long holdStartTime;
-    private long lastSwipeCommandTime;
+
+    private enum SwipePhase { IDLE, ARMED }
+    private SwipePhase swipePhase = SwipePhase.IDLE;
+    private double swipeArmX;
+    private double swipeArmDir;
+    private long swipeArmTime;
+    private int swipeBlockSign;
+    private long swipeBlockRestSince;
+    private double swipeLastArmX;
+
     private long lastStaticCommandTime;
     private long lastCameraFrameTime;
     private long lastIdleDispatchTime;
     private String lastObservedState = AppStateManager.STATE_LOGIN;
     private long stateEnterTime = System.currentTimeMillis();
-    private long swipeDirLockUntil;
-    private GestureCommand lockedDir;
 
     public GestureStreamServer(int port, LoginController loginController,
                                LobbyController lobbyController, GameRenderer gameRenderer) {
@@ -183,35 +196,26 @@ public class GestureStreamServer extends WebSocketServer {
     private GestureCommand mapGestureDataToCommand(String state, GestureData gestureData) {
         if (!gestureData.isHandDetected()) {
             resetHoldState();
+            resetSwipeState();
             return GestureCommand.NONE;
         }
 
         long now = System.currentTimeMillis();
         if (isInStateEntryGuard(state, now)) {
             resetHoldState();
+            resetSwipeState();
             return GestureCommand.NONE;
         }
 
-        if (Math.abs(gestureData.getVelocityX()) >= SWIPE_VELOCITY_THRESHOLD
-                && Math.abs(gestureData.getVelocityX()) > Math.abs(gestureData.getVelocityY())) {
-            // 冷却期内不重置 hold，避免手抖误清 hold 计时
-            if (now - lastSwipeCommandTime < SWIPE_COOLDOWN_MS) {
-                return GestureCommand.NONE;
-            }
-
-            GestureCommand dir = gestureData.getVelocityX() < 0
-                    ? GestureCommand.SWIPE_LEFT : GestureCommand.SWIPE_RIGHT;
-
-            // 方向锁：防回弹误触 —— 划完后 600ms 内反方向手势直接丢弃
-            if (now < swipeDirLockUntil && lockedDir != null && dir != lockedDir) {
-                return GestureCommand.NONE;
-            }
-
+        GestureCommand swipeCommand = updateSwipe(gestureData, now);
+        if (swipeCommand != GestureCommand.NONE) {
             resetHoldState();
-            lastSwipeCommandTime = now;
-            swipeDirLockUntil = now + SWIPE_DIR_LOCK_MS;
-            lockedDir = dir;
-            return dir;
+            return swipeCommand;
+        }
+        if (swipePhase != SwipePhase.IDLE) {
+            // 正在起划/锁定恢复中，抑制 hold，避免划动误触确认或返回
+            resetHoldState();
+            return GestureCommand.NONE;
         }
 
         GestureType gestureType = gestureData.getGesture();
@@ -239,6 +243,72 @@ public class GestureStreamServer extends WebSocketServer {
         return gestureType == GestureType.FIST ? GestureCommand.CONFIRM : GestureCommand.BACK;
     }
 
+    /**
+     * 位移提交 + 方向感知锁定的滑动状态机。
+     *
+     * <p>起划（速度过阈）进入 ARMED，仅当手在某一方向累计净位移达到阈值才提交该方向滑动；
+     * 回弹净位移小、达不到阈值，不会误触。提交后锁反方向，直到手停顿或回到起划点附近才解锁，
+     * 从而彻底吸收回弹；同方向可立即续划。
+     */
+    private GestureCommand updateSwipe(GestureData gestureData, long now) {
+        double vx = gestureData.getVelocityX();
+        double vy = gestureData.getVelocityY();
+        double handX = gestureData.getHandX();
+
+        if (swipeBlockSign != 0) {
+            boolean rested = Math.abs(vx) < SWIPE_REST_VELOCITY;
+            if (rested) {
+                if (swipeBlockRestSince == 0L) {
+                    swipeBlockRestSince = now;
+                }
+            } else {
+                swipeBlockRestSince = 0L;
+            }
+            boolean clearByRest = rested && now - swipeBlockRestSince >= SWIPE_REST_MS;
+            boolean clearByNeutral = Math.abs(handX - swipeLastArmX) < SWIPE_NEUTRAL_RADIUS;
+            if (clearByRest || clearByNeutral) {
+                swipeBlockSign = 0;
+                swipeBlockRestSince = 0L;
+            }
+        }
+
+        if (swipePhase == SwipePhase.ARMED) {
+            double progress = (handX - swipeArmX) * swipeArmDir;
+            if (progress >= SWIPE_COMMIT_DISTANCE) {
+                GestureCommand dir = swipeArmDir < 0
+                        ? GestureCommand.SWIPE_LEFT : GestureCommand.SWIPE_RIGHT;
+                swipeBlockSign = (int) -swipeArmDir;
+                swipeLastArmX = swipeArmX;
+                swipeBlockRestSince = 0L;
+                swipePhase = SwipePhase.IDLE;
+                return dir;
+            }
+            if (progress < SWIPE_ABORT_REVERSE || now - swipeArmTime > SWIPE_ARM_TIMEOUT_MS) {
+                swipePhase = SwipePhase.IDLE;
+            }
+            return GestureCommand.NONE;
+        }
+
+        if (Math.abs(vx) >= SWIPE_ARM_VELOCITY
+                && Math.abs(vx) > Math.abs(vy) * SWIPE_VXY_RATIO) {
+            int dirSign = vx < 0 ? -1 : 1;
+            if (swipeBlockSign != 0 && dirSign == swipeBlockSign) {
+                return GestureCommand.NONE;
+            }
+            swipePhase = SwipePhase.ARMED;
+            swipeArmX = handX;
+            swipeArmDir = dirSign;
+            swipeArmTime = now;
+        }
+        return GestureCommand.NONE;
+    }
+
+    private void resetSwipeState() {
+        swipePhase = SwipePhase.IDLE;
+        swipeBlockSign = 0;
+        swipeBlockRestSince = 0L;
+    }
+
     private void onStateObserved(String state) {
         if (state.equals(lastObservedState)) {
             return;
@@ -247,10 +317,8 @@ public class GestureStreamServer extends WebSocketServer {
         lastObservedState = state;
         stateEnterTime = System.currentTimeMillis();
         resetHoldState();
-        lastSwipeCommandTime = stateEnterTime;
+        resetSwipeState();
         lastStaticCommandTime = stateEnterTime;
-        swipeDirLockUntil = 0L;
-        lockedDir = null;
         LOGGER.info(() -> "[GestureStream] 场景切换，启用手势保护: " + state);
     }
 
