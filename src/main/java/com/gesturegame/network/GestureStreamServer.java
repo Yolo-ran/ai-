@@ -31,6 +31,9 @@ public class GestureStreamServer extends WebSocketServer {
     private static final long LOBBY_CONFIRM_HOLD_MS = 1200L;
     private static final long LOBBY_BACK_HOLD_MS = 1500L;
     private static final long GAME_BACK_HOLD_MS = 1800L;
+    private static final long GAME_OVER_ENTRY_GUARD_MS = 400L;
+    private static final long GAME_OVER_CONFIRM_HOLD_MS = 1000L;
+    private static final long GAME_OVER_BACK_HOLD_MS = 1200L;
     private static final long COMMAND_COOLDOWN_MS = 450L;
     private static final long CAMERA_FRAME_INTERVAL_MS = 80L;
     private static final long IDLE_DISPATCH_INTERVAL_MS = 200L;
@@ -78,7 +81,7 @@ public class GestureStreamServer extends WebSocketServer {
             dispatchCameraFrame(state, base64Image);
 
             if (containsGestureData(json)) {
-                GestureData gestureData = GestureData.fromJson(message);
+                GestureData gestureData = buildGestureData(json);
                 this.latestGestureData = gestureData;
                 GestureCommand command = mapGestureDataToCommand(state, gestureData);
                 dispatchGesture(state, gestureData.getGesture().name(), command, gestureData.getConfidence());
@@ -102,6 +105,27 @@ public class GestureStreamServer extends WebSocketServer {
                 || json.has("velocityX")
                 || json.has("velocityY")
                 || json.has("handDetected");
+    }
+
+    /**
+     * 从已解析的 JSONObject 直接构建 GestureData，避免对报文做二次 JSON 解析。
+     *
+     * <p>字段默认值与 {@link GestureData#fromJson(String)} 保持一致，遵循 AGENTS §4.1 协议；
+     * 该方法仅消费 common 层的公有构造与 {@link GestureType#fromString}，不修改 common。
+     */
+    private GestureData buildGestureData(JSONObject json) {
+        double handX = json.optDouble("handX", 0.0);
+        double handY = json.optDouble("handY", 0.0);
+        return new GestureData(
+                handX,
+                handY,
+                json.optDouble("prevHandX", handX),
+                json.optDouble("prevHandY", handY),
+                json.optDouble("velocityX", 0.0),
+                json.optDouble("velocityY", 0.0),
+                GestureType.fromString(json.optString("gesture", "none")),
+                json.optDouble("confidence", 0.0),
+                json.optBoolean("handDetected", false));
     }
 
     private void dispatchCameraFrame(String state, String base64Image) {
@@ -138,11 +162,13 @@ public class GestureStreamServer extends WebSocketServer {
                 + ", state=" + state);
 
         if (AppStateManager.STATE_LOGIN.equals(state) && loginController != null) {
-            loginController.handleAgentCommand(command, confidence, "UNKNOWN");
+            loginController.handleAgentCommand(command, confidence, "STREAM");
         } else if (AppStateManager.STATE_LOBBY.equals(state) && lobbyController != null) {
-            lobbyController.handleAgentCommand(command, confidence, "UNKNOWN");
+            lobbyController.handleAgentCommand(command, confidence, "STREAM");
         } else if (AppStateManager.STATE_GAME.equals(state) && gameRenderer != null) {
-            gameRenderer.handleAgentCommand(command, confidence, "UNKNOWN");
+            gameRenderer.handleAgentCommand(command, confidence, "STREAM");
+        } else if (AppStateManager.STATE_GAME_OVER.equals(state) && gameRenderer != null) {
+            gameRenderer.handleAgentCommand(command, confidence, "STREAM");
         }
     }
 
@@ -236,6 +262,9 @@ public class GestureStreamServer extends WebSocketServer {
         if (AppStateManager.STATE_GAME.equals(state)) {
             return GAME_ENTRY_GUARD_MS;
         }
+        if (AppStateManager.STATE_GAME_OVER.equals(state)) {
+            return GAME_OVER_ENTRY_GUARD_MS;
+        }
         if (AppStateManager.STATE_LOBBY.equals(state)) {
             return LOBBY_ENTRY_GUARD_MS;
         }
@@ -245,6 +274,15 @@ public class GestureStreamServer extends WebSocketServer {
     private long resolveRequiredHoldMs(String state, GestureType gestureType) {
         if (AppStateManager.STATE_GAME.equals(state)) {
             return gestureType == GestureType.OPEN ? GAME_BACK_HOLD_MS : Long.MAX_VALUE;
+        }
+        if (AppStateManager.STATE_GAME_OVER.equals(state)) {
+            if (gestureType == GestureType.FIST) {
+                return GAME_OVER_CONFIRM_HOLD_MS;
+            }
+            if (gestureType == GestureType.OPEN) {
+                return GAME_OVER_BACK_HOLD_MS;
+            }
+            return Long.MAX_VALUE;
         }
         if (AppStateManager.STATE_LOBBY.equals(state)) {
             return gestureType == GestureType.FIST ? LOBBY_CONFIRM_HOLD_MS : LOBBY_BACK_HOLD_MS;

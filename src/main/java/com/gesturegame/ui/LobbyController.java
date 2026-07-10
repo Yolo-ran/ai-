@@ -23,6 +23,8 @@ import javafx.util.Duration;
 
 import java.io.ByteArrayInputStream;
 import java.util.Base64;
+import java.util.List;
+import java.util.function.Supplier;
 import java.util.logging.Logger;
 
 /**
@@ -31,7 +33,14 @@ import java.util.logging.Logger;
 public class LobbyController {
 
     private static final Logger LOGGER = Logger.getLogger(LobbyController.class.getName());
-    private static final int MAX_GAMES = 6;
+    private static final List<Supplier<GameInterface>> GAME_REGISTRY = List.of(
+            CatchFruit::new,
+            RPSGame::new,
+            PopBubbles::new,
+            TarotGame::new,
+            FruitNinja::new,
+            RhythmMaster::new);
+    private static final int MAX_GAMES = GAME_REGISTRY.size();
     private static final double CARD_WIDTH = 320.0;
     private static final long NAVIGATION_COOLDOWN_MS = 180L;
     private static final long ACTION_COOLDOWN_MS = 500L;
@@ -163,7 +172,7 @@ public class LobbyController {
         }
 
         currentIndex = nextIndex;
-            TranslateTransition transition = new TranslateTransition(Duration.millis(260), gameCardContainer);
+        TranslateTransition transition = new TranslateTransition(Duration.millis(260), gameCardContainer);
         transition.setToX(-currentIndex * CARD_WIDTH);
         transition.play();
         applySelectionStyle();
@@ -189,32 +198,10 @@ public class LobbyController {
     }
 
     private GameInterface createGame(int index) {
-        switch (index) {
-            case 0:
-                return new CatchFruit();
-            case 1:
-                return new RPSGame();
-            case 2:
-                return new PopBubbles();
-            case 3:
-                return new TarotGame();
-            case 4:
-                return new FruitNinja();
-            case 5:
-                return new RhythmMaster();
-            default:
-                return null;
+        if (index < 0 || index >= GAME_REGISTRY.size()) {
+            return null;
         }
-    }
-
-    private void returnToLogin() {
-        long now = System.currentTimeMillis();
-        if (now - lastActionTime < ACTION_COOLDOWN_MS) {
-            return;
-        }
-
-        appStateManager.switchState("LOGIN");
-        lastActionTime = now;
+        return GAME_REGISTRY.get(index).get();
     }
 
     private void applySelectionStyle() {

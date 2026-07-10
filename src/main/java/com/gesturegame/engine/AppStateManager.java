@@ -20,23 +20,24 @@ public class AppStateManager {
     public static final String STATE_LOGIN = "LOGIN";
     public static final String STATE_LOBBY = "LOBBY";
     public static final String STATE_GAME = "GAME";
+    public static final String STATE_GAME_OVER = "GAME_OVER";
 
     private static final Logger LOGGER = Logger.getLogger(AppStateManager.class.getName());
-    private static AppStateManager instance;
 
     private final Map<String, Scene> scenes = new HashMap<>();
     private Stage primaryStage;
-    private String currentState = STATE_LOGIN;
+    private volatile String currentState = STATE_LOGIN;
     private volatile GameInterface activeGame;
 
     private AppStateManager() {
     }
 
     public static AppStateManager getInstance() {
-        if (instance == null) {
-            instance = new AppStateManager();
-        }
-        return instance;
+        return Holder.INSTANCE;
+    }
+
+    private static class Holder {
+        private static final AppStateManager INSTANCE = new AppStateManager();
     }
 
     public void init(Stage stage) {

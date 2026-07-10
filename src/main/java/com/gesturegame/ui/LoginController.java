@@ -3,6 +3,7 @@ package com.gesturegame.ui;
 import com.gesturegame.engine.AppStateManager;
 import com.gesturegame.network.GestureCommand;
 import javafx.animation.PauseTransition;
+import javafx.animation.SequentialTransition;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.scene.control.Label;
@@ -146,16 +147,16 @@ public class LoginController {
         PauseTransition stepOne = new PauseTransition(Duration.millis(120));
         stepOne.setOnFinished(event -> confirmProgress.setProgress(0.35));
 
-        PauseTransition stepTwo = new PauseTransition(Duration.millis(260));
+        PauseTransition stepTwo = new PauseTransition(Duration.millis(140));
         stepTwo.setOnFinished(event -> confirmProgress.setProgress(0.72));
 
-        PauseTransition stepThree = new PauseTransition(Duration.millis(420));
+        PauseTransition stepThree = new PauseTransition(Duration.millis(160));
         stepThree.setOnFinished(event -> {
             confirmProgress.setProgress(1.0);
             statusLabel.setText("签入成功，正在进入游戏大厅...");
         });
 
-        PauseTransition switchDelay = new PauseTransition(Duration.millis(540));
+        PauseTransition switchDelay = new PauseTransition(Duration.millis(120));
         switchDelay.setOnFinished(event -> {
             signingIn = false;
             confirmProgress.setVisible(false);
@@ -165,9 +166,7 @@ public class LoginController {
             }
         });
 
-        stepOne.play();
-        stepTwo.play();
-        stepThree.play();
-        switchDelay.play();
+        SequentialTransition sequence = new SequentialTransition(stepOne, stepTwo, stepThree, switchDelay);
+        sequence.play();
     }
 }
