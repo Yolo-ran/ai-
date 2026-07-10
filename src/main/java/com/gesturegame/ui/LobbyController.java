@@ -165,7 +165,7 @@ public class LobbyController {
         }
 
         currentIndex = nextIndex;
-        TranslateTransition transition = new TranslateTransition(Duration.millis(350), gameCardContainer);
+            TranslateTransition transition = new TranslateTransition(Duration.millis(260), gameCardContainer);
         transition.setToX(-currentIndex * CARD_WIDTH);
         transition.play();
         applySelectionStyle();

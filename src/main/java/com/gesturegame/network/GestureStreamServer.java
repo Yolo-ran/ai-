@@ -37,6 +37,7 @@ public class GestureStreamServer extends WebSocketServer {
     private static final long LOGIN_ENTRY_GUARD_MS = 800L;
     private static final long LOBBY_ENTRY_GUARD_MS = 1800L;
     private static final long GAME_ENTRY_GUARD_MS = 2500L;
+    private static final long SWIPE_DIR_LOCK_MS = 600L;
 
     private final LoginController loginController;
     private final LobbyController lobbyController;
@@ -50,6 +51,8 @@ public class GestureStreamServer extends WebSocketServer {
     private long lastIdleDispatchTime;
     private String lastObservedState = AppStateManager.STATE_LOGIN;
     private long stateEnterTime = System.currentTimeMillis();
+    private long swipeDirLockUntil;
+    private GestureCommand lockedDir;
 
     public GestureStreamServer(int port, LoginController loginController,
                                LobbyController lobbyController, GameRenderer gameRenderer) {
@@ -169,8 +172,19 @@ public class GestureStreamServer extends WebSocketServer {
             if (now - lastSwipeCommandTime < SWIPE_COOLDOWN_MS) {
                 return GestureCommand.NONE;
             }
+
+            GestureCommand dir = gestureData.getVelocityX() < 0
+                    ? GestureCommand.SWIPE_LEFT : GestureCommand.SWIPE_RIGHT;
+
+            // 方向锁：防回弹误触 —— 划完后 600ms 内反方向手势直接丢弃
+            if (now < swipeDirLockUntil && lockedDir != null && dir != lockedDir) {
+                return GestureCommand.NONE;
+            }
+
             lastSwipeCommandTime = now;
-            return gestureData.getVelocityX() < 0 ? GestureCommand.SWIPE_LEFT : GestureCommand.SWIPE_RIGHT;
+            swipeDirLockUntil = now + SWIPE_DIR_LOCK_MS;
+            lockedDir = dir;
+            return dir;
         }
 
         GestureType gestureType = gestureData.getGesture();
@@ -208,6 +222,8 @@ public class GestureStreamServer extends WebSocketServer {
         resetHoldState();
         lastSwipeCommandTime = stateEnterTime;
         lastStaticCommandTime = stateEnterTime;
+        swipeDirLockUntil = 0L;
+        lockedDir = null;
         LOGGER.info(() -> "[GestureStream] 场景切换，启用手势保护: " + state);
     }
 
