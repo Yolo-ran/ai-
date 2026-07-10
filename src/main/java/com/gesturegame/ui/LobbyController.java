@@ -17,7 +17,7 @@ import javafx.fxml.FXML;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.Label;
-import javafx.scene.effect.Glow;
+import javafx.scene.effect.Bloom;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.image.PixelWriter;
@@ -78,8 +78,10 @@ public class LobbyController {
     private static final double PX_PER_UNIT = 16.0;
     private static final double LERP_SPEED = 0.06;
     private static final double BURST_LERP = 0.12;
+    private static final double OPEN_SMOOTH = 0.18;
     private static final double ROT_SPEED = 0.004;
-    private static final double TURBULENCE = 0.05;
+    private static final double TURBULENCE = 0.03;
+    private static final double PARTICLE_DRAW_SIZE = 10.0;
     private static final long NAVIGATION_COOLDOWN_MS = 180L;
     private static final long ACTION_COOLDOWN_MS = 500L;
     private static final Base64.Decoder BASE64_DECODER = Base64.getDecoder();
@@ -109,6 +111,7 @@ public class LobbyController {
     private long lastNavigationTime;
     private long lastActionTime;
     private double burst;
+    private double openLevel;
     private double rotY;
     private double pulse;
 
@@ -124,7 +127,9 @@ public class LobbyController {
             lobbyCanvas.widthProperty().bind(parent.widthProperty());
             lobbyCanvas.heightProperty().bind(parent.heightProperty());
         }
-        lobbyCanvas.setEffect(new Glow(0.9));
+        Bloom bloomEffect = new Bloom();
+        bloomEffect.setThreshold(0.6);
+        lobbyCanvas.setEffect(bloomEffect);
 
         sprites = createSprites();
         shapeTargets = createShapeTargets();
@@ -151,12 +156,12 @@ public class LobbyController {
         double handX = hand ? gesture.getHandX() : 0.5;
         double handY = hand ? gesture.getHandY() : 0.5;
 
-        double targetBurst = open ? 1.0 : 0.0;
-        burst += (targetBurst - burst) * BURST_LERP;
+        openLevel += ((open ? 1.0 : 0.0) - openLevel) * OPEN_SMOOTH;
+        burst += (openLevel - burst) * BURST_LERP;
         rotY += ROT_SPEED * (1.0 + burst * 2.0);
         double time = pulse;
         pulse += 0.016;
-        double turb = TURBULENCE + burst * 0.25;
+        double turb = TURBULENCE + burst * 0.10;
 
         double[][] targets = shapeTargets[currentIndex];
         for (int i = 0; i < particles.length; i++) {
@@ -164,9 +169,9 @@ public class LobbyController {
             double tx = targets[i][0] + Math.sin(time * 2 + i) * turb;
             double ty = targets[i][1] + Math.cos(time * 3 + i) * turb;
             double tz = targets[i][2] + Math.sin(time * 4 + i) * turb;
-            p.x += (tx - p.x) * LERP_SPEED;
-            p.y += (ty - p.y) * LERP_SPEED;
-            p.z += (tz - p.z) * LERP_SPEED;
+            p.x += (tx - p.x) * p.lerp;
+            p.y += (ty - p.y) * p.lerp;
+            p.z += (tz - p.z) * p.lerp;
             if (Math.random() > 0.9995) {
                 p.spark = 1.0;
             }
@@ -197,7 +202,7 @@ public class LobbyController {
             szArr[i] = rz;
             double depthBright = 0.4 + 0.6 * (rz + 12.0) / 24.0;
             saArr[i] = clamp(p.brightness * depthBright * (0.7 + 0.5 * burst), 0.05, 1.0);
-            ssArr[i] = SPRITE_SIZE * 0.5 * factor * (0.7 + 0.3 * p.brightness) * (1.0 + burst * 0.5);
+            ssArr[i] = PARTICLE_DRAW_SIZE * factor * (0.7 + 0.3 * p.brightness) * (1.0 + burst * 0.5);
         }
         Arrays.sort(order, (a, b) -> Double.compare(szArr[a], szArr[b]));
 
@@ -376,7 +381,7 @@ public class LobbyController {
                 double dy = (py - half) / half;
                 double d = Math.min(1.0, Math.sqrt(dx * dx + dy * dy));
                 double a = Math.max(0.0, 1.0 - d);
-                a = a * a * a;
+                a = a * a;
                 pw.setColor(px, py, new Color(r, g, b, a));
             }
         }
@@ -526,6 +531,7 @@ public class LobbyController {
             Particle p = new Particle();
             p.brightness = 0.2 + Math.random() * 0.8;
             p.spark = 0.0;
+            p.lerp = LERP_SPEED * (0.7 + Math.random() * 0.6);
             p.x = base[i][0];
             p.y = base[i][1];
             p.z = base[i][2];
@@ -546,5 +552,6 @@ public class LobbyController {
         double x, y, z;
         double brightness;
         double spark;
+        double lerp;
     }
 }
