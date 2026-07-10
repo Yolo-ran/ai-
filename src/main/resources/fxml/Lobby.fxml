@@ -35,10 +35,10 @@
                        text="左右挥手切换星球 · 握拳确认进入" wrapText="true" />
                 <HBox alignment="CENTER" spacing="14.0">
                     <children>
-                        <Label styleClass="hint-badge" text="SWIPE_LEFT" />
-                        <Label styleClass="hint-badge" text="SWIPE_RIGHT" />
-                        <Label styleClass="hint-badge" text="张手爆发" />
-                        <Label styleClass="hint-badge" text="握拳确认" />
+                        <Label styleClass="hint-badge" text="挥手切换" />
+                        <Label styleClass="hint-badge" text="张手散" />
+                        <Label styleClass="hint-badge" text="握拳聚" />
+                        <Label styleClass="hint-badge" text="✌️开始" />
                     </children>
                 </HBox>
             </children>

@@ -77,8 +77,8 @@ public class LobbyController {
     private static final double CAMERA_Z = 30.0;
     private static final double PX_PER_UNIT = 16.0;
     private static final double LERP_SPEED = 0.06;
-    private static final double BURST_LERP = 0.12;
-    private static final double OPEN_SMOOTH = 0.18;
+    private static final double MORPH_LERP = 0.12;
+    private static final double STILL_X = 0.016;
     private static final double ROT_SPEED = 0.004;
     private static final double TURBULENCE = 0.03;
     private static final double PARTICLE_DRAW_SIZE = 10.0;
@@ -110,8 +110,7 @@ public class LobbyController {
     private int currentIndex;
     private long lastNavigationTime;
     private long lastActionTime;
-    private double burst;
-    private double openLevel;
+    private double morph;
     private double rotY;
     private double pulse;
 
@@ -151,17 +150,26 @@ public class LobbyController {
             return;
         }
 
+        double vx = gesture != null ? gesture.getVelocityX() : 0.0;
         boolean hand = gesture != null && gesture.isHandDetected();
-        boolean open = hand && gesture.getGesture() == GestureType.OPEN;
         double handX = hand ? gesture.getHandX() : 0.5;
         double handY = hand ? gesture.getHandY() : 0.5;
 
-        openLevel += ((open ? 1.0 : 0.0) - openLevel) * OPEN_SMOOTH;
-        burst += (openLevel - burst) * BURST_LERP;
-        rotY += ROT_SPEED * (1.0 + burst * 2.0);
+        // 聚散：手静止时 OPEN=散(+1)/FIST=聚(-1)；挥手时(|vx|大)抑制，避免与切换冲突
+        double morphTarget = 0.0;
+        if (hand && Math.abs(vx) < STILL_X) {
+            GestureType g = gesture.getGesture();
+            if (g == GestureType.OPEN) {
+                morphTarget = 1.0;
+            } else if (g == GestureType.FIST) {
+                morphTarget = -1.0;
+            }
+        }
+        morph += (morphTarget - morph) * MORPH_LERP;
+        rotY += ROT_SPEED * (1.0 + Math.max(0.0, morph) * 2.0);
         double time = pulse;
         pulse += 0.016;
-        double turb = TURBULENCE + burst * 0.10;
+        double turb = TURBULENCE + Math.max(0.0, morph) * 0.15;
 
         double[][] targets = shapeTargets[currentIndex];
         for (int i = 0; i < particles.length; i++) {
@@ -192,7 +200,7 @@ public class LobbyController {
             double ry = p.y;
             double dist = Math.hypot(p.x, Math.hypot(p.y, p.z));
             double normDist = Math.min(dist / 12.0, 1.0);
-            double scale = (0.9 + burst * 1.4) * (1.0 + burst * Math.pow(normDist, 1.5) * 1.3);
+            double scale = (1.0 + morph * 0.5) * (1.0 + Math.max(0.0, morph) * Math.pow(normDist, 1.5) * 1.3);
             rx *= scale;
             ry *= scale;
             rz *= scale;
@@ -201,8 +209,8 @@ public class LobbyController {
             syArr[i] = cy + ry * factor * PX_PER_UNIT;
             szArr[i] = rz;
             double depthBright = 0.4 + 0.6 * (rz + 12.0) / 24.0;
-            saArr[i] = clamp(p.brightness * depthBright * (0.7 + 0.5 * burst), 0.05, 1.0);
-            ssArr[i] = PARTICLE_DRAW_SIZE * factor * (0.7 + 0.3 * p.brightness) * (1.0 + burst * 0.5);
+            saArr[i] = clamp(p.brightness * depthBright * (0.7 + 0.4 * morph), 0.05, 1.0);
+            ssArr[i] = PARTICLE_DRAW_SIZE * factor * (0.7 + 0.3 * p.brightness) * (1.0 + morph * 0.3);
         }
         Arrays.sort(order, (a, b) -> Double.compare(szArr[a], szArr[b]));
 
@@ -330,7 +338,7 @@ public class LobbyController {
         }
         GameInfo gi = GAME_INFO.get(currentIndex);
         statusLabel.setText(gi.icon() + "  " + gi.name() + " — " + gi.desc()
-                + "    ·    左右挥手切换 · 张手能量爆发 · 握拳确认进入");
+                + "    ·    挥手切换 · 张手散 · 握拳聚 · ✌️开始");
     }
 
     // ===== 渲染 =====
