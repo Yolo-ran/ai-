@@ -37,6 +37,7 @@
                     <children>
                         <Label styleClass="hint-badge" text="SWIPE_LEFT" />
                         <Label styleClass="hint-badge" text="SWIPE_RIGHT" />
+                        <Label styleClass="hint-badge" text="张手爆发" />
                         <Label styleClass="hint-badge" text="握拳确认" />
                     </children>
                 </HBox>
