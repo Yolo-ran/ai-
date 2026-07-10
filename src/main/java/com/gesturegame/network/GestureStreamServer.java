@@ -3,6 +3,7 @@ package com.gesturegame.network;
 import com.gesturegame.common.GestureData;
 import com.gesturegame.common.GestureType;
 import com.gesturegame.engine.AppStateManager;
+import com.gesturegame.ui.GameRenderer;
 import com.gesturegame.ui.LobbyController;
 import com.gesturegame.ui.LoginController;
 import org.java_websocket.WebSocket;
@@ -16,6 +17,10 @@ import java.util.logging.Logger;
 
 /**
  * 高帧率串流服务器，负责同时分发手势命令和摄像头图像。
+ *
+ * <p>对 GAME 状态：仅缓存最新 {@link GestureData} 供游戏循环通过
+ * {@link #getLatestGesture()} 读取，摄像头画面不再分发（游戏全屏渲染）。
+ * 仍会派发 {@code BACK} 命令到 {@link GameRenderer} 以便玩家张手返回大厅。
  */
 public class GestureStreamServer extends WebSocketServer {
 
@@ -27,15 +32,19 @@ public class GestureStreamServer extends WebSocketServer {
 
     private final LoginController loginController;
     private final LobbyController lobbyController;
+    private final GameRenderer gameRenderer;
+    private volatile GestureData latestGestureData = new GestureData();
     private GestureType lastHoldGesture = GestureType.NONE;
     private long holdStartTime;
     private long lastSwipeCommandTime;
     private long lastStaticCommandTime;
 
-    public GestureStreamServer(int port, LoginController loginController, LobbyController lobbyController) {
+    public GestureStreamServer(int port, LoginController loginController,
+                               LobbyController lobbyController, GameRenderer gameRenderer) {
         super(new InetSocketAddress(port));
         this.loginController = loginController;
         this.lobbyController = lobbyController;
+        this.gameRenderer = gameRenderer;
     }
 
     @Override
@@ -54,6 +63,7 @@ public class GestureStreamServer extends WebSocketServer {
 
             if (containsGestureData(json)) {
                 GestureData gestureData = GestureData.fromJson(message);
+                this.latestGestureData = gestureData;
                 GestureCommand command = mapGestureDataToCommand(gestureData);
                 dispatchGesture(state, gestureData.getGesture().name(), command, gestureData.getConfidence());
                 return;
@@ -83,11 +93,12 @@ public class GestureStreamServer extends WebSocketServer {
             return;
         }
 
-        if ("LOGIN".equals(state) && loginController != null) {
+        if (AppStateManager.STATE_LOGIN.equals(state) && loginController != null) {
             loginController.updateCameraStream(base64Image);
-        } else if ("LOBBY".equals(state) && lobbyController != null) {
+        } else if (AppStateManager.STATE_LOBBY.equals(state) && lobbyController != null) {
             lobbyController.updateCameraStream(base64Image);
         }
+        // GAME 状态：游戏全屏渲染，不分发摄像头画面
     }
 
     private void dispatchGesture(String state, String rawGesture, GestureCommand command, double confidence) {
@@ -96,11 +107,21 @@ public class GestureStreamServer extends WebSocketServer {
                 + ", confidence=" + confidence
                 + ", state=" + state);
 
-        if ("LOGIN".equals(state) && loginController != null) {
+        if (AppStateManager.STATE_LOGIN.equals(state) && loginController != null) {
             loginController.handleAgentCommand(command, confidence, "UNKNOWN");
-        } else if ("LOBBY".equals(state) && lobbyController != null) {
+        } else if (AppStateManager.STATE_LOBBY.equals(state) && lobbyController != null) {
             lobbyController.handleAgentCommand(command, confidence, "UNKNOWN");
+        } else if (AppStateManager.STATE_GAME.equals(state) && gameRenderer != null) {
+            gameRenderer.handleAgentCommand(command, confidence, "UNKNOWN");
         }
+    }
+
+    /**
+     * 返回最近一帧手势数据，供 GAME 场景的游戏循环读取。
+     * 线程安全：字段为 volatile，返回的 GestureData 在 fromJson 后不再被修改。
+     */
+    public GestureData getLatestGesture() {
+        return latestGestureData;
     }
 
     private GestureCommand mapGestureDataToCommand(GestureData gestureData) {
