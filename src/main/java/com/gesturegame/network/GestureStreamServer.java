@@ -1,5 +1,7 @@
 package com.gesturegame.network;
 
+import com.gesturegame.common.GestureData;
+import com.gesturegame.common.GestureType;
 import com.gesturegame.engine.AppStateManager;
 import com.gesturegame.ui.LobbyController;
 import com.gesturegame.ui.LoginController;
@@ -18,9 +20,17 @@ import java.util.logging.Logger;
 public class GestureStreamServer extends WebSocketServer {
 
     private static final Logger LOGGER = Logger.getLogger(GestureStreamServer.class.getName());
+    private static final double SWIPE_VELOCITY_THRESHOLD = 0.035;
+    private static final long SWIPE_COOLDOWN_MS = 260L;
+    private static final long HOLD_CONFIRM_MS = 1000L;
+    private static final long COMMAND_COOLDOWN_MS = 450L;
 
     private final LoginController loginController;
     private final LobbyController lobbyController;
+    private GestureType lastHoldGesture = GestureType.NONE;
+    private long holdStartTime;
+    private long lastSwipeCommandTime;
+    private long lastStaticCommandTime;
 
     public GestureStreamServer(int port, LoginController loginController, LobbyController lobbyController) {
         super(new InetSocketAddress(port));
@@ -37,18 +47,35 @@ public class GestureStreamServer extends WebSocketServer {
     public void onMessage(WebSocket conn, String message) {
         try {
             JSONObject json = new JSONObject(message);
-            String rawGesture = json.optString("gesture", "IDLE");
-            double confidence = json.optDouble("confidence", 0.0);
             String base64Image = json.optString("image_data", "");
-
-            GestureCommand command = GestureCommandResolver.resolve(rawGesture);
             String state = AppStateManager.getInstance().getCurrentState();
 
             dispatchCameraFrame(state, base64Image);
+
+            if (containsGestureData(json)) {
+                GestureData gestureData = GestureData.fromJson(message);
+                GestureCommand command = mapGestureDataToCommand(gestureData);
+                dispatchGesture(state, gestureData.getGesture().name(), command, gestureData.getConfidence());
+                return;
+            }
+
+            String rawGesture = json.optString("gesture", "IDLE");
+            double confidence = json.optDouble("confidence", 0.0);
+            GestureCommand command = GestureCommandResolver.resolve(rawGesture);
             dispatchGesture(state, rawGesture, command, confidence);
         } catch (Exception ex) {
             LOGGER.log(Level.WARNING, "串流消息解析失败: " + message, ex);
         }
+    }
+
+    private boolean containsGestureData(JSONObject json) {
+        return json.has("handX")
+                || json.has("handY")
+                || json.has("prevHandX")
+                || json.has("prevHandY")
+                || json.has("velocityX")
+                || json.has("velocityY")
+                || json.has("handDetected");
     }
 
     private void dispatchCameraFrame(String state, String base64Image) {
@@ -74,6 +101,52 @@ public class GestureStreamServer extends WebSocketServer {
         } else if ("LOBBY".equals(state) && lobbyController != null) {
             lobbyController.handleAgentCommand(command, confidence, "UNKNOWN");
         }
+    }
+
+    private GestureCommand mapGestureDataToCommand(GestureData gestureData) {
+        if (!gestureData.isHandDetected()) {
+            resetHoldState();
+            return GestureCommand.NONE;
+        }
+
+        long now = System.currentTimeMillis();
+        if (Math.abs(gestureData.getVelocityX()) >= SWIPE_VELOCITY_THRESHOLD
+                && Math.abs(gestureData.getVelocityX()) > Math.abs(gestureData.getVelocityY())) {
+            resetHoldState();
+            if (now - lastSwipeCommandTime < SWIPE_COOLDOWN_MS) {
+                return GestureCommand.NONE;
+            }
+            lastSwipeCommandTime = now;
+            return gestureData.getVelocityX() < 0 ? GestureCommand.SWIPE_LEFT : GestureCommand.SWIPE_RIGHT;
+        }
+
+        GestureType gestureType = gestureData.getGesture();
+        if (gestureType != GestureType.FIST && gestureType != GestureType.OPEN) {
+            resetHoldState();
+            return GestureCommand.NONE;
+        }
+
+        if (gestureType != lastHoldGesture) {
+            lastHoldGesture = gestureType;
+            holdStartTime = now;
+            return GestureCommand.NONE;
+        }
+
+        if (now - holdStartTime < HOLD_CONFIRM_MS) {
+            return GestureCommand.NONE;
+        }
+        if (now - lastStaticCommandTime < COMMAND_COOLDOWN_MS) {
+            return GestureCommand.NONE;
+        }
+
+        lastStaticCommandTime = now;
+        holdStartTime = now;
+        return gestureType == GestureType.FIST ? GestureCommand.CONFIRM : GestureCommand.BACK;
+    }
+
+    private void resetHoldState() {
+        lastHoldGesture = GestureType.NONE;
+        holdStartTime = 0L;
     }
 
     @Override

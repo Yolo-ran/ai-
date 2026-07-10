@@ -34,6 +34,7 @@ public class MainApp extends Application {
 
     private static final Logger LOGGER = Logger.getLogger(MainApp.class.getName());
     private static final int SERVER_PORT = 8765;
+    private static final boolean ENABLE_LOCAL_CAMERA_FALLBACK = false;
     private static final int CAMERA_REFRESH_MS = 33;
     private static final double SWIPE_VELOCITY_THRESHOLD = 24.0;
     private static final double SWIPE_DISTANCE_THRESHOLD = 0.10;
@@ -83,7 +84,11 @@ public class MainApp extends Application {
         appStateManager.switchState("LOGIN");
         primaryStage.show();
 
-        startLocalCameraPreview(loginController, lobbyController);
+        if (ENABLE_LOCAL_CAMERA_FALLBACK) {
+            startLocalCameraPreview(loginController, lobbyController);
+        } else {
+            LOGGER.info("当前以混合模式启动：停用 Java 本地摄像头链路，等待 Python 端通过 WebSocket 推送手势数据");
+        }
         gestureStreamServer = new GestureStreamServer(SERVER_PORT, loginController, lobbyController);
         gestureStreamServer.start();
         LOGGER.info(() -> "手势图像串流服务已启动，端口: " + SERVER_PORT);
