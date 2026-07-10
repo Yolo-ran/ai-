@@ -3,10 +3,14 @@ import base64
 import json
 import logging
 import time
+import urllib.request
+from pathlib import Path
 
 import cv2
 import mediapipe as mp
 import websockets
+from mediapipe.tasks import python as mp_python
+from mediapipe.tasks.python import vision as mp_vision
 
 
 SERVER_URL = "ws://127.0.0.1:8765"
@@ -21,14 +25,25 @@ SEND_IMAGE_STREAM = True
 IMAGE_JPEG_QUALITY = 70
 PRINT_PAYLOAD_SAMPLE = True
 PAYLOAD_LOG_INTERVAL_SECONDS = 1.0
+MODEL_URL = (
+    "https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
+    "hand_landmarker/float16/latest/hand_landmarker.task"
+)
+MODEL_PATH = Path(__file__).resolve().parent / "models" / "hand_landmarker.task"
 
 
 logging.basicConfig(level=logging.INFO, format="[Python] %(message)s")
 LOGGER = logging.getLogger("gesture_server")
 
-mp_hands = mp.solutions.hands
-mp_draw = mp.solutions.drawing_utils
-mp_styles = mp.solutions.drawing_styles
+MP_IMAGE = mp.Image
+MP_IMAGE_FORMAT = mp.ImageFormat
+BASE_OPTIONS = mp_python.BaseOptions
+HAND_LANDMARKER = mp_vision.HandLandmarker
+HAND_LANDMARKER_OPTIONS = mp_vision.HandLandmarkerOptions
+RUNNING_MODE = mp_vision.RunningMode
+MP_DRAW = mp_vision.drawing_utils
+MP_STYLES = mp_vision.drawing_styles
+HAND_CONNECTIONS = mp_vision.HandLandmarksConnections.HAND_CONNECTIONS
 
 
 class GestureState:
@@ -96,7 +111,7 @@ def clamp(value: float) -> float:
 
 
 def calculate_hand_center(hand_landmarks):
-    points = hand_landmarks.landmark
+    points = hand_landmarks
     sample_indices = [0, 5, 9, 13, 17]
     center_x = sum(points[index].x for index in sample_indices) / len(sample_indices)
     center_y = sum(points[index].y for index in sample_indices) / len(sample_indices)
@@ -116,7 +131,7 @@ def is_thumb_extended(points, handedness_label: str) -> bool:
 
 
 def classify_gesture(hand_landmarks, handedness_label: str):
-    points = hand_landmarks.landmark
+    points = hand_landmarks
 
     thumb_extended = is_thumb_extended(points, handedness_label)
     index_extended = is_finger_extended(points, 8, 6)
@@ -148,12 +163,12 @@ def classify_gesture(hand_landmarks, handedness_label: str):
 
 def draw_preview(frame, hand_landmarks, payload):
     if hand_landmarks is not None:
-        mp_draw.draw_landmarks(
+        MP_DRAW.draw_landmarks(
             frame,
             hand_landmarks,
-            mp_hands.HAND_CONNECTIONS,
-            mp_styles.get_default_hand_landmarks_style(),
-            mp_styles.get_default_hand_connections_style(),
+            HAND_CONNECTIONS,
+            MP_STYLES.get_default_hand_landmarks_style(),
+            MP_STYLES.get_default_hand_connections_style(),
         )
 
     cv2.putText(
@@ -190,25 +205,80 @@ def encode_image_data(frame) -> str:
     return f"data:image/jpeg;base64,{base64_bytes}"
 
 
+def ensure_hand_landmarker_model() -> Path:
+    if MODEL_PATH.exists():
+        return MODEL_PATH
+
+    MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+    LOGGER.info("正在下载最新版 MediaPipe Hand Landmarker 模型...")
+    urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
+    LOGGER.info("模型下载完成: %s", MODEL_PATH)
+    return MODEL_PATH
+
+
+def create_landmarker():
+    model_path = ensure_hand_landmarker_model()
+    options = HAND_LANDMARKER_OPTIONS(
+        base_options=BASE_OPTIONS(model_asset_path=str(model_path)),
+        running_mode=RUNNING_MODE.VIDEO,
+        num_hands=1,
+        min_hand_detection_confidence=0.6,
+        min_hand_presence_confidence=0.6,
+        min_tracking_confidence=0.6,
+    )
+    return HAND_LANDMARKER.create_from_options(options)
+
+
+def open_camera():
+    backend_candidates = [
+        ("CAP_DSHOW", cv2.CAP_DSHOW),
+        ("CAP_MSMF", cv2.CAP_MSMF),
+        ("CAP_ANY", cv2.CAP_ANY),
+    ]
+
+    for backend_name, backend in backend_candidates:
+        cap = cv2.VideoCapture(CAMERA_INDEX, backend)
+        if not cap.isOpened():
+            cap.release()
+            continue
+
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+        ok, _ = cap.read()
+        if ok:
+            LOGGER.info("摄像头已打开，后端: %s，索引: %s", backend_name, CAMERA_INDEX)
+            return cap
+
+        LOGGER.warning("摄像头后端 %s 可初始化但无法读取画面，尝试下一个后端", backend_name)
+        cap.release()
+
+    raise RuntimeError(
+        "默认摄像头打开失败。请确认没有被 Java、微信、QQ、浏览器等程序占用，"
+        "或把 CAMERA_INDEX 改成 1 再试。"
+    )
+
+
+def extract_primary_hand(result):
+    if not result or not result.hand_landmarks:
+        return None
+
+    handedness_label = "Right"
+    if result.handedness and result.handedness[0]:
+        handedness_label = result.handedness[0][0].category_name or "Right"
+
+    return result.hand_landmarks[0], handedness_label
+
+
 async def stream_gestures():
     LOGGER.info("WebSocket 服务已启动，等待 Java 连接...")
 
-    cap = cv2.VideoCapture(CAMERA_INDEX)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
-
-    if not cap.isOpened():
-        raise RuntimeError("默认摄像头打开失败")
-
+    cap = open_camera()
     state = GestureState()
 
     try:
-        with mp_hands.Hands(
-            model_complexity=0,
-            max_num_hands=1,
-            min_detection_confidence=0.6,
-            min_tracking_confidence=0.6,
-        ) as hands:
+        with create_landmarker() as hand_landmarker:
             while True:
                 try:
                     async with websockets.connect(SERVER_URL, max_size=None) as websocket:
@@ -216,6 +286,7 @@ async def stream_gestures():
 
                         while True:
                             loop_start = time.perf_counter()
+                            now = time.time()
                             ok, frame = cap.read()
                             if not ok:
                                 await asyncio.sleep(0.02)
@@ -223,14 +294,12 @@ async def stream_gestures():
 
                             frame = cv2.flip(frame, 1)
                             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                            result = hands.process(rgb)
-
-                            first_hand = None
-                            if result.multi_hand_landmarks and result.multi_handedness:
-                                first_hand = (
-                                    result.multi_hand_landmarks[0],
-                                    result.multi_handedness[0].classification[0].label,
-                                )
+                            mp_image = MP_IMAGE(image_format=MP_IMAGE_FORMAT.SRGB, data=rgb)
+                            result = hand_landmarker.detect_for_video(
+                                mp_image,
+                                int(now * 1000),
+                            )
+                            first_hand = extract_primary_hand(result)
 
                             payload = state.build_payload(first_hand)
                             output_frame = frame

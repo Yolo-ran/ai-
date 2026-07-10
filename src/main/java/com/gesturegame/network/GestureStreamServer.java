@@ -29,6 +29,8 @@ public class GestureStreamServer extends WebSocketServer {
     private static final long SWIPE_COOLDOWN_MS = 260L;
     private static final long HOLD_CONFIRM_MS = 1000L;
     private static final long COMMAND_COOLDOWN_MS = 450L;
+    private static final long CAMERA_FRAME_INTERVAL_MS = 80L;
+    private static final long IDLE_DISPATCH_INTERVAL_MS = 200L;
 
     private final LoginController loginController;
     private final LobbyController lobbyController;
@@ -38,6 +40,8 @@ public class GestureStreamServer extends WebSocketServer {
     private long holdStartTime;
     private long lastSwipeCommandTime;
     private long lastStaticCommandTime;
+    private long lastCameraFrameTime;
+    private long lastIdleDispatchTime;
 
     public GestureStreamServer(int port, LoginController loginController,
                                LobbyController lobbyController, GameRenderer gameRenderer) {
@@ -93,6 +97,12 @@ public class GestureStreamServer extends WebSocketServer {
             return;
         }
 
+        long now = System.currentTimeMillis();
+        if (now - lastCameraFrameTime < CAMERA_FRAME_INTERVAL_MS) {
+            return;
+        }
+        lastCameraFrameTime = now;
+
         if (AppStateManager.STATE_LOGIN.equals(state) && loginController != null) {
             loginController.updateCameraStream(base64Image);
         } else if (AppStateManager.STATE_LOBBY.equals(state) && lobbyController != null) {
@@ -102,6 +112,14 @@ public class GestureStreamServer extends WebSocketServer {
     }
 
     private void dispatchGesture(String state, String rawGesture, GestureCommand command, double confidence) {
+        long now = System.currentTimeMillis();
+        if (command == GestureCommand.NONE && now - lastIdleDispatchTime < IDLE_DISPATCH_INTERVAL_MS) {
+            return;
+        }
+        if (command == GestureCommand.NONE) {
+            lastIdleDispatchTime = now;
+        }
+
         LOGGER.info(() -> "收到串流指令: raw=" + rawGesture
                 + ", mapped=" + command
                 + ", confidence=" + confidence

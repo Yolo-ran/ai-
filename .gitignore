@@ -7,3 +7,7 @@
 /.settings/
 /.DS_Store
 Thumbs.db
+/.venv/
+**/__pycache__/
+*.log
+/python/models/
