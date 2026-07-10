@@ -36,8 +36,11 @@ public class PopBubbles implements GameInterface {
     private int score;
     private boolean over;
 
-    // TODO: 定义泡泡列表 List<Bubble>
-    // TODO: 定义帧计数器
+    private List<Bubble> bubbles;
+    private int frameCount;
+    private int nextSpawnFrame = 0;
+    private double handCanvasX, handCanvasY;
+    private boolean handDetected;
 
     @Override
     public String getName() {
@@ -60,39 +63,86 @@ public class PopBubbles implements GameInterface {
         this.canvasHeight = height;
         this.score = 0;
         this.over = false;
-        // TODO: 初始化泡泡列表
+        this.bubbles = new ArrayList<>();
+        this.frameCount = 0;
+        this.nextSpawnFrame = 0;
+        this.handDetected = false;
     }
 
     @Override
     public void update(GestureData gesture) {
         if (over) return;
 
-        // TODO:
         // 1. 每隔60~90帧生成新泡泡
-        //    - 随机位置：x在画布内，y在画布内
-        //    - 随机半径：30~60
-        //    - 随机颜色：红/蓝/绿/紫/橙/粉
-        //
-        // 2. 泡泡慢慢变大：bubble.radius += 0.15
-        //
-        // 3. 如果检测到手，进行碰撞检测：
-        //    double handCanvasX = gesture.getHandX() * canvasWidth;
-        //    double handCanvasY = gesture.getHandY() * canvasHeight;
-        //    for each bubble:
-        //      distance = sqrt((handX-bubble.x)² + (handY-bubble.y)²)
-        //      if distance < bubble.radius → 戳破！
-        //
-        // 4. 戳破效果：不是立即删除，而是标记为"正在爆"
-        //    泡泡快速膨胀 + 透明度降低，持续15帧后移除
-        //
-        // 5. 未被戳破的泡泡在300帧后自动消失 → score -= 5
-        //
-        // 6. 加分：
-        //    - 小泡泡（radius < 40）：+20分
-        //    - 中泡泡（40~55）：+10分
-        //    - 大泡泡（> 55）：+5分
-        //
-        // 7. 最多15个泡泡同时存在，超出不新增
+        if (nextSpawnFrame <= 0) {
+            if (bubbles.size() < 15) {
+                double bx = 50 + RANDOM.nextDouble() * (canvasWidth - 100);
+                double by = 50 + RANDOM.nextDouble() * (canvasHeight - 100);
+                double radius = 30 + RANDOM.nextDouble() * 30;
+                Color[] colors = {Color.RED, Color.BLUE, Color.GREEN,
+                        Color.PURPLE, Color.ORANGE, Color.DEEPPINK};
+                Color color = colors[RANDOM.nextInt(colors.length)];
+                bubbles.add(new Bubble(bx, by, radius, color));
+            }
+            nextSpawnFrame = 60 + RANDOM.nextInt(31);
+        }
+        nextSpawnFrame--;
+
+        // 更新手坐标（归一化 → 画布像素）
+        if (gesture.isHandDetected()) {
+            handDetected = true;
+            handCanvasX = gesture.getHandX() * canvasWidth;
+            handCanvasY = gesture.getHandY() * canvasHeight;
+        } else {
+            handDetected = false;
+        }
+
+        List<Bubble> toRemove = new ArrayList<>();
+        for (Bubble b : bubbles) {
+            if (b.popping) {
+                // 4. 戳破动画：膨胀 + 透明度降低，持续15帧后移除
+                b.popFrame++;
+                b.radius += 2.0;
+                b.alpha = Math.max(0.0, b.alpha - 0.05);
+                if (b.popFrame >= 15) {
+                    toRemove.add(b);
+                }
+                continue;
+            }
+
+            // 2. 泡泡慢慢变大
+            b.radius += 0.15;
+            b.age++;
+
+            // 5. 300帧后自动消失 → 扣分
+            if (b.age >= 300) {
+                toRemove.add(b);
+                score = Math.max(0, score - 5);
+                continue;
+            }
+
+            // 3. 碰撞检测：手到泡泡圆心的距离 < 半径 → 戳破
+            if (handDetected) {
+                double dx = handCanvasX - b.x;
+                double dy = handCanvasY - b.y;
+                double dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < b.radius) {
+                    b.popping = true;
+                    b.popFrame = 0;
+                    // 6. 按大小加分
+                    if (b.radius < 40) {
+                        score += 20;
+                    } else if (b.radius <= 55) {
+                        score += 10;
+                    } else {
+                        score += 5;
+                    }
+                }
+            }
+        }
+        bubbles.removeAll(toRemove);
+
+        frameCount++;
     }
 
     @Override
@@ -101,27 +151,36 @@ public class PopBubbles implements GameInterface {
         gc.setFill(Color.web("#0f172a"));
         gc.fillRect(0, 0, canvasWidth, canvasHeight);
 
-        // TODO:
-        // 1. 画所有泡泡：
-        //    - 正在爆的泡泡：半径较大、透明度低
-        //    - 正常泡泡：半透明彩色圆形
-        //    - 画高光效果：白色小圆在泡泡左上方
-        //    gc.setFill(bubble.color.deriveColor(0, 1, 1, bubble.alpha));
-        //    gc.fillOval(bubble.x - r, bubble.y - r, r*2, r*2);
-        //
-        // 2. 如果检测到手，画十字准星：
-        //    double handX = gesture数据中的坐标
-        //    gc.setStroke(Color.LIME);
-        //    gc.strokeLine(handX-15, handY, handX+15, handY);
-        //    gc.strokeLine(handX, handY-15, handX, handY+15);
-        //
-        // 3. 画HUD：左上角分数
-        //    gc.setFill(Color.WHITE);
-        //    gc.fillText("分数: " + score, 20, 30);
+        // 1. 画所有泡泡
+        for (Bubble b : bubbles) {
+            double r = b.radius;
+            double alpha = Math.max(0.0, b.alpha);
+            gc.setFill(b.color.deriveColor(0, 1, 1, alpha));
+            gc.fillOval(b.x - r, b.y - r, r * 2, r * 2);
+
+            // 高光效果：白色小圆在泡泡左上方
+            if (!b.popping || b.popFrame < 8) {
+                gc.setFill(Color.WHITE.deriveColor(0, 1, 1, Math.min(1.0, alpha + 0.2)));
+                double hr = r * 0.25;
+                gc.fillOval(b.x - r * 0.35 - hr, b.y - r * 0.35 - hr, hr * 2, hr * 2);
+            }
+        }
+
+        // 2. 十字准星
+        if (handDetected && !over) {
+            gc.setStroke(Color.LIME);
+            gc.setLineWidth(2);
+            gc.strokeLine(handCanvasX - 15, handCanvasY, handCanvasX + 15, handCanvasY);
+            gc.strokeLine(handCanvasX, handCanvasY - 15, handCanvasX, handCanvasY + 15);
+        }
+
+        // 3. HUD
+        gc.setFill(Color.WHITE);
+        gc.fillText("分数: " + score, 20, 30);
 
         if (over) {
             gc.setFill(Color.WHITE);
-            gc.fillText("游戏结束！得分: " + score, canvasWidth/2 - 100, canvasHeight/2);
+            gc.fillText("游戏结束！得分: " + score, canvasWidth / 2.0 - 100, canvasHeight / 2.0);
         }
     }
 
@@ -140,13 +199,22 @@ public class PopBubbles implements GameInterface {
         init(canvasWidth, canvasHeight);
     }
 
-    // TODO: 定义 Bubble 内部类
-    // private static class Bubble {
-    //     double x, y, radius;
-    //     Color color;
-    //     double alpha;     // 0.0~1.0 透明度
-    //     boolean popping;   // 正在爆
-    //     int popFrame;      // 爆的动画帧计数
-    //     int age;           // 存活帧数
-    // }
+    /**
+     * 泡泡内部类。
+     */
+    private static class Bubble {
+        double x, y, radius;
+        Color color;
+        double alpha = 0.7;
+        boolean popping = false;
+        int popFrame = 0;
+        int age = 0;
+
+        Bubble(double x, double y, double radius, Color color) {
+            this.x = x;
+            this.y = y;
+            this.radius = radius;
+            this.color = color;
+        }
+    }
 }

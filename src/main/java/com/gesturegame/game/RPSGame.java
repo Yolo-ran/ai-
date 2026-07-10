@@ -6,6 +6,8 @@ import com.gesturegame.common.GestureType;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.paint.Color;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Random;
 
 /**
@@ -44,12 +46,14 @@ public class RPSGame implements GameInterface {
     private int roundCount;
     private boolean over;
 
-    // TODO: 定义当前状态 RPSState
-    // TODO: 定义倒计时变量（倒计时帧数、目标帧数）
-    // TODO: 定义玩家当前出拳 GestureType
-    // TODO: 定义电脑当前出拳（0=石头, 1=剪刀, 2=布）
-    // TODO: 定义本局结果（"你赢了" / "你输了" / "平局"）
-    // TODO: 定义游戏日志（最近3局的结果记录）
+    private RPSState state;
+    private int countdownFrames;
+    private int resultFrames;
+    private GestureType playerGesture;
+    private int computerChoice;
+    private String roundResult;
+    private List<String> gameLog;
+    private boolean beepFrame;
 
     @Override
     public String getName() {
@@ -74,40 +78,96 @@ public class RPSGame implements GameInterface {
         this.computerScore = 0;
         this.roundCount = 0;
         this.over = false;
-        // TODO: 初始化状态为 WAITING
-        // TODO: 初始化倒计时
+        this.state = RPSState.WAITING;
+        this.countdownFrames = 0;
+        this.resultFrames = 0;
+        this.playerGesture = GestureType.NONE;
+        this.computerChoice = 0;
+        this.roundResult = "";
+        this.gameLog = new ArrayList<>();
+        this.beepFrame = false;
     }
 
     @Override
     public void update(GestureData gesture) {
         if (over) return;
 
-        // TODO: 实现状态机
-        //
-        // WAITING:
-        //   - 如果检测到手（gesture.isHandDetected()）→ 进入 COUNTDOWN
-        //   - 倒计时设置90帧（约1.5秒）
-        //
-        // COUNTDOWN:
-        //   - 每秒显示倒计时数字（3→2→1）
-        //   - 数字变化时播放"嘀"的效果（改变背景色一帧）
-        //   - 倒计时到45帧时电脑随机出拳（0石头/1剪刀/2布）
-        //   - 倒计时到0 → 进入 JUDGE
-        //
-        // JUDGE:
-        //   - 读取玩家手势：gesture.getGesture()
-        //   - FIST→石头, OPEN→布, PEACE→剪刀
-        //   - NONE→本轮无效，回到 WAITING
-        //   - 判定胜负：
-        //       if (玩家 == 电脑) → 平局
-        //       else if ((玩家==0 && 电脑==1) || (玩家==1 && 电脑==2) || (玩家==2 && 电脑==0)) → 玩家赢
-        //       else → 电脑赢
-        //   - 更新比分，roundCount++
-        //   - 进入 RESULT，停留60帧
-        //
-        // RESULT:
-        //   - 60帧后 → 如果 roundCount>=5 或有人3胜 → over=true
-        //   - 否则 → 回到 WAITING
+        // === 状态机 ===
+
+        if (state == RPSState.WAITING) {
+            // 检测到手 → 进入倒计时
+            if (gesture.isHandDetected()) {
+                state = RPSState.COUNTDOWN;
+                countdownFrames = 90;
+                beepFrame = true;
+            }
+        } else if (state == RPSState.COUNTDOWN) {
+            // 数字变化时触发"嘀"效果
+            if (countdownFrames == 60 || countdownFrames == 30) {
+                beepFrame = true;
+            }
+            // 45帧时电脑随机出拳
+            if (countdownFrames == 45) {
+                computerChoice = RANDOM.nextInt(3);
+            }
+            countdownFrames--;
+            if (countdownFrames <= 0) {
+                countdownFrames = 0;
+                state = RPSState.JUDGE;
+            }
+        } else if (state == RPSState.JUDGE) {
+            // 读取玩家手势并映射
+            GestureType g = gesture.getGesture();
+            int playerChoice = -1;
+            if (g == GestureType.FIST) {
+                playerChoice = 0;      // 石头
+            } else if (g == GestureType.PEACE) {
+                playerChoice = 1;      // 剪刀
+            } else if (g == GestureType.OPEN) {
+                playerChoice = 2;      // 布
+            }
+
+            if (playerChoice == -1) {
+                // NONE → 本轮无效，回到 WAITING
+                state = RPSState.WAITING;
+            } else {
+                playerGesture = g;
+                // 如果电脑还没出拳（极端情况），补一个
+                if (computerChoice == -1) {
+                    computerChoice = RANDOM.nextInt(3);
+                }
+                // 判定胜负
+                if (playerChoice == computerChoice) {
+                    roundResult = "平局";
+                } else if ((playerChoice == 0 && computerChoice == 1)
+                        || (playerChoice == 1 && computerChoice == 2)
+                        || (playerChoice == 2 && computerChoice == 0)) {
+                    roundResult = "你赢了";
+                    playerScore++;
+                } else {
+                    roundResult = "你输了";
+                    computerScore++;
+                }
+                roundCount++;
+                // 记录日志（最多3条）
+                gameLog.add(roundResult);
+                if (gameLog.size() > 3) {
+                    gameLog.remove(0);
+                }
+                state = RPSState.RESULT;
+                resultFrames = 60;
+            }
+        } else if (state == RPSState.RESULT) {
+            resultFrames--;
+            if (resultFrames <= 0) {
+                // 五局三胜：5局或有人达到3胜
+                if (roundCount >= 5 || playerScore >= 3 || computerScore >= 3) {
+                    over = true;
+                } else {
+                    state = RPSState.WAITING;
+                }
+            }
+        }
     }
 
     @Override
@@ -116,37 +176,103 @@ public class RPSGame implements GameInterface {
         gc.setFill(Color.web("#0f172a"));
         gc.fillRect(0, 0, canvasWidth, canvasHeight);
 
-        // TODO: 根据当前状态渲染
-        //
-        // 通用元素（所有状态都画）：
-        //   - 顶部标题："石头剪刀布 ✂️"
-        //   - 底部比分：玩家 vs 电脑（五局三胜进度条）
-        //
-        // WAITING 状态：
-        //   - 屏幕中央："请出手势"
-        //   - 提示："握拳=石头 | 张开=布 | 剪刀手=剪刀"
-        //
-        // COUNTDOWN 状态：
-        //   - 屏幕中央大字：3 → 2 → 1
-        //   - 根据帧数变化
-        //
-        // JUDGE 状态：
-        //   - 左半屏：玩家的手势（大emoji）
-        //       石头✊ / 布✋ / 剪刀✌️
-        //   - 右半屏：电脑的手势（大emoji）
-        //   - VS 文字中间
-        //
-        // RESULT 状态：
-        //   - 大字结果："你赢了！" / "你输了" / "平局"
-        //   - 颜色：绿/红/黄
+        // === 通用元素 ===
+
+        // "嘀"效果：短暂闪烁背景
+        Color bgColor = Color.web("#0f172a");
+        if (beepFrame) {
+            bgColor = Color.web("#1e3a5f");
+            beepFrame = false;
+        }
+        gc.setFill(bgColor);
+        gc.fillRect(0, 0, canvasWidth, canvasHeight);
+
+        // 顶部标题
+        gc.setFill(Color.WHITE);
+        gc.setFont(javafx.scene.text.Font.font(20));
+        gc.fillText("石头剪刀布 ✂️", canvasWidth / 2.0 - 80, 40);
+
+        // 底部比分（五局三胜进度条）
+        double barY = canvasHeight - 70;
+        gc.setFill(Color.WHITE);
+        gc.setFont(javafx.scene.text.Font.font(14));
+        gc.fillText("你", canvasWidth / 2.0 - 120, barY - 10);
+        gc.fillText("电脑", canvasWidth / 2.0 + 90, barY - 10);
+        for (int i = 0; i < 3; i++) {
+            double cxP = canvasWidth / 2.0 - 100 + i * 20;
+            double cxC = canvasWidth / 2.0 + 80 + i * 20;
+            if (i < playerScore) {
+                gc.setFill(Color.LIME);
+                gc.fillOval(cxP, barY, 12, 12);
+            } else {
+                gc.setStroke(Color.GRAY);
+                gc.setLineWidth(2);
+                gc.strokeOval(cxP, barY, 12, 12);
+            }
+            if (i < computerScore) {
+                gc.setFill(Color.RED);
+                gc.fillOval(cxC, barY, 12, 12);
+            } else {
+                gc.setStroke(Color.GRAY);
+                gc.setLineWidth(2);
+                gc.strokeOval(cxC, barY, 12, 12);
+            }
+        }
+
+        // === 状态渲染 ===
+
+        if (state == RPSState.WAITING) {
+            gc.setFill(Color.WHITE);
+            gc.setFont(javafx.scene.text.Font.font(28));
+            gc.fillText("请出手势", canvasWidth / 2.0 - 70, canvasHeight / 2.0 - 20);
+            gc.setFill(Color.GRAY);
+            gc.setFont(javafx.scene.text.Font.font(14));
+            gc.fillText("握拳=石头 | 张开=布 | 剪刀手=剪刀",
+                    canvasWidth / 2.0 - 140, canvasHeight / 2.0 + 30);
+        } else if (state == RPSState.COUNTDOWN) {
+            int countdownNumber = (countdownFrames + 29) / 30;
+            gc.setFill(Color.WHITE);
+            gc.setFont(javafx.scene.text.Font.font(80));
+            gc.fillText(String.valueOf(countdownNumber),
+                    canvasWidth / 2.0 - 20, canvasHeight / 2.0 + 25);
+        } else if (state == RPSState.JUDGE) {
+            // 玩家手势 emoji
+            String playerEmoji = "❓";
+            if (playerGesture == GestureType.FIST) playerEmoji = "✊";
+            else if (playerGesture == GestureType.PEACE) playerEmoji = "✌️";
+            else if (playerGesture == GestureType.OPEN) playerEmoji = "✋";
+            // 电脑手势 emoji
+            String[] computerEmojis = {"✊", "✌️", "✋"};
+            String computerEmoji = computerEmojis[computerChoice % 3];
+
+            gc.setFill(Color.WHITE);
+            gc.setFont(javafx.scene.text.Font.font(60));
+            gc.fillText(playerEmoji, canvasWidth / 2.0 - 180, canvasHeight / 2.0 + 20);
+            gc.setFont(javafx.scene.text.Font.font(30));
+            gc.fillText("VS", canvasWidth / 2.0 - 25, canvasHeight / 2.0 + 10);
+            gc.setFont(javafx.scene.text.Font.font(60));
+            gc.fillText(computerEmoji, canvasWidth / 2.0 + 100, canvasHeight / 2.0 + 20);
+        } else if (state == RPSState.RESULT) {
+            Color resultColor;
+            if (roundResult.contains("赢")) {
+                resultColor = Color.LIME;
+            } else if (roundResult.equals("平局")) {
+                resultColor = Color.YELLOW;
+            } else {
+                resultColor = Color.RED;
+            }
+            gc.setFill(resultColor);
+            gc.setFont(javafx.scene.text.Font.font(40));
+            gc.fillText(roundResult, canvasWidth / 2.0 - 60, canvasHeight / 2.0 + 15);
+        }
 
         if (over) {
             String finalResult = playerScore > computerScore ? "你赢了！🏆" : "电脑赢了 🤖";
             gc.setFill(playerScore > computerScore ? Color.GOLD : Color.RED);
-            gc.fillText(finalResult, canvasWidth/2 - 80, canvasHeight/2);
+            gc.fillText(finalResult, canvasWidth / 2.0 - 80, canvasHeight / 2.0);
             gc.setFill(Color.WHITE);
             gc.fillText("最终比分 " + playerScore + ":" + computerScore + "  握拳重新开始",
-                    canvasWidth/2 - 140, canvasHeight/2 + 40);
+                    canvasWidth / 2.0 - 140, canvasHeight / 2.0 + 40);
         }
     }
 

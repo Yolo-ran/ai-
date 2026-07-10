@@ -37,9 +37,14 @@ public class CatchFruit implements GameInterface {
     private int lives;
     private boolean over;
 
-    // TODO: 定义水果列表 List<Fruit>
-    // TODO: 定义篮子相关变量（x, y, width, height）
-    // TODO: 定义帧计数器（用于控制生成频率和加速）
+    private List<Fruit> fruits;
+    private double basketX, basketY;
+    private static final double BASKET_WIDTH = 80;
+    private static final double BASKET_HEIGHT = 20;
+    private int frameCount;
+    private int spawnInterval = 30;
+    private double speedMultiplier = 1.0;
+    private boolean handDetected = false;
 
     @Override
     public String getName() {
@@ -63,35 +68,89 @@ public class CatchFruit implements GameInterface {
         this.score = 0;
         this.lives = 3;
         this.over = false;
-        // TODO: 初始化水果列表和篮子位置
+        this.fruits = new ArrayList<>();
+        this.basketX = canvasWidth / 2.0 - BASKET_WIDTH / 2;
+        this.basketY = canvasHeight - 60;
+        this.frameCount = 0;
+        this.spawnInterval = 30;
+        this.speedMultiplier = 1.0;
+        this.handDetected = false;
     }
 
     @Override
     public void update(GestureData gesture) {
         if (over) return;
 
-        // TODO:
+        // 每15秒（900帧）加速一次
+        if (frameCount > 0 && frameCount % 900 == 0) {
+            speedMultiplier += 0.3;
+            spawnInterval = Math.max(10, spawnInterval - 3);
+        }
+
         // 1. 每隔一段时间（约30帧）生成新水果
-        //    - 80%概率水果，20%概率炸弹
-        //    - 水果从顶部随机X位置生成，vy = 2~4
-        //    - 炸弹用不同颜色标记
-        //
-        // 2. 更新所有水果的Y坐标：fruit.y += fruit.vy
-        //
-        // 3. 篮子X = gesture.getHandX() * canvasWidth - 篮子宽度/2
-        //    如果没检测到手，篮子停在原位
-        //
-        // 4. 碰撞检测：
-        //    - 水果Y > 篮子Y 且 水果X在篮子范围内 → 接到！
-        //    - 水果Y > canvasHeight → 漏掉了，生命-1
-        //
-        // 5. 加分/扣命：
-        //    - 接到水果 +10分
-        //    - 接到炸弹 -20分，生命-1
-        //
-        // 6. 移除飞出屏幕的水果
-        //
-        // 7. 检查游戏结束：生命 <= 0
+        if (frameCount % spawnInterval == 0) {
+            double fx = 20 + RANDOM.nextDouble() * (canvasWidth - 60);
+            boolean isBomb = RANDOM.nextDouble() < 0.2;
+            double vy = (2 + RANDOM.nextDouble() * 2) * speedMultiplier;
+            Color color;
+            if (isBomb) {
+                color = Color.BLACK;
+            } else {
+                Color[] fruitColors = {
+                    Color.RED, Color.ORANGE, Color.YELLOW,
+                    Color.LIMEGREEN, Color.PURPLE, Color.DEEPPINK
+                };
+                color = fruitColors[RANDOM.nextInt(fruitColors.length)];
+            }
+            fruits.add(new Fruit(fx, -40, vy, color, isBomb));
+        }
+
+        // 2. 更新所有水果的Y坐标
+        for (Fruit f : fruits) {
+            f.y += f.vy;
+        }
+
+        // 3. 更新篮子位置（归一化坐标 → 像素）
+        if (gesture.isHandDetected()) {
+            handDetected = true;
+            basketX = gesture.getHandX() * canvasWidth - BASKET_WIDTH / 2;
+        } else {
+            handDetected = false;
+        }
+
+        // 4-6. 碰撞检测 + 加分扣命 + 移除
+        List<Fruit> toRemove = new ArrayList<>();
+        for (Fruit f : fruits) {
+            // 水果底部碰到篮子 → 接到
+            boolean caught = f.y + 40 >= basketY
+                    && f.y + 40 <= basketY + BASKET_HEIGHT + 10
+                    && f.x + 40 >= basketX
+                    && f.x <= basketX + BASKET_WIDTH;
+            if (caught) {
+                toRemove.add(f);
+                if (f.isBomb) {
+                    score = Math.max(0, score - 20);
+                    lives--;
+                } else {
+                    score += 10;
+                }
+            } else if (f.y > canvasHeight) {
+                // 飞出屏幕底部
+                toRemove.add(f);
+                if (!f.isBomb) {
+                    lives--;
+                }
+            }
+        }
+        fruits.removeAll(toRemove);
+
+        // 7. 检查游戏结束
+        if (lives <= 0) {
+            lives = 0;
+            over = true;
+        }
+
+        frameCount++;
     }
 
     @Override
@@ -100,20 +159,46 @@ public class CatchFruit implements GameInterface {
         gc.setFill(Color.web("#0f172a"));
         gc.fillRect(0, 0, canvasWidth, canvasHeight);
 
-        // TODO:
-        // 1. 画所有水果：gc.setFill(fruit.color); gc.fillOval(x, y, 40, 40);
-        //    水果上可以画个小叶子（绿色小三角）
-        // 2. 画炸弹：黑色圆形 + 红色引线
-        // 3. 画篮子：底部矩形，用 gc.fillRoundRect()
-        //    如果没检测到手，篮子用灰色；检测到用手用亮色
-        // 4. 画HUD：左上角生命（❤ x lives），右上角分数
-        //    gc.setFill(Color.WHITE);
-        //    gc.fillText("分数: " + score, canvasWidth - 120, 30);
-        //    gc.fillText("生命: " + lives, 20, 30);
+        // 1-2. 画所有水果和炸弹
+        for (Fruit f : fruits) {
+            if (f.isBomb) {
+                // 炸弹：黑色圆形 + 红色引线
+                gc.setFill(Color.BLACK);
+                gc.fillOval(f.x, f.y, 40, 40);
+                gc.setStroke(Color.RED);
+                gc.setLineWidth(2);
+                gc.strokeLine(f.x + 20, f.y, f.x + 16, f.y - 10);
+            } else {
+                // 水果：彩色圆形 + 绿色小叶子
+                gc.setFill(f.color);
+                gc.fillOval(f.x, f.y, 40, 40);
+                gc.setFill(Color.GREEN);
+                double[] xs = {f.x + 20, f.x + 16, f.x + 24};
+                double[] ys = {f.y, f.y - 8, f.y - 8};
+                gc.fillPolygon(xs, ys, 3);
+            }
+        }
+
+        // 3. 画篮子
+        if (handDetected) {
+            gc.setFill(Color.web("#4ade80"));
+            gc.setStroke(Color.web("#22c55e"));
+        } else {
+            gc.setFill(Color.GRAY);
+            gc.setStroke(Color.DARKGRAY);
+        }
+        gc.setLineWidth(3);
+        gc.fillRoundRect(basketX, basketY, BASKET_WIDTH, BASKET_HEIGHT, 10, 10);
+        gc.strokeRoundRect(basketX, basketY, BASKET_WIDTH, BASKET_HEIGHT, 10, 10);
+
+        // 4. 画HUD
+        gc.setFill(Color.WHITE);
+        gc.fillText("❤ x " + lives, 20, 30);
+        gc.fillText("分数: " + score, canvasWidth - 120, 30);
 
         if (over) {
             gc.setFill(Color.WHITE);
-            gc.fillText("游戏结束！得分: " + score + "  握拳重新开始", canvasWidth/2 - 120, canvasHeight/2);
+            gc.fillText("游戏结束！得分: " + score + "  握拳重新开始", canvasWidth / 2.0 - 120, canvasHeight / 2.0);
         }
     }
 
@@ -132,10 +217,21 @@ public class CatchFruit implements GameInterface {
         init(canvasWidth, canvasHeight);
     }
 
-    // TODO: 定义 Fruit 内部类
-    // private static class Fruit {
-    //     double x, y, vy;
-    //     Color color;
-    //     boolean isBomb;
-    // }
+    /**
+     * 水果/炸弹内部类。
+     */
+    private static class Fruit {
+        double x, y;
+        double vy;
+        Color color;
+        boolean isBomb;
+
+        Fruit(double x, double y, double vy, Color color, boolean isBomb) {
+            this.x = x;
+            this.y = y;
+            this.vy = vy;
+            this.color = color;
+            this.isBomb = isBomb;
+        }
+    }
 }
