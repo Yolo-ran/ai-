@@ -3,7 +3,8 @@
 }
 
 .login-root,
-.lobby-root {
+.lobby-root,
+.game-root {
     -fx-background-color: linear-gradient(to bottom right, #0f172a 0%, #0b1220 50%, #06111e 100%);
 }
 
@@ -117,6 +118,18 @@
     -fx-background-color: linear-gradient(to bottom right, #0f766e 0%, #84cc16 100%);
 }
 
+.card-tarot {
+    -fx-background-color: linear-gradient(to bottom right, #4c1d95 0%, #f59e0b 100%);
+}
+
+.card-ninja {
+    -fx-background-color: linear-gradient(to bottom right, #dc2626 0%, #f97316 100%);
+}
+
+.card-rhythm {
+    -fx-background-color: linear-gradient(to bottom right, #1e40af 0%, #7c3aed 100%);
+}
+
 .card-title {
     -fx-text-fill: #ffffff;
     -fx-font-size: 28px;
@@ -147,4 +160,40 @@
     -fx-border-radius: 999;
     -fx-border-color: rgba(222, 255, 154, 0.25);
     -fx-padding: 10 18 10 18;
+}
+
+.game-hud-name {
+    -fx-text-fill: #f8fafc;
+    -fx-font-size: 26px;
+    -fx-font-weight: bold;
+    -fx-background-color: rgba(8, 16, 32, 0.62);
+    -fx-background-radius: 14;
+    -fx-border-radius: 14;
+    -fx-border-color: rgba(56, 189, 248, 0.32);
+    -fx-border-width: 1.2;
+    -fx-padding: 8 18 8 18;
+}
+
+.game-hud-score {
+    -fx-text-fill: #deff9a;
+    -fx-font-size: 26px;
+    -fx-font-weight: bold;
+    -fx-background-color: rgba(8, 16, 32, 0.62);
+    -fx-background-radius: 14;
+    -fx-border-radius: 14;
+    -fx-border-color: rgba(222, 255, 154, 0.32);
+    -fx-border-width: 1.2;
+    -fx-padding: 8 18 8 18;
+}
+
+.game-hud-status {
+    -fx-text-fill: #cbd5e1;
+    -fx-font-size: 18px;
+    -fx-background-color: rgba(8, 16, 32, 0.62);
+    -fx-background-radius: 14;
+    -fx-border-radius: 14;
+    -fx-border-color: rgba(56, 189, 248, 0.22);
+    -fx-border-width: 1.0;
+    -fx-padding: 8 22 8 22;
+    -fx-text-alignment: center;
 }

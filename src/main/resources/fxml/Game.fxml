@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.canvas.Canvas?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.layout.AnchorPane?>
+
+<AnchorPane prefHeight="720.0" prefWidth="1280.0" stylesheets="@../css/app.css"
+            xmlns="http://javafx.com/javafx/17"
+            xmlns:fx="http://javafx.com/fxml/1"
+            fx:controller="com.gesturegame.ui.GameRenderer"
+            styleClass="game-root">
+    <children>
+        <Canvas fx:id="gameCanvas" width="1280.0" height="720.0"
+                AnchorPane.leftAnchor="0.0" AnchorPane.topAnchor="0.0" />
+        <Label fx:id="gameNameLabel" styleClass="game-hud-name"
+               AnchorPane.leftAnchor="24.0" AnchorPane.topAnchor="20.0"
+               text="游戏加载中..." />
+        <Label fx:id="scoreLabel" styleClass="game-hud-score"
+               AnchorPane.rightAnchor="24.0" AnchorPane.topAnchor="20.0"
+               text="分数: 0" />
+        <Label fx:id="statusLabel" styleClass="game-hud-status"
+               AnchorPane.bottomAnchor="24.0" AnchorPane.leftAnchor="0.0"
+               AnchorPane.rightAnchor="0.0" alignment="CENTER"
+               text="✋ 张手按住返回大厅" />
+    </children>
+</AnchorPane>
