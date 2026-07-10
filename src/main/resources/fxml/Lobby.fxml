@@ -62,6 +62,36 @@
                                                 <Label styleClass="card-desc" text="移动手势瞄准泡泡，连击破裂拿高分" wrapText="true" />
                                             </children>
                                         </VBox>
+                                        <VBox fx:id="card3" alignment="CENTER" prefHeight="380.0" prefWidth="300.0">
+                                            <styleClass>
+                                                <String fx:value="game-card" />
+                                                <String fx:value="card-tarot" />
+                                            </styleClass>
+                                            <children>
+                                                <Label styleClass="card-title" text="Tarot Game" />
+                                                <Label styleClass="card-desc" text="手势选牌翻牌，探索神秘的塔罗命运" wrapText="true" />
+                                            </children>
+                                        </VBox>
+                                        <VBox fx:id="card4" alignment="CENTER" prefHeight="380.0" prefWidth="300.0">
+                                            <styleClass>
+                                                <String fx:value="game-card" />
+                                                <String fx:value="card-ninja" />
+                                            </styleClass>
+                                            <children>
+                                                <Label styleClass="card-title" text="Fruit Ninja" />
+                                                <Label styleClass="card-desc" text="用手滑动切水果，小心炸弹！" wrapText="true" />
+                                            </children>
+                                        </VBox>
+                                        <VBox fx:id="card5" alignment="CENTER" prefHeight="380.0" prefWidth="300.0">
+                                            <styleClass>
+                                                <String fx:value="game-card" />
+                                                <String fx:value="card-rhythm" />
+                                            </styleClass>
+                                            <children>
+                                                <Label styleClass="card-title" text="Rhythm Master" />
+                                                <Label styleClass="card-desc" text="手势跳舞机，按时摆出正确姿势！" wrapText="true" />
+                                            </children>
+                                        </VBox>
                                     </children>
                                 </HBox>
                             </children>

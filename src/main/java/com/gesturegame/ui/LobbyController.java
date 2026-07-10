@@ -1,6 +1,13 @@
 package com.gesturegame.ui;
 
+import com.gesturegame.common.GameInterface;
 import com.gesturegame.engine.AppStateManager;
+import com.gesturegame.game.CatchFruit;
+import com.gesturegame.game.FruitNinja;
+import com.gesturegame.game.PopBubbles;
+import com.gesturegame.game.RPSGame;
+import com.gesturegame.game.RhythmMaster;
+import com.gesturegame.game.TarotGame;
 import com.gesturegame.network.GestureCommand;
 import com.gesturegame.network.GestureCommandResolver;
 import javafx.animation.ParallelTransition;
@@ -24,7 +31,7 @@ import java.util.logging.Logger;
 public class LobbyController {
 
     private static final Logger LOGGER = Logger.getLogger(LobbyController.class.getName());
-    private static final int MAX_GAMES = 3;
+    private static final int MAX_GAMES = 6;
     private static final double CARD_WIDTH = 320.0;
     private static final long NAVIGATION_COOLDOWN_MS = 180L;
     private static final long ACTION_COOLDOWN_MS = 500L;
@@ -45,6 +52,15 @@ public class LobbyController {
 
     @FXML
     private VBox card2;
+
+    @FXML
+    private VBox card3;
+
+    @FXML
+    private VBox card4;
+
+    @FXML
+    private VBox card5;
 
     private AppStateManager appStateManager;
     private int currentIndex;
@@ -162,8 +178,35 @@ public class LobbyController {
             return;
         }
 
-        LOGGER.info(() -> "[大厅] 准备启动游戏，ID 为: " + currentIndex);
+        GameInterface game = createGame(currentIndex);
+        if (game == null || appStateManager == null) {
+            LOGGER.warning(() -> "[大厅] 无法启动游戏，索引越界: " + currentIndex);
+            return;
+        }
+
         lastActionTime = now;
+        LOGGER.info(() -> "[大厅] 启动游戏: " + game.getName() + " (卡片索引 " + currentIndex + ")");
+        appStateManager.setActiveGame(game);
+        appStateManager.switchState(AppStateManager.STATE_GAME);
+    }
+
+    private GameInterface createGame(int index) {
+        switch (index) {
+            case 0:
+                return new CatchFruit();
+            case 1:
+                return new RPSGame();
+            case 2:
+                return new PopBubbles();
+            case 3:
+                return new TarotGame();
+            case 4:
+                return new FruitNinja();
+            case 5:
+                return new RhythmMaster();
+            default:
+                return null;
+        }
     }
 
     private void returnToLogin() {
@@ -177,7 +220,7 @@ public class LobbyController {
     }
 
     private void applySelectionStyle() {
-        VBox[] cards = {card0, card1, card2};
+        VBox[] cards = {card0, card1, card2, card3, card4, card5};
         for (int i = 0; i < cards.length; i++) {
             VBox card = cards[i];
             boolean selected = i == currentIndex;
