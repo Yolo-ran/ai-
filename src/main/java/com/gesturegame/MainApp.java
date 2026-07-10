@@ -37,7 +37,7 @@ public class MainApp extends Application {
 
     private static final Logger LOGGER = Logger.getLogger(MainApp.class.getName());
     private static final int SERVER_PORT = 8765;
-    private static final boolean ENABLE_LOCAL_CAMERA_FALLBACK = true    ;
+    private static final boolean ENABLE_LOCAL_CAMERA_FALLBACK = false;
     private static final int CAMERA_REFRESH_MS = 33;
     private static final double SWIPE_VELOCITY_THRESHOLD = 24.0;
     private static final double SWIPE_DISTANCE_THRESHOLD = 0.10;

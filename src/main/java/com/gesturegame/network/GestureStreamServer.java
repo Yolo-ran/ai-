@@ -35,9 +35,9 @@ public class GestureStreamServer extends WebSocketServer {
     private static final long CAMERA_FRAME_INTERVAL_MS = 80L;
     private static final long IDLE_DISPATCH_INTERVAL_MS = 200L;
     private static final long LOGIN_ENTRY_GUARD_MS = 800L;
-    private static final long LOBBY_ENTRY_GUARD_MS = 1800L;
+    private static final long LOBBY_ENTRY_GUARD_MS = 600L;
     private static final long GAME_ENTRY_GUARD_MS = 2500L;
-    private static final long SWIPE_DIR_LOCK_MS = 600L;
+    private static final long SWIPE_DIR_LOCK_MS = 300L;
 
     private final LoginController loginController;
     private final LobbyController lobbyController;
@@ -168,7 +168,7 @@ public class GestureStreamServer extends WebSocketServer {
 
         if (Math.abs(gestureData.getVelocityX()) >= SWIPE_VELOCITY_THRESHOLD
                 && Math.abs(gestureData.getVelocityX()) > Math.abs(gestureData.getVelocityY())) {
-            resetHoldState();
+            // 冷却期内不重置 hold，避免手抖误清 hold 计时
             if (now - lastSwipeCommandTime < SWIPE_COOLDOWN_MS) {
                 return GestureCommand.NONE;
             }
@@ -181,6 +181,7 @@ public class GestureStreamServer extends WebSocketServer {
                 return GestureCommand.NONE;
             }
 
+            resetHoldState();
             lastSwipeCommandTime = now;
             swipeDirLockUntil = now + SWIPE_DIR_LOCK_MS;
             lockedDir = dir;
