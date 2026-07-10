@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import logging
 import time
@@ -13,9 +14,13 @@ CAMERA_INDEX = 0
 FRAME_WIDTH = 640
 FRAME_HEIGHT = 480
 SEND_FPS = 30
+IMAGE_STREAM_FPS = 10
 RECONNECT_DELAY_SECONDS = 1.5
 SHOW_PREVIEW = True
+SEND_IMAGE_STREAM = True
+IMAGE_JPEG_QUALITY = 70
 PRINT_PAYLOAD_SAMPLE = True
+PAYLOAD_LOG_INTERVAL_SECONDS = 1.0
 
 
 logging.basicConfig(level=logging.INFO, format="[Python] %(message)s")
@@ -31,6 +36,9 @@ class GestureState:
         self.prev_hand_x = 0.0
         self.prev_hand_y = 0.0
         self.previous_detected = False
+        self.last_payload_log_time = 0.0
+        self.last_image_send_time = 0.0
+        self.last_encoded_image = ""
 
     def build_payload(self, result) -> dict:
         if result is None:
@@ -170,6 +178,18 @@ def draw_preview(frame, hand_landmarks, payload):
     )
 
 
+def encode_image_data(frame) -> str:
+    ok, encoded = cv2.imencode(
+        ".jpg",
+        frame,
+        [int(cv2.IMWRITE_JPEG_QUALITY), IMAGE_JPEG_QUALITY],
+    )
+    if not ok:
+        return ""
+    base64_bytes = base64.b64encode(encoded.tobytes()).decode("ascii")
+    return f"data:image/jpeg;base64,{base64_bytes}"
+
+
 async def stream_gestures():
     LOGGER.info("WebSocket 服务已启动，等待 Java 连接...")
 
@@ -213,17 +233,31 @@ async def stream_gestures():
                                 )
 
                             payload = state.build_payload(first_hand)
-                            if PRINT_PAYLOAD_SAMPLE:
-                                LOGGER.info("当前发送 JSON: %s", json.dumps(payload, ensure_ascii=True))
-                            await websocket.send(json.dumps(payload, ensure_ascii=True))
-
-                            if SHOW_PREVIEW:
+                            output_frame = frame
+                            if SHOW_PREVIEW or SEND_IMAGE_STREAM:
+                                output_frame = frame.copy()
                                 draw_preview(
-                                    frame,
+                                    output_frame,
                                     first_hand[0] if first_hand is not None else None,
                                     payload,
                                 )
-                                cv2.imshow("MediaPipe Gesture Server", frame)
+
+                            if SEND_IMAGE_STREAM:
+                                if now - state.last_image_send_time >= 1.0 / IMAGE_STREAM_FPS:
+                                    state.last_encoded_image = encode_image_data(output_frame)
+                                    state.last_image_send_time = now
+                                payload["image_data"] = state.last_encoded_image
+
+                            if PRINT_PAYLOAD_SAMPLE and now - state.last_payload_log_time >= PAYLOAD_LOG_INTERVAL_SECONDS:
+                                payload_log = dict(payload)
+                                if "image_data" in payload_log:
+                                    payload_log["image_data"] = "<base64_image>"
+                                LOGGER.info("当前发送 JSON: %s", json.dumps(payload_log, ensure_ascii=True))
+                                state.last_payload_log_time = now
+                            await websocket.send(json.dumps(payload, ensure_ascii=True))
+
+                            if SHOW_PREVIEW:
+                                cv2.imshow("MediaPipe Gesture Server", output_frame)
                                 if cv2.waitKey(1) & 0xFF == 27:
                                     LOGGER.info("检测到 ESC，正在退出...")
                                     return
