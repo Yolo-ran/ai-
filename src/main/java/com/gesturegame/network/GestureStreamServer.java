@@ -27,10 +27,16 @@ public class GestureStreamServer extends WebSocketServer {
     private static final Logger LOGGER = Logger.getLogger(GestureStreamServer.class.getName());
     private static final double SWIPE_VELOCITY_THRESHOLD = 0.035;
     private static final long SWIPE_COOLDOWN_MS = 260L;
-    private static final long HOLD_CONFIRM_MS = 1000L;
+    private static final long LOGIN_CONFIRM_HOLD_MS = 1000L;
+    private static final long LOBBY_CONFIRM_HOLD_MS = 1200L;
+    private static final long LOBBY_BACK_HOLD_MS = 1500L;
+    private static final long GAME_BACK_HOLD_MS = 1800L;
     private static final long COMMAND_COOLDOWN_MS = 450L;
     private static final long CAMERA_FRAME_INTERVAL_MS = 80L;
     private static final long IDLE_DISPATCH_INTERVAL_MS = 200L;
+    private static final long LOGIN_ENTRY_GUARD_MS = 800L;
+    private static final long LOBBY_ENTRY_GUARD_MS = 1800L;
+    private static final long GAME_ENTRY_GUARD_MS = 2500L;
 
     private final LoginController loginController;
     private final LobbyController lobbyController;
@@ -42,6 +48,8 @@ public class GestureStreamServer extends WebSocketServer {
     private long lastStaticCommandTime;
     private long lastCameraFrameTime;
     private long lastIdleDispatchTime;
+    private String lastObservedState = AppStateManager.STATE_LOGIN;
+    private long stateEnterTime = System.currentTimeMillis();
 
     public GestureStreamServer(int port, LoginController loginController,
                                LobbyController lobbyController, GameRenderer gameRenderer) {
@@ -62,13 +70,14 @@ public class GestureStreamServer extends WebSocketServer {
             JSONObject json = new JSONObject(message);
             String base64Image = json.optString("image_data", "");
             String state = AppStateManager.getInstance().getCurrentState();
+            onStateObserved(state);
 
             dispatchCameraFrame(state, base64Image);
 
             if (containsGestureData(json)) {
                 GestureData gestureData = GestureData.fromJson(message);
                 this.latestGestureData = gestureData;
-                GestureCommand command = mapGestureDataToCommand(gestureData);
+                GestureCommand command = mapGestureDataToCommand(state, gestureData);
                 dispatchGesture(state, gestureData.getGesture().name(), command, gestureData.getConfidence());
                 return;
             }
@@ -142,13 +151,18 @@ public class GestureStreamServer extends WebSocketServer {
         return latestGestureData;
     }
 
-    private GestureCommand mapGestureDataToCommand(GestureData gestureData) {
+    private GestureCommand mapGestureDataToCommand(String state, GestureData gestureData) {
         if (!gestureData.isHandDetected()) {
             resetHoldState();
             return GestureCommand.NONE;
         }
 
         long now = System.currentTimeMillis();
+        if (isInStateEntryGuard(state, now)) {
+            resetHoldState();
+            return GestureCommand.NONE;
+        }
+
         if (Math.abs(gestureData.getVelocityX()) >= SWIPE_VELOCITY_THRESHOLD
                 && Math.abs(gestureData.getVelocityX()) > Math.abs(gestureData.getVelocityY())) {
             resetHoldState();
@@ -171,7 +185,8 @@ public class GestureStreamServer extends WebSocketServer {
             return GestureCommand.NONE;
         }
 
-        if (now - holdStartTime < HOLD_CONFIRM_MS) {
+        long requiredHoldMs = resolveRequiredHoldMs(state, gestureType);
+        if (now - holdStartTime < requiredHoldMs) {
             return GestureCommand.NONE;
         }
         if (now - lastStaticCommandTime < COMMAND_COOLDOWN_MS) {
@@ -181,6 +196,46 @@ public class GestureStreamServer extends WebSocketServer {
         lastStaticCommandTime = now;
         holdStartTime = now;
         return gestureType == GestureType.FIST ? GestureCommand.CONFIRM : GestureCommand.BACK;
+    }
+
+    private void onStateObserved(String state) {
+        if (state.equals(lastObservedState)) {
+            return;
+        }
+
+        lastObservedState = state;
+        stateEnterTime = System.currentTimeMillis();
+        resetHoldState();
+        lastSwipeCommandTime = stateEnterTime;
+        lastStaticCommandTime = stateEnterTime;
+        LOGGER.info(() -> "[GestureStream] 场景切换，启用手势保护: " + state);
+    }
+
+    private boolean isInStateEntryGuard(String state, long now) {
+        return now - stateEnterTime < resolveEntryGuardMs(state);
+    }
+
+    private long resolveEntryGuardMs(String state) {
+        if (AppStateManager.STATE_GAME.equals(state)) {
+            return GAME_ENTRY_GUARD_MS;
+        }
+        if (AppStateManager.STATE_LOBBY.equals(state)) {
+            return LOBBY_ENTRY_GUARD_MS;
+        }
+        return LOGIN_ENTRY_GUARD_MS;
+    }
+
+    private long resolveRequiredHoldMs(String state, GestureType gestureType) {
+        if (AppStateManager.STATE_GAME.equals(state)) {
+            return gestureType == GestureType.OPEN ? GAME_BACK_HOLD_MS : Long.MAX_VALUE;
+        }
+        if (AppStateManager.STATE_LOBBY.equals(state)) {
+            return gestureType == GestureType.FIST ? LOBBY_CONFIRM_HOLD_MS : LOBBY_BACK_HOLD_MS;
+        }
+        if (AppStateManager.STATE_LOGIN.equals(state)) {
+            return gestureType == GestureType.FIST ? LOGIN_CONFIRM_HOLD_MS : Long.MAX_VALUE;
+        }
+        return Long.MAX_VALUE;
     }
 
     private void resetHoldState() {
