@@ -30,11 +30,13 @@ public class MainApp extends Application {
 
     private static final Logger LOGGER = Logger.getLogger(MainApp.class.getName());
     private static final int SERVER_PORT = 8765;
+    private static final long FRAME_NS = 16_666_667L; // 1/60 秒，锁 60fps
 
     private GestureStreamServer gestureStreamServer;
     private GameRenderer gameRenderer;
     private LobbyController lobbyController;
     private Process pythonProcess;
+    private long lastFrameNs;
 
     @Override
     public void start(Stage primaryStage) throws IOException {
@@ -99,6 +101,11 @@ public class MainApp extends Application {
         AnimationTimer gameLoop = new AnimationTimer() {
             @Override
             public void handle(long now) {
+                if (lastFrameNs > 0 && now - lastFrameNs < FRAME_NS) {
+                    return; // 跳过本帧 → 无论 60/144/165Hz 屏都锁在 60fps
+                }
+                lastFrameNs = now;
+
                 String state = AppStateManager.getInstance().getCurrentState();
                 GestureData gesture = gestureStreamServer.getLatestGesture();
                 if (AppStateManager.STATE_LOBBY.equals(state)) {
