@@ -14,6 +14,7 @@ import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.stage.Stage;
 
+import java.io.File;
 import java.io.IOException;
 import java.util.Objects;
 import java.util.logging.Level;
@@ -33,6 +34,7 @@ public class MainApp extends Application {
     private GestureStreamServer gestureStreamServer;
     private GameRenderer gameRenderer;
     private LobbyController lobbyController;
+    private Process pythonProcess;
 
     @Override
     public void start(Stage primaryStage) throws IOException {
@@ -77,6 +79,16 @@ public class MainApp extends Application {
         gestureStreamServer = new GestureStreamServer(SERVER_PORT, loginController, lobbyController, gameRenderer);
         gestureStreamServer.start();
         LOGGER.info(() -> "手势图像串流服务已启动，端口: " + SERVER_PORT);
+
+        // 延迟 1.5s 检查 bat 是否已启动过 Python，避免重复拉起
+        new Thread(() -> {
+            try { Thread.sleep(1500); } catch (InterruptedException ignored) {}
+            if (gestureStreamServer.getConnections().isEmpty()) {
+                launchPythonEngine();
+            } else {
+                LOGGER.info("检测到 WebSocket 已有连接，跳过 Python 启动");
+            }
+        }, "python-launcher").start();
     }
 
     /**
@@ -104,12 +116,80 @@ public class MainApp extends Application {
 
     @Override
     public void stop() {
+        if (pythonProcess != null && pythonProcess.isAlive()) {
+            pythonProcess.destroyForcibly();
+            LOGGER.info("Python 手势引擎已关闭");
+        }
         if (gestureStreamServer != null) {
             try {
                 gestureStreamServer.stop();
             } catch (Exception e) {
                 LOGGER.log(Level.WARNING, "关闭手势图像串流服务失败", e);
             }
+        }
+    }
+
+    /**
+     * 自动拉起 Python 手势引擎子进程。
+     *
+     * <p>按优先级查找可执行入口：
+     * <ol>
+     *   <li>{@code python/dist/gesture_server/gesture_server.exe} — PyInstaller 打包</li>
+     *   <li>{@code .venv/Scripts/pythonw.exe} — 项目虚拟环境</li>
+     *   <li>{@code %LOCALAPPDATA%\Programs\Python\Python31x\pythonw.exe} — 3.12/3.11/3.13 标准安装</li>
+     *   <li>系统 {@code pythonw} / {@code python} — PATH 兜底</li>
+     * </ol>
+     */
+    private void launchPythonEngine() {
+        try {
+            String projectDir = System.getProperty("user.dir");
+            File pythonDir = new File(projectDir, "python");
+            File packagedExe = new File(pythonDir, "dist/gesture_server/gesture_server.exe");
+            File venvPythonw = new File(projectDir, ".venv/Scripts/pythonw.exe");
+
+            String[] cmd;
+            if (packagedExe.exists()) {
+                cmd = new String[]{packagedExe.getAbsolutePath()};
+                LOGGER.info("使用打包 exe 启动手势引擎");
+            } else if (venvPythonw.exists()) {
+                cmd = new String[]{venvPythonw.getAbsolutePath(), "gesture_server.py"};
+                LOGGER.info("使用 venv pythonw 启动手势引擎");
+            } else {
+                cmd = findSystemPythonw(pythonDir);
+            }
+
+            ProcessBuilder pb = new ProcessBuilder(cmd);
+            pb.directory(pythonDir);
+            pb.inheritIO();
+            pythonProcess = pb.start();
+            LOGGER.info("Python 手势引擎子进程已启动");
+        } catch (IOException e) {
+            LOGGER.log(Level.WARNING, "无法自动启动 Python 手势引擎，请手动运行 启动.bat", e);
+        }
+    }
+
+    /** 按优先级查找系统 Python（覆盖队友的不同安装版本）。 */
+    private static String[] findSystemPythonw(File pythonDir) {
+        String localAppData = System.getenv("LOCALAPPDATA");
+        if (localAppData != null) {
+            for (String version : new String[]{"312", "311", "313", "310"}) {
+                File cand = new File(localAppData,
+                        "Programs/Python/Python" + version + "/pythonw.exe");
+                if (cand.exists()) {
+                    LOGGER.info("使用 AppData pythonw " + version + " 启动手势引擎");
+                    return new String[]{cand.getAbsolutePath(), "gesture_server.py"};
+                }
+            }
+        }
+        // 最后兜底：pythonw 不在 PATH 时用 python
+        try {
+            ProcessBuilder test = new ProcessBuilder("pythonw", "--version");
+            test.start().destroy();
+            LOGGER.info("使用系统 pythonw 启动手势引擎");
+            return new String[]{"pythonw", "gesture_server.py"};
+        } catch (IOException e) {
+            LOGGER.info("使用系统 python 启动手势引擎");
+            return new String[]{"python", "gesture_server.py"};
         }
     }
 

@@ -249,7 +249,9 @@ public class LobbyController {
                     launchGame();
                     break;
                 case BACK:
-                    // 已禁用：验证成功后不再退回登录页
+                    if (appStateManager != null) {
+                        appStateManager.switchState(AppStateManager.STATE_LOGIN);
+                    }
                     break;
                 default:
                     break;
