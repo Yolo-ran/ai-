@@ -11,3 +11,6 @@ Thumbs.db
 **/__pycache__/
 *.log
 /python/models/
+/python/build/
+/python/dist/
+/python/*.spec
