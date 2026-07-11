@@ -41,7 +41,7 @@ public class GestureStreamServer extends WebSocketServer {
     private static final long GAME_OVER_CONFIRM_HOLD_MS = 1000L;
     private static final long GAME_OVER_BACK_HOLD_MS = 1200L;
     private static final long COMMAND_COOLDOWN_MS = 450L;
-    private static final long CAMERA_FRAME_INTERVAL_MS = 80L;
+    private static final long CAMERA_FRAME_INTERVAL_MS = 40L;
     private static final long IDLE_DISPATCH_INTERVAL_MS = 200L;
     private static final long LOGIN_ENTRY_GUARD_MS = 800L;
     private static final long LOBBY_ENTRY_GUARD_MS = 600L;

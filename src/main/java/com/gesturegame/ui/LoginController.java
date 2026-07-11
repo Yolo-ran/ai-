@@ -12,8 +12,6 @@ import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.util.Duration;
 
-import java.io.ByteArrayInputStream;
-import java.util.Base64;
 import java.util.logging.Logger;
 
 /**
@@ -23,8 +21,6 @@ public class LoginController {
 
     private static final Logger LOGGER = Logger.getLogger(LoginController.class.getName());
     private static final double CONFIRM_THRESHOLD = 0.80;
-    private static final Base64.Decoder BASE64_DECODER = Base64.getDecoder();
-    private static final String DATA_URI_SEPARATOR = ",";
 
     @FXML
     private Label statusLabel;
@@ -68,27 +64,7 @@ public class LoginController {
      * 线程安全地刷新登录页摄像头画面。
      */
     public void updateCameraStream(String base64Image) {
-        try {
-            if (base64Image == null || base64Image.isBlank()) {
-                return;
-            }
-
-            String payload = base64Image;
-            int separatorIndex = payload.indexOf(DATA_URI_SEPARATOR);
-            if (separatorIndex >= 0) {
-                payload = payload.substring(separatorIndex + 1);
-            }
-
-            byte[] imageBytes = BASE64_DECODER.decode(payload);
-            Image image = new Image(new ByteArrayInputStream(imageBytes));
-            Platform.runLater(() -> {
-                if (cameraView != null) {
-                    cameraView.setImage(image);
-                }
-            });
-        } catch (Exception e) {
-            LOGGER.warning(() -> "登录页摄像头帧解码失败: " + e.getMessage());
-        }
+        CameraStreamHelper.push(cameraView, base64Image);
     }
 
     /**

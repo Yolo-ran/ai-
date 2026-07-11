@@ -20,14 +20,14 @@ CAMERA_INDEX = 0
 FRAME_WIDTH = 640
 FRAME_HEIGHT = 480
 SEND_FPS = 30
-IMAGE_STREAM_FPS = 10
+IMAGE_STREAM_FPS = 20
 RECONNECT_DELAY_SECONDS = 1.5
 # 默认关闭 Python 本地预览窗，只保留 Java 主界面中的实时画面，避免双窗口混乱。
 # 如需单独调试 MediaPipe 识别窗，可在启动前设置:
 #   $env:GESTURE_SERVER_SHOW_PREVIEW = "1"
 SHOW_PREVIEW = os.getenv("GESTURE_SERVER_SHOW_PREVIEW", "0") == "1"
 SEND_IMAGE_STREAM = True
-IMAGE_JPEG_QUALITY = 70
+IMAGE_JPEG_QUALITY = 45
 PRINT_PAYLOAD_SAMPLE = True
 PAYLOAD_LOG_INTERVAL_SECONDS = 1.0
 MODEL_URL = (
@@ -342,9 +342,10 @@ def draw_preview(frame, hand_landmarks, payload, raw_gesture: str):
 
 
 def encode_image_data(frame) -> str:
+    small = cv2.resize(frame, (320, 240), interpolation=cv2.INTER_NEAREST)
     ok, encoded = cv2.imencode(
         ".jpg",
-        frame,
+        small,
         [int(cv2.IMWRITE_JPEG_QUALITY), IMAGE_JPEG_QUALITY],
     )
     if not ok:

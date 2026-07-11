@@ -28,9 +28,7 @@ import javafx.scene.paint.CycleMethod;
 import javafx.scene.paint.RadialGradient;
 import javafx.scene.paint.Stop;
 
-import java.io.ByteArrayInputStream;
 import java.util.Arrays;
-import java.util.Base64;
 import java.util.List;
 import java.util.function.Supplier;
 import java.util.logging.Logger;
@@ -84,8 +82,6 @@ public class LobbyController {
     private static final double PARTICLE_DRAW_SIZE = 10.0;
     private static final long NAVIGATION_COOLDOWN_MS = 180L;
     private static final long ACTION_COOLDOWN_MS = 500L;
-    private static final Base64.Decoder BASE64_DECODER = Base64.getDecoder();
-    private static final String DATA_URI_SEPARATOR = ",";
 
     @FXML
     private Canvas lobbyCanvas;
@@ -265,25 +261,7 @@ public class LobbyController {
     }
 
     public void updateCameraStream(String base64Image) {
-        try {
-            if (base64Image == null || base64Image.isBlank()) {
-                return;
-            }
-            String payload = base64Image;
-            int separatorIndex = payload.indexOf(DATA_URI_SEPARATOR);
-            if (separatorIndex >= 0) {
-                payload = payload.substring(separatorIndex + 1);
-            }
-            byte[] imageBytes = BASE64_DECODER.decode(payload);
-            Image image = new Image(new ByteArrayInputStream(imageBytes));
-            Platform.runLater(() -> {
-                if (cameraView != null) {
-                    cameraView.setImage(image);
-                }
-            });
-        } catch (Exception e) {
-            LOGGER.warning(() -> "大厅摄像头帧解码失败: " + e.getMessage());
-        }
+        CameraStreamHelper.push(cameraView, base64Image);
     }
 
     public void updateCameraImage(Image image) {
