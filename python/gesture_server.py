@@ -2,6 +2,7 @@ import asyncio
 import base64
 import json
 import logging
+import os
 import time
 import urllib.request
 from pathlib import Path
@@ -20,7 +21,10 @@ FRAME_HEIGHT = 480
 SEND_FPS = 30
 IMAGE_STREAM_FPS = 10
 RECONNECT_DELAY_SECONDS = 1.5
-SHOW_PREVIEW = True
+# 默认关闭 Python 本地预览窗，只保留 Java 主界面中的实时画面，避免双窗口混乱。
+# 如需单独调试 MediaPipe 识别窗，可在启动前设置:
+#   $env:GESTURE_SERVER_SHOW_PREVIEW = "1"
+SHOW_PREVIEW = os.getenv("GESTURE_SERVER_SHOW_PREVIEW", "0") == "1"
 SEND_IMAGE_STREAM = True
 IMAGE_JPEG_QUALITY = 70
 PRINT_PAYLOAD_SAMPLE = True
