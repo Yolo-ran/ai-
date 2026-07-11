@@ -237,8 +237,8 @@ def classify_gesture(hand_landmarks, handedness_label: str):
         ring_extended,
         pinky_extended,
     ):
-        # 先录入项目，但当前协议下不直接映射为控制命令，避免误触发返回/确认。
-        return "thumbs_up", "none", 0.94
+        # 在不修改公共契约的前提下，把点赞兼容映射为 POINTING 传给 Java。
+        return "thumbs_up", "pointing", 0.94
 
     if is_thumbs_down(
         points,
