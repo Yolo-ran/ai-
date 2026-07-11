@@ -34,7 +34,7 @@ public class GestureStreamServer extends WebSocketServer {
     private static final double SWIPE_REST_VELOCITY = 0.008;
     private static final long SWIPE_REST_MS = 150L;
     private static final double SWIPE_NEUTRAL_RADIUS = 0.05;
-    private static final long LOGIN_CONFIRM_HOLD_MS = 1000L;
+    private static final long LOGIN_CONFIRM_HOLD_MS = 800L;
     private static final long LOBBY_CONFIRM_HOLD_MS = 1200L;
     private static final long GAME_BACK_HOLD_MS = 1800L;
     private static final long GAME_OVER_ENTRY_GUARD_MS = 400L;
@@ -365,7 +365,7 @@ public class GestureStreamServer extends WebSocketServer {
      */
     private boolean isActionGesture(String state, GestureType g) {
         if (AppStateManager.STATE_LOGIN.equals(state)) {
-            return g == GestureType.FIST;
+            return g == GestureType.FIST || g == GestureType.POINTING;
         }
         if (AppStateManager.STATE_LOBBY.equals(state)) {
             return g == GestureType.PEACE || g == GestureType.POINTING;
@@ -380,8 +380,8 @@ public class GestureStreamServer extends WebSocketServer {
     }
 
     private GestureCommand commandFor(String state, GestureType g) {
-        if (AppStateManager.STATE_LOGIN.equals(state) && g == GestureType.FIST) {
-            return GestureCommand.CONFIRM;
+        if (AppStateManager.STATE_LOGIN.equals(state)) {
+            if (g == GestureType.FIST || g == GestureType.POINTING) return GestureCommand.CONFIRM;
         }
         if (AppStateManager.STATE_LOBBY.equals(state)) {
             if (g == GestureType.PEACE) return GestureCommand.CONFIRM;
@@ -398,8 +398,10 @@ public class GestureStreamServer extends WebSocketServer {
     }
 
     private long resolveRequiredHoldMs(String state, GestureType gestureType) {
-        if (AppStateManager.STATE_LOGIN.equals(state) && gestureType == GestureType.FIST) {
-            return LOGIN_CONFIRM_HOLD_MS;
+        if (AppStateManager.STATE_LOGIN.equals(state)) {
+            if (gestureType == GestureType.FIST || gestureType == GestureType.POINTING) {
+                return LOGIN_CONFIRM_HOLD_MS;
+            }
         }
         if (AppStateManager.STATE_LOBBY.equals(state)) {
             if (gestureType == GestureType.PEACE) return LOBBY_CONFIRM_HOLD_MS;

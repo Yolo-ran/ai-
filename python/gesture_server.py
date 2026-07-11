@@ -292,7 +292,12 @@ def classify_gesture(hand_landmarks, handedness_label: str):
     if extended_count >= 4 and index_extended and middle_extended and ring_extended and pinky_extended:
         return "five", "open", 0.98
 
-    if extended_count <= 1 and not index_extended and not middle_extended and not ring_extended and not pinky_extended:
+    thumb_index_dist = landmark_distance(points[4], points[8])
+    if (thumb_index_dist < 0.12
+        and not index_extended
+        and not middle_extended
+        and not ring_extended
+        and not pinky_extended):
         return "fist", "fist", 0.97
 
     # 不确定时优先回退到 none，避免 Python 端误发错误基础手势。
