@@ -1,9 +1,8 @@
 Set ws = CreateObject("Wscript.Shell")
+Set fso = CreateObject("Scripting.FileSystemObject")
 
-' 启动 Python（后台，无窗口）
-ws.Run "cmd /c cd /d " & Chr(34) & CreateObject("Scripting.FileSystemObject").GetParentFolderName(WScript.ScriptFullName) & "\python" & Chr(34) & " && pythonw gesture_server.py 2>nul || python gesture_server.py", 0, False
+rootDir = fso.GetParentFolderName(WScript.ScriptFullName)
+launcherBat = rootDir & "\启动.bat"
 
-WScript.Sleep 2000
-
-' 启动 Java（后台，无窗口）
-ws.Run "cmd /c cd /d " & Chr(34) & CreateObject("Scripting.FileSystemObject").GetParentFolderName(WScript.ScriptFullName) & Chr(34) & " && mvnw.cmd javafx:run", 0, False
+' 静默调用批处理启动器，具体逻辑统一维护在 启动.bat 中。
+ws.Run "cmd /c " & Chr(34) & launcherBat & Chr(34), 0, False

@@ -3,6 +3,7 @@ import base64
 import json
 import logging
 import os
+import sys
 import time
 import urllib.request
 from pathlib import Path
@@ -33,7 +34,7 @@ MODEL_URL = (
     "https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
     "hand_landmarker/float16/latest/hand_landmarker.task"
 )
-MODEL_PATH = Path(__file__).resolve().parent / "models" / "hand_landmarker.task"
+MODEL_FILE_NAME = "hand_landmarker.task"
 
 
 logging.basicConfig(level=logging.INFO, format="[Python] %(message)s")
@@ -50,6 +51,26 @@ MP_STYLES = mp_vision.drawing_styles
 HAND_CONNECTIONS = mp_vision.HandLandmarksConnections.HAND_CONNECTIONS
 
 
+def get_app_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+def get_runtime_data_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        local_appdata = Path(os.getenv("LOCALAPPDATA", get_app_dir()))
+        return local_appdata / "gesture-game-hall" / "gesture_server"
+    return get_app_dir()
+
+
+def get_bundled_model_candidates() -> list[Path]:
+    candidates = [get_app_dir() / "models" / MODEL_FILE_NAME]
+    if getattr(sys, "_MEIPASS", None):
+        candidates.append(Path(sys._MEIPASS) / "models" / MODEL_FILE_NAME)
+    return candidates
+
+
 class GestureState:
     def __init__(self):
         self.prev_hand_x = 0.0
@@ -58,10 +79,12 @@ class GestureState:
         self.last_payload_log_time = 0.0
         self.last_image_send_time = 0.0
         self.last_encoded_image = ""
+        self.last_raw_gesture = "none"
 
     def build_payload(self, result) -> dict:
         if result is None:
             self.previous_detected = False
+            self.last_raw_gesture = "none"
             return {
                 "handX": 0.0,
                 "handY": 0.0,
@@ -87,7 +110,8 @@ class GestureState:
             prev_hand_x = hand_x
             prev_hand_y = hand_y
 
-        gesture, confidence = classify_gesture(hand_landmarks, handedness_label)
+        raw_gesture, gesture, confidence = classify_gesture(hand_landmarks, handedness_label)
+        self.last_raw_gesture = raw_gesture
 
         self.prev_hand_x = hand_x
         self.prev_hand_y = hand_y
@@ -134,6 +158,64 @@ def is_thumb_extended(points, handedness_label: str) -> bool:
     return thumb_tip_x > thumb_ip_x
 
 
+def landmark_distance(point_a, point_b) -> float:
+    dx = point_a.x - point_b.x
+    dy = point_a.y - point_b.y
+    return (dx * dx + dy * dy) ** 0.5
+
+
+def is_thumbs_up(points, thumb_extended: bool, index_extended: bool, middle_extended: bool,
+                 ring_extended: bool, pinky_extended: bool) -> bool:
+    other_fingers_closed = not index_extended and not middle_extended and not ring_extended and not pinky_extended
+    thumb_tip = points[4]
+    thumb_mcp = points[2]
+    wrist = points[0]
+    return (
+        thumb_extended
+        and other_fingers_closed
+        and thumb_tip.y < thumb_mcp.y
+        and thumb_tip.y < wrist.y
+        and abs(thumb_tip.x - thumb_mcp.x) < 0.2
+    )
+
+
+def is_thumbs_down(points, thumb_extended: bool, index_extended: bool, middle_extended: bool,
+                   ring_extended: bool, pinky_extended: bool) -> bool:
+    other_fingers_closed = not index_extended and not middle_extended and not ring_extended and not pinky_extended
+    thumb_tip = points[4]
+    thumb_mcp = points[2]
+    wrist = points[0]
+    return (
+        thumb_extended
+        and other_fingers_closed
+        and thumb_tip.y > thumb_mcp.y
+        and thumb_tip.y > wrist.y
+        and abs(thumb_tip.x - thumb_mcp.x) < 0.2
+    )
+
+
+def is_ok_sign(points, middle_extended: bool, ring_extended: bool, pinky_extended: bool) -> bool:
+    palm_span = landmark_distance(points[5], points[17])
+    thumb_index_distance = landmark_distance(points[4], points[8])
+    return (
+        thumb_index_distance < max(0.06, palm_span * 0.35)
+        and middle_extended
+        and ring_extended
+        and pinky_extended
+    )
+
+
+def is_nine_sign(points, middle_extended: bool, ring_extended: bool, pinky_extended: bool) -> bool:
+    palm_span = landmark_distance(points[5], points[17])
+    thumb_index_distance = landmark_distance(points[4], points[8])
+    return (
+        thumb_index_distance < max(0.06, palm_span * 0.35)
+        and not middle_extended
+        and not ring_extended
+        and not pinky_extended
+    )
+
+
 def classify_gesture(hand_landmarks, handedness_label: str):
     points = hand_landmarks
 
@@ -147,25 +229,77 @@ def classify_gesture(hand_landmarks, handedness_label: str):
         [thumb_extended, index_extended, middle_extended, ring_extended, pinky_extended]
     )
 
+    if is_thumbs_up(
+        points,
+        thumb_extended,
+        index_extended,
+        middle_extended,
+        ring_extended,
+        pinky_extended,
+    ):
+        # 先录入项目，但当前协议下不直接映射为控制命令，避免误触发返回/确认。
+        return "thumbs_up", "none", 0.94
+
+    if is_thumbs_down(
+        points,
+        thumb_extended,
+        index_extended,
+        middle_extended,
+        ring_extended,
+        pinky_extended,
+    ):
+        return "thumbs_down", "none", 0.94
+
+    if is_ok_sign(points, middle_extended, ring_extended, pinky_extended):
+        return "zero_ok", "none", 0.93
+
+    if is_nine_sign(points, middle_extended, ring_extended, pinky_extended):
+        return "nine", "none", 0.93
+
+    if thumb_extended and not index_extended and not middle_extended and not ring_extended and pinky_extended:
+        return "six", "none", 0.92
+
+    if thumb_extended and index_extended and not middle_extended and not ring_extended and not pinky_extended:
+        return "gun", "none", 0.92
+
+    if thumb_extended and index_extended and not middle_extended and not ring_extended and pinky_extended:
+        return "love_you", "none", 0.92
+
+    if thumb_extended and index_extended and middle_extended and not ring_extended and not pinky_extended:
+        return "seven", "none", 0.92
+
+    if thumb_extended and index_extended and middle_extended and ring_extended and not pinky_extended:
+        return "eight", "none", 0.92
+
+    if index_extended and not middle_extended and not ring_extended and pinky_extended:
+        if not thumb_extended or extended_count <= 3:
+            return "rock", "none", 0.91
+
+    if index_extended and middle_extended and ring_extended and pinky_extended and not thumb_extended:
+        return "four", "none", 0.93
+
+    if index_extended and middle_extended and ring_extended and not pinky_extended and not thumb_extended:
+        return "three", "none", 0.92
+
     if index_extended and middle_extended and not ring_extended and not pinky_extended:
         if not thumb_extended or extended_count <= 3:
-            return "peace", 0.95
+            return "two", "peace", 0.95
 
     if index_extended and not middle_extended and not ring_extended and not pinky_extended:
         if not thumb_extended or extended_count <= 2:
-            return "pointing", 0.94
+            return "one", "pointing", 0.94
 
     if extended_count >= 4 and index_extended and middle_extended and ring_extended and pinky_extended:
-        return "open", 0.98
+        return "five", "open", 0.98
 
     if extended_count <= 1 and not index_extended and not middle_extended and not ring_extended and not pinky_extended:
-        return "fist", 0.97
+        return "fist", "fist", 0.97
 
     # 不确定时优先回退到 none，避免 Python 端误发错误基础手势。
-    return "none", 0.55
+    return "none", "none", 0.55
 
 
-def draw_preview(frame, hand_landmarks, payload):
+def draw_preview(frame, hand_landmarks, payload, raw_gesture: str):
     if hand_landmarks is not None:
         MP_DRAW.draw_landmarks(
             frame,
@@ -177,7 +311,7 @@ def draw_preview(frame, hand_landmarks, payload):
 
     cv2.putText(
         frame,
-        f"gesture: {payload['gesture']}",
+        f"raw: {raw_gesture}",
         (16, 32),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.8,
@@ -187,8 +321,18 @@ def draw_preview(frame, hand_landmarks, payload):
     )
     cv2.putText(
         frame,
-        f"confidence: {payload['confidence']:.2f}",
+        f"core: {payload['gesture']}",
         (16, 62),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.7,
+        (80, 200, 255),
+        2,
+        cv2.LINE_AA,
+    )
+    cv2.putText(
+        frame,
+        f"confidence: {payload['confidence']:.2f}",
+        (16, 92),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.7,
         (255, 200, 80),
@@ -210,14 +354,19 @@ def encode_image_data(frame) -> str:
 
 
 def ensure_hand_landmarker_model() -> Path:
-    if MODEL_PATH.exists():
-        return MODEL_PATH
+    for candidate in get_bundled_model_candidates():
+        if candidate.exists():
+            return candidate
 
-    MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+    model_path = get_runtime_data_dir() / "models" / MODEL_FILE_NAME
+    if model_path.exists():
+        return model_path
+
+    model_path.parent.mkdir(parents=True, exist_ok=True)
     LOGGER.info("正在下载最新版 MediaPipe Hand Landmarker 模型...")
-    urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
-    LOGGER.info("模型下载完成: %s", MODEL_PATH)
-    return MODEL_PATH
+    urllib.request.urlretrieve(MODEL_URL, model_path)
+    LOGGER.info("模型下载完成: %s", model_path)
+    return model_path
 
 
 def create_landmarker():
@@ -313,6 +462,7 @@ async def stream_gestures():
                                     output_frame,
                                     first_hand[0] if first_hand is not None else None,
                                     payload,
+                                    state.last_raw_gesture,
                                 )
 
                             if SEND_IMAGE_STREAM:
@@ -323,6 +473,7 @@ async def stream_gestures():
 
                             if PRINT_PAYLOAD_SAMPLE and now - state.last_payload_log_time >= PAYLOAD_LOG_INTERVAL_SECONDS:
                                 payload_log = dict(payload)
+                                payload_log["raw_gesture"] = state.last_raw_gesture
                                 if "image_data" in payload_log:
                                     payload_log["image_data"] = "<base64_image>"
                                 LOGGER.info("当前发送 JSON: %s", json.dumps(payload_log, ensure_ascii=True))
