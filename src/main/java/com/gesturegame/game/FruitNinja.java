@@ -1,5 +1,6 @@
 package com.gesturegame.game;
 
+import com.gesturegame.common.Difficulty;
 import com.gesturegame.common.GameInterface;
 import com.gesturegame.common.GestureData;
 import javafx.scene.canvas.GraphicsContext;
@@ -49,6 +50,14 @@ FruitNinja implements GameInterface {
     private int frameCount;
     private int nextWaveFrame;
     private boolean handDetected;
+    private Difficulty difficulty = Difficulty.NORMAL;
+    private int baseLives;
+    private int minFruitsPerWave;
+    private int maxFruitsPerWave;
+    private double bombProb;
+    private int waveMinFrames;
+    private int waveMaxFrames;
+    private int comboBonusThreshold;
 
     @Override
     public String getName() {
@@ -70,7 +79,6 @@ FruitNinja implements GameInterface {
         this.canvasWidth = width;
         this.canvasHeight = height;
         this.score = 0;
-        this.lives = 3;
         this.combo = 0;
         this.over = false;
         this.fruits = new ArrayList<>();
@@ -79,7 +87,32 @@ FruitNinja implements GameInterface {
         this.frameCount = 0;
         this.nextWaveFrame = 0;
         this.handDetected = false;
+        applyDifficulty();
     }
+
+    private void applyDifficulty() {
+        switch (difficulty) {
+            case EASY:
+                baseLives = 5; minFruitsPerWave = 2; maxFruitsPerWave = 3;
+                bombProb = 0.03; waveMinFrames = 90; waveMaxFrames = 120;
+                comboBonusThreshold = 3; break;
+            case NORMAL:
+                baseLives = 3; minFruitsPerWave = 3; maxFruitsPerWave = 5;
+                bombProb = 0.15; waveMinFrames = 60; waveMaxFrames = 100;
+                comboBonusThreshold = 3; break;
+            case HARD:
+                baseLives = 1; minFruitsPerWave = 5; maxFruitsPerWave = 8;
+                bombProb = 0.30; waveMinFrames = 40; waveMaxFrames = 70;
+                comboBonusThreshold = 5; break;
+        }
+        lives = baseLives;
+    }
+
+    @Override
+    public void setDifficulty(Difficulty d) { this.difficulty = d; applyDifficulty(); }
+
+    @Override
+    public Difficulty getDifficulty() { return difficulty; }
 
     @Override
     public void update(GestureData gesture) {
@@ -99,17 +132,16 @@ FruitNinja implements GameInterface {
             trail.clear();
         }
 
-        // 2. 生成水果波（每60~100帧）
+        // 生成水果波（难度决定频率和数量）
         if (nextWaveFrame <= 0) {
-            int count = 2 + RANDOM.nextInt(3); // 2~4个水果
+            int count = minFruitsPerWave + RANDOM.nextInt(maxFruitsPerWave - minFruitsPerWave + 1);
             for (int i = 0; i < count; i++) {
                 fruits.add(createRandomFruit(false));
             }
-            // 15%概率生成1个炸弹
-            if (RANDOM.nextDouble() < 0.15) {
+            if (RANDOM.nextDouble() < bombProb) {
                 fruits.add(createRandomFruit(true));
             }
-            nextWaveFrame = 60 + RANDOM.nextInt(41);
+            nextWaveFrame = waveMinFrames + RANDOM.nextInt(waveMaxFrames - waveMinFrames + 1);
         }
         nextWaveFrame--;
 

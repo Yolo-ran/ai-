@@ -1,5 +1,6 @@
 package com.gesturegame.game;
 
+import com.gesturegame.common.Difficulty;
 import com.gesturegame.common.GameInterface;
 import com.gesturegame.common.GestureData;
 import com.gesturegame.common.GestureType;
@@ -54,6 +55,12 @@ public class RPSGame implements GameInterface {
     private String roundResult;
     private List<String> gameLog;
     private boolean beepFrame;
+    private Difficulty difficulty = Difficulty.NORMAL;
+    private int totalRounds;
+    private int toleranceFrames;
+    private int cpuSmartLevel;
+    private int[] playerGestureHistory = new int[3];
+    private int initialCountdown; // 记录本轮倒计时初始值
 
     @Override
     public String getName() {
@@ -86,6 +93,42 @@ public class RPSGame implements GameInterface {
         this.roundResult = "";
         this.gameLog = new ArrayList<>();
         this.beepFrame = false;
+        this.playerGestureHistory = new int[3];
+        applyDifficulty();
+    }
+
+    private void applyDifficulty() {
+        switch (difficulty) {
+            case EASY:
+                countdownFrames = 180; // 3秒
+                totalRounds = 5;
+                toleranceFrames = 90;
+                cpuSmartLevel = 0;
+                break;
+            case NORMAL:
+                countdownFrames = 180; // 3秒
+                totalRounds = 5;
+                toleranceFrames = 48;  // 0.8秒容错
+                cpuSmartLevel = 1;     // 30%反制
+                break;
+            case HARD:
+                countdownFrames = 120; // 2秒
+                totalRounds = 7;
+                toleranceFrames = 18;  // 0.3秒容错
+                cpuSmartLevel = 2;     // 50%反制+记忆
+                break;
+        }
+    }
+
+    @Override
+    public void setDifficulty(Difficulty d) {
+        this.difficulty = d;
+        applyDifficulty();
+    }
+
+    @Override
+    public Difficulty getDifficulty() {
+        return difficulty;
     }
 
     @Override
@@ -95,22 +138,25 @@ public class RPSGame implements GameInterface {
         // === 状态机 ===
 
         if (state == RPSState.WAITING) {
-            // 检测到手 → 进入倒计时
             if (gesture.isHandDetected()) {
+                applyDifficulty(); // 重置倒计时
+                initialCountdown = countdownFrames;
+                computerChoice = getComputerChoice();
                 state = RPSState.COUNTDOWN;
-                countdownFrames = 90;
                 beepFrame = true;
             }
         } else if (state == RPSState.COUNTDOWN) {
-            // 数字变化时触发"嘀"效果
-            if (countdownFrames == 60 || countdownFrames == 30) {
+            // 数字跳变时闪一下背景
+            int prevNumber = (countdownFrames + (int)(initialCountdown / 3.0) - 1)
+                    / (int)(initialCountdown / 3.0);
+            countdownFrames--;
+            int currNumber = countdownFrames > 0
+                    ? (countdownFrames + (int)(initialCountdown / 3.0) - 1)
+                      / (int)(initialCountdown / 3.0)
+                    : 0;
+            if (currNumber != prevNumber) {
                 beepFrame = true;
             }
-            // 45帧时电脑随机出拳
-            if (countdownFrames == 45) {
-                computerChoice = RANDOM.nextInt(3);
-            }
-            countdownFrames--;
             if (countdownFrames <= 0) {
                 countdownFrames = 0;
                 state = RPSState.JUDGE;
@@ -160,8 +206,9 @@ public class RPSGame implements GameInterface {
         } else if (state == RPSState.RESULT) {
             resultFrames--;
             if (resultFrames <= 0) {
-                // 五局三胜：5局或有人达到3胜
-                if (roundCount >= 5 || playerScore >= 3 || computerScore >= 3) {
+                int winThreshold = (totalRounds / 2) + 1;
+                if (roundCount >= totalRounds || playerScore >= winThreshold
+                        || computerScore >= winThreshold) {
                     over = true;
                 } else {
                     state = RPSState.WAITING;
@@ -230,18 +277,18 @@ public class RPSGame implements GameInterface {
             gc.fillText("握拳=石头 | 张开=布 | 剪刀手=剪刀",
                     canvasWidth / 2.0 - 140, canvasHeight / 2.0 + 30);
         } else if (state == RPSState.COUNTDOWN) {
-            int countdownNumber = (countdownFrames + 29) / 30;
+            int countdownNumber = countdownFrames > 0
+                    ? (countdownFrames - 1) / (initialCountdown / 3) + 1
+                    : 0;
             gc.setFill(Color.WHITE);
             gc.setFont(javafx.scene.text.Font.font(80));
             gc.fillText(String.valueOf(countdownNumber),
                     canvasWidth / 2.0 - 20, canvasHeight / 2.0 + 25);
         } else if (state == RPSState.JUDGE) {
-            // 玩家手势 emoji
             String playerEmoji = "❓";
             if (playerGesture == GestureType.FIST) playerEmoji = "✊";
             else if (playerGesture == GestureType.PEACE) playerEmoji = "✌️";
             else if (playerGesture == GestureType.OPEN) playerEmoji = "✋";
-            // 电脑手势 emoji
             String[] computerEmojis = {"✊", "✌️", "✋"};
             String computerEmoji = computerEmojis[computerChoice % 3];
 
@@ -253,26 +300,32 @@ public class RPSGame implements GameInterface {
             gc.setFont(javafx.scene.text.Font.font(60));
             gc.fillText(computerEmoji, canvasWidth / 2.0 + 100, canvasHeight / 2.0 + 20);
         } else if (state == RPSState.RESULT) {
-            Color resultColor;
-            if (roundResult.contains("赢")) {
-                resultColor = Color.LIME;
-            } else if (roundResult.equals("平局")) {
-                resultColor = Color.YELLOW;
-            } else {
-                resultColor = Color.RED;
-            }
+            Color resultColor = roundResult.contains("赢") ? Color.LIME
+                    : roundResult.equals("平局") ? Color.YELLOW : Color.RED;
             gc.setFill(resultColor);
-            gc.setFont(javafx.scene.text.Font.font(40));
-            gc.fillText(roundResult, canvasWidth / 2.0 - 60, canvasHeight / 2.0 + 15);
+            gc.setFont(javafx.scene.text.Font.font(36));
+            gc.fillText(roundResult, canvasWidth / 2.0 - 55, canvasHeight / 2.0 - 30);
+            gc.setFill(Color.WHITE);
+            gc.setFont(javafx.scene.text.Font.font(16));
+            gc.fillText("比分 " + playerScore + " : " + computerScore,
+                    canvasWidth / 2.0 - 35, canvasHeight / 2.0 + 10);
         }
 
         if (over) {
-            String finalResult = playerScore > computerScore ? "你赢了！🏆" : "电脑赢了 🤖";
+            gc.setFill(Color.rgb(0, 0, 0, 0.7));
+            gc.fillRect(0, 0, canvasWidth, canvasHeight);
+            String finalResult = playerScore > computerScore ? "🏆 你赢了！" : "🤖 电脑赢了";
             gc.setFill(playerScore > computerScore ? Color.GOLD : Color.RED);
-            gc.fillText(finalResult, canvasWidth / 2.0 - 80, canvasHeight / 2.0);
+            gc.setFont(javafx.scene.text.Font.font(40));
+            gc.fillText(finalResult, canvasWidth / 2.0 - 100, canvasHeight / 2.0 - 20);
             gc.setFill(Color.WHITE);
-            gc.fillText("最终比分 " + playerScore + ":" + computerScore + "  握拳重新开始",
-                    canvasWidth / 2.0 - 140, canvasHeight / 2.0 + 40);
+            gc.setFont(javafx.scene.text.Font.font(20));
+            gc.fillText("最终比分 " + playerScore + " : " + computerScore,
+                    canvasWidth / 2.0 - 60, canvasHeight / 2.0 + 30);
+            gc.setFill(Color.web("#deff9a"));
+            gc.setFont(javafx.scene.text.Font.font(16));
+            gc.fillText("握拳重新开始 | 张开返回大厅",
+                    canvasWidth / 2.0 - 95, canvasHeight / 2.0 + 60);
         }
     }
 
@@ -284,6 +337,25 @@ public class RPSGame implements GameInterface {
     @Override
     public int getScore() {
         return playerScore * 100;  // 每赢一局100分
+    }
+
+    private int getComputerChoice() {
+        if (cpuSmartLevel == 0) {
+            return RANDOM.nextInt(3);
+        }
+        if (cpuSmartLevel == 1 && RANDOM.nextDouble() < 0.3) {
+            int mostUsed = 0;
+            for (int i = 0; i < 3; i++)
+                if (playerGestureHistory[i] > playerGestureHistory[mostUsed]) mostUsed = i;
+            return (mostUsed + 2) % 3;
+        }
+        if (cpuSmartLevel == 2 && RANDOM.nextDouble() < 0.5) {
+            int mostUsed = 0;
+            for (int i = 0; i < 3; i++)
+                if (playerGestureHistory[i] > playerGestureHistory[mostUsed]) mostUsed = i;
+            return (mostUsed + 2) % 3;
+        }
+        return RANDOM.nextInt(3);
     }
 
     @Override

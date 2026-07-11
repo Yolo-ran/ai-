@@ -1,5 +1,6 @@
 package com.gesturegame.game;
 
+import com.gesturegame.common.Difficulty;
 import com.gesturegame.common.GameInterface;
 import com.gesturegame.common.GestureData;
 import javafx.scene.canvas.GraphicsContext;
@@ -41,6 +42,15 @@ public class PopBubbles implements GameInterface {
     private int nextSpawnFrame = 0;
     private double handCanvasX, handCanvasY;
     private boolean handDetected;
+    private Difficulty difficulty = Difficulty.NORMAL;
+    private int maxBubbles;
+    private int bubbleLifetime;
+    private double bubbleGrowthRate;
+    private double minRadius;
+    private double maxRadius;
+    private int spawnMinFrames;
+    private int spawnMaxFrames;
+    private int autoPopPenalty;
 
     @Override
     public String getName() {
@@ -67,24 +77,65 @@ public class PopBubbles implements GameInterface {
         this.frameCount = 0;
         this.nextSpawnFrame = 0;
         this.handDetected = false;
+        applyDifficulty();
+    }
+
+    private void applyDifficulty() {
+        switch (difficulty) {
+            case EASY:
+                maxBubbles = 8;
+                bubbleLifetime = 480;   // 8秒
+                bubbleGrowthRate = 0.08;
+                minRadius = 20; maxRadius = 40;
+                spawnMinFrames = 90; spawnMaxFrames = 120;
+                autoPopPenalty = 3;
+                break;
+            case NORMAL:
+                maxBubbles = 15;
+                bubbleLifetime = 300;   // 5秒
+                bubbleGrowthRate = 0.15;
+                minRadius = 30; maxRadius = 60;
+                spawnMinFrames = 60; spawnMaxFrames = 90;
+                autoPopPenalty = 5;
+                break;
+            case HARD:
+                maxBubbles = 20;
+                bubbleLifetime = 180;   // 3秒
+                bubbleGrowthRate = 0.25;
+                minRadius = 40; maxRadius = 80;
+                spawnMinFrames = 35; spawnMaxFrames = 60;
+                autoPopPenalty = 10;
+                break;
+        }
+    }
+
+    @Override
+    public void setDifficulty(Difficulty d) {
+        this.difficulty = d;
+        applyDifficulty();
+    }
+
+    @Override
+    public Difficulty getDifficulty() {
+        return difficulty;
     }
 
     @Override
     public void update(GestureData gesture) {
         if (over) return;
 
-        // 1. 每隔60~90帧生成新泡泡
+        // 根据难度生成泡泡
         if (nextSpawnFrame <= 0) {
-            if (bubbles.size() < 15) {
+            if (bubbles.size() < maxBubbles) {
                 double bx = 50 + RANDOM.nextDouble() * (canvasWidth - 100);
                 double by = 50 + RANDOM.nextDouble() * (canvasHeight - 100);
-                double radius = 30 + RANDOM.nextDouble() * 30;
+                double radius = minRadius + RANDOM.nextDouble() * (maxRadius - minRadius);
                 Color[] colors = {Color.RED, Color.BLUE, Color.GREEN,
                         Color.PURPLE, Color.ORANGE, Color.DEEPPINK};
                 Color color = colors[RANDOM.nextInt(colors.length)];
                 bubbles.add(new Bubble(bx, by, radius, color));
             }
-            nextSpawnFrame = 60 + RANDOM.nextInt(31);
+            nextSpawnFrame = spawnMinFrames + RANDOM.nextInt(spawnMaxFrames - spawnMinFrames + 1);
         }
         nextSpawnFrame--;
 
@@ -110,14 +161,14 @@ public class PopBubbles implements GameInterface {
                 continue;
             }
 
-            // 2. 泡泡慢慢变大
-            b.radius += 0.15;
+            // 泡泡慢慢变大
+            b.radius += bubbleGrowthRate;
             b.age++;
 
-            // 5. 300帧后自动消失 → 扣分
-            if (b.age >= 300) {
+            // 超时自动消失
+            if (b.age >= bubbleLifetime) {
                 toRemove.add(b);
-                score = Math.max(0, score - 5);
+                score = Math.max(0, score - autoPopPenalty);
                 continue;
             }
 

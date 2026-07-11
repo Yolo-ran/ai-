@@ -1,5 +1,6 @@
 package com.gesturegame.game;
 
+import com.gesturegame.common.Difficulty;
 import com.gesturegame.common.GameInterface;
 import com.gesturegame.common.GestureData;
 import com.gesturegame.common.GestureType;
@@ -52,12 +53,7 @@ public class RhythmMaster implements GameInterface {
     private static final Random RANDOM = new Random();
 
     // ===== 画面配置 =====
-    // ===== 判定窗口（帧数）=====
-    private static final int PERFECT_WINDOW = 3;
-    private static final int GREAT_WINDOW = 6;
-
-    // ===== 游戏时长（90秒 = 5400帧）=====
-    private static final int GAME_DURATION = 5400;
+    // ===== 判定窗口（由难度动态设置）=====
 
     // ===== 手势-图标映射 =====
     // FIST     → ✊ 握拳  （颜色：红色 #ef4444）
@@ -86,7 +82,14 @@ public class RhythmMaster implements GameInterface {
     private double judgeCircleX;   // 判定圈X（画布中间）
     private double judgeCircleY;   // 判定圈Y
     private double judgeCircleR;   // 判定圈半径
-    private double noteSpeed;      // 音符速度
+    private double noteSpeed;
+    private Difficulty difficulty = Difficulty.NORMAL;
+    private int gestureCount;      // 2或3种手势
+    private int perfectWindow;     // Perfect判定窗口（帧）
+    private int greatWindow;       // Great判定窗口（帧）
+    private int noteIntervalMin;
+    private int noteIntervalMax;
+    private int gameDurationFrames;
 
     @Override
     public String getName() {
@@ -116,38 +119,78 @@ public class RhythmMaster implements GameInterface {
         this.greatCount = 0;
         this.missCount = 0;
 
-        // 计算画面参数
         this.judgeCircleX = canvasWidth / 2.0;
         this.judgeCircleY = canvasHeight * 0.4;
         this.judgeCircleR = 50;
-        this.noteSpeed = 3.5;
 
-        // 初始化列表
         this.notes = new ArrayList<>();
         this.floatTexts = new ArrayList<>();
         this.currentGesture = GestureType.NONE;
         this.handDetected = false;
 
+        applyDifficulty();
+        generateBeatMap();
+    }
+
+    @Override
+    public void setDifficulty(Difficulty d) {
+        this.difficulty = d;
+        applyDifficulty();
+        generateBeatMap();
+    }
+
+    private void applyDifficulty() {
+        switch (difficulty) {
+            case EASY:
+                gestureCount = 2;
+                noteSpeed = 2.1;
+                perfectWindow = 8;
+                greatWindow = 15;
+                noteIntervalMin = 30; noteIntervalMax = 40;
+                gameDurationFrames = 3600; // 60秒
+                break;
+            case NORMAL:
+                gestureCount = 3;
+                noteSpeed = 3.5;
+                perfectWindow = 3;
+                greatWindow = 6;
+                noteIntervalMin = 18; noteIntervalMax = 25;
+                gameDurationFrames = 5400; // 90秒
+                break;
+            case HARD:
+                gestureCount = 3;
+                noteSpeed = 5.0;
+                perfectWindow = 2;
+                greatWindow = 4;
+                noteIntervalMin = 10; noteIntervalMax = 18;
+                gameDurationFrames = 7200; // 120秒
+                break;
+        }
+    }
+
+    @Override
+    public Difficulty getDifficulty() { return difficulty; }
+
+    private void generateBeatMap() {
         // 生成节拍序列（记录每一帧是否生成音符）
         this.beatFrames = new java.util.HashSet<>();
 
-        // 前30秒：间隔25~35帧（简单）
+        // 按难度生成节拍（三阶段递进）
+        int phase1End = gameDurationFrames / 3;
+        int phase2End = gameDurationFrames * 2 / 3;
+        int range = noteIntervalMax - noteIntervalMin;
         int t = 0;
-        while (t < 1800) {
+        while (t < phase1End) {
             beatFrames.add(t);
-            t += 25 + RANDOM.nextInt(11);
+            t += noteIntervalMin + range + RANDOM.nextInt(range + 1); // 慢
         }
-        // 中间30秒：间隔18~25帧（中等）
-        t = 1800;
-        while (t < 3600) {
+        while (t < phase2End) {
             beatFrames.add(t);
-            t += 18 + RANDOM.nextInt(8);
+            t += noteIntervalMin + range / 2 + RANDOM.nextInt(range / 2 + 1); // 中
         }
-        // 最后30秒：间隔12~20帧（困难）
-        t = 3600;
-        while (t < GAME_DURATION) {
+        while (t < gameDurationFrames) {
             beatFrames.add(t);
-            t += 12 + RANDOM.nextInt(9);
+            t += noteIntervalMin + RANDOM.nextInt(range / 2 + 1); // 快
         }
     }
 
@@ -175,8 +218,8 @@ public class RhythmMaster implements GameInterface {
         }
 
         // ===== 3. 判定逻辑 =====
-        double perfectRange = PERFECT_WINDOW * noteSpeed;
-        double greatRange = GREAT_WINDOW * noteSpeed;
+        double perfectRange = perfectWindow * noteSpeed;
+        double greatRange = greatWindow * noteSpeed;
 
         for (Note note : notes) {
             if (note.judged) continue;
@@ -223,7 +266,7 @@ public class RhythmMaster implements GameInterface {
         }
         floatTexts.removeIf(ft -> ft.life <= 0);
 
-        if (frameCount >= GAME_DURATION) {
+        if (frameCount >= gameDurationFrames) {
             over = true;
         }
     }
@@ -242,7 +285,7 @@ public class RhythmMaster implements GameInterface {
         // ===== 2. 画判定圈 =====
         boolean noteNearby = false;
         for (Note n : notes) {
-            if (!n.judged && Math.abs(n.y - judgeCircleY) < noteSpeed * GREAT_WINDOW * 3) {
+            if (!n.judged && Math.abs(n.y - judgeCircleY) < noteSpeed * greatWindow * 3) {
                 noteNearby = true;
                 break;
             }
@@ -279,7 +322,7 @@ public class RhythmMaster implements GameInterface {
             // 离判定圈越近越大
             double distToJudge = Math.abs(note.y - judgeCircleY);
             double scale = 1.0;
-            double nearby = noteSpeed * GREAT_WINDOW * 3;
+            double nearby = noteSpeed * greatWindow * 3;
             if (distToJudge < nearby) {
                 scale = 1.0 + 0.3 * (1.0 - distToJudge / nearby);
             }
@@ -355,7 +398,7 @@ public class RhythmMaster implements GameInterface {
         }
 
         // ===== 7. 进度条（顶部）=====
-        double progress = (double) frameCount / GAME_DURATION;
+        double progress = (double) frameCount / gameDurationFrames;
         gc.setFill(Color.web("#deff9a"));
         gc.fillRect(0, 0, canvasWidth * progress, 3);
 

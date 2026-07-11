@@ -12,13 +12,14 @@ import java.util.logging.Logger;
 /**
  * 应用状态机代理，统一负责场景注册与界面切换。
  *
- * <p>状态流：{@code LOGIN} → {@code LOBBY} → {@code GAME} → {@code LOBBY}。
+ * <p>状态流：{@code LOGIN} → {@code LOBBY} → {@code DIFFICULTY} → {@code GAME} → {@code LOBBY}。
  * 进入 GAME 状态前需通过 {@link #setActiveGame(GameInterface)} 注入当前游戏实例。
  */
 public class AppStateManager {
 
     public static final String STATE_LOGIN = "LOGIN";
     public static final String STATE_LOBBY = "LOBBY";
+    public static final String STATE_DIFFICULTY = "DIFFICULTY";
     public static final String STATE_GAME = "GAME";
     public static final String STATE_GAME_OVER = "GAME_OVER";
 

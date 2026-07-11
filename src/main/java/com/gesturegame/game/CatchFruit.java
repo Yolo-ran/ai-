@@ -1,5 +1,6 @@
 package com.gesturegame.game;
 
+import com.gesturegame.common.Difficulty;
 import com.gesturegame.common.GameInterface;
 import com.gesturegame.common.GestureData;
 import javafx.scene.canvas.GraphicsContext;
@@ -39,12 +40,16 @@ public class CatchFruit implements GameInterface {
 
     private List<Fruit> fruits;
     private double basketX, basketY;
-    private static final double BASKET_WIDTH = 80;
     private static final double BASKET_HEIGHT = 20;
     private int frameCount;
-    private int spawnInterval = 30;
-    private double speedMultiplier = 1.0;
+    private int spawnInterval;
+    private double speedMultiplier;
+    private double basketWidth = 80;
     private boolean handDetected = false;
+    private Difficulty difficulty = Difficulty.NORMAL;
+    private int baseLives;
+    private double bombProbability;
+    private int accelerateFrames;
 
     @Override
     public String getName() {
@@ -66,31 +71,70 @@ public class CatchFruit implements GameInterface {
         this.canvasWidth = width;
         this.canvasHeight = height;
         this.score = 0;
-        this.lives = 3;
         this.over = false;
         this.fruits = new ArrayList<>();
-        this.basketX = canvasWidth / 2.0 - BASKET_WIDTH / 2;
+        this.basketX = canvasWidth / 2.0 - basketWidth / 2;
         this.basketY = canvasHeight - 60;
         this.frameCount = 0;
-        this.spawnInterval = 30;
-        this.speedMultiplier = 1.0;
         this.handDetected = false;
+        applyDifficulty();
+    }
+
+    private void applyDifficulty() {
+        switch (difficulty) {
+            case EASY:
+                baseLives = 5;
+                spawnInterval = 45;
+                speedMultiplier = 0.7;
+                basketWidth = 120;
+                bombProbability = 0.05;
+                accelerateFrames = Integer.MAX_VALUE; // 不加速
+                break;
+            case NORMAL:
+                baseLives = 3;
+                spawnInterval = 30;
+                speedMultiplier = 1.0;
+                basketWidth = 80;
+                bombProbability = 0.20;
+                accelerateFrames = 900; // 15秒
+                break;
+            case HARD:
+                baseLives = 1;
+                spawnInterval = 18;
+                speedMultiplier = 1.5;
+                basketWidth = 50;
+                bombProbability = 0.35;
+                accelerateFrames = 480; // 8秒
+                break;
+        }
+        lives = baseLives;
+    }
+
+    @Override
+    public void setDifficulty(Difficulty d) {
+        this.difficulty = d;
+        applyDifficulty();
+    }
+
+    @Override
+    public Difficulty getDifficulty() {
+        return difficulty;
     }
 
     @Override
     public void update(GestureData gesture) {
         if (over) return;
 
-        // 每15秒（900帧）加速一次
-        if (frameCount > 0 && frameCount % 900 == 0) {
+        // 加速（困难更频繁）
+        if (frameCount > 0 && accelerateFrames < Integer.MAX_VALUE && frameCount % accelerateFrames == 0) {
             speedMultiplier += 0.3;
             spawnInterval = Math.max(10, spawnInterval - 3);
         }
 
-        // 1. 每隔一段时间（约30帧）生成新水果
+        // 生成水果
         if (frameCount % spawnInterval == 0) {
             double fx = 20 + RANDOM.nextDouble() * (canvasWidth - 60);
-            boolean isBomb = RANDOM.nextDouble() < 0.2;
+            boolean isBomb = RANDOM.nextDouble() < bombProbability;
             double vy = (2 + RANDOM.nextDouble() * 2) * speedMultiplier;
             Color color;
             if (isBomb) {
@@ -113,7 +157,7 @@ public class CatchFruit implements GameInterface {
         // 3. 更新篮子位置（归一化坐标 → 像素）
         if (gesture.isHandDetected()) {
             handDetected = true;
-            basketX = gesture.getHandX() * canvasWidth - BASKET_WIDTH / 2;
+            basketX = gesture.getHandX() * canvasWidth - basketWidth / 2;
         } else {
             handDetected = false;
         }
@@ -125,7 +169,7 @@ public class CatchFruit implements GameInterface {
             boolean caught = f.y + 40 >= basketY
                     && f.y + 40 <= basketY + BASKET_HEIGHT + 10
                     && f.x + 40 >= basketX
-                    && f.x <= basketX + BASKET_WIDTH;
+                    && f.x <= basketX + basketWidth;
             if (caught) {
                 toRemove.add(f);
                 if (f.isBomb) {
@@ -188,8 +232,8 @@ public class CatchFruit implements GameInterface {
             gc.setStroke(Color.DARKGRAY);
         }
         gc.setLineWidth(3);
-        gc.fillRoundRect(basketX, basketY, BASKET_WIDTH, BASKET_HEIGHT, 10, 10);
-        gc.strokeRoundRect(basketX, basketY, BASKET_WIDTH, BASKET_HEIGHT, 10, 10);
+        gc.fillRoundRect(basketX, basketY, basketWidth, BASKET_HEIGHT, 10, 10);
+        gc.strokeRoundRect(basketX, basketY, basketWidth, BASKET_HEIGHT, 10, 10);
 
         // 4. 画HUD
         gc.setFill(Color.WHITE);

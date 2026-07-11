@@ -64,6 +64,7 @@ public class MainApp extends Application {
         appStateManager.registerScene(AppStateManager.STATE_LOGIN, loginScene);
         appStateManager.registerScene(AppStateManager.STATE_LOBBY, lobbyScene);
         appStateManager.registerScene(AppStateManager.STATE_GAME, gameScene);
+        appStateManager.registerScene(AppStateManager.STATE_DIFFICULTY, gameScene);
 
         loginController.bindStateManager(appStateManager);
         lobbyController.bindStateManager(appStateManager);
@@ -110,6 +111,8 @@ public class MainApp extends Application {
                 GestureData gesture = gestureStreamServer.getLatestGesture();
                 if (AppStateManager.STATE_LOBBY.equals(state)) {
                     lobbyController.tick(gesture);
+                } else if (AppStateManager.STATE_DIFFICULTY.equals(state)) {
+                    gameRenderer.tickDifficultySelect(gesture);
                 } else if (AppStateManager.STATE_GAME.equals(state)
                         || AppStateManager.STATE_GAME_OVER.equals(state)) {
                     GameInterface game = AppStateManager.getInstance().getActiveGame();

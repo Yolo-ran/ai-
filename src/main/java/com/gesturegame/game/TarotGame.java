@@ -1,5 +1,6 @@
 package com.gesturegame.game;
 
+import com.gesturegame.common.Difficulty;
 import com.gesturegame.common.GameInterface;
 import com.gesturegame.common.GestureData;
 import com.gesturegame.common.GestureType;
@@ -65,6 +66,9 @@ public class TarotGame implements GameInterface {
     private int canvasHeight;
     private int score;
     private boolean over;
+    private Difficulty difficulty = Difficulty.NORMAL;
+    private int cardCount;
+    private double hoverTimeRequired;
 
     @Override
     public String getName() {
@@ -87,20 +91,34 @@ public class TarotGame implements GameInterface {
         this.canvasHeight = height;
         this.score = 0;
         this.over = false;
-        // 随机抽取3张不重复的牌面
+        applyDifficulty();
+    }
+
+    private void applyDifficulty() {
+        switch (difficulty) {
+            case EASY:
+                cardCount = 3; hoverTimeRequired = 0.3; break;
+            case NORMAL:
+                cardCount = 5; hoverTimeRequired = 0.2; break;
+            case HARD:
+                cardCount = 7; hoverTimeRequired = 0.2; break;
+        }
         List<String> shuffled = new ArrayList<>(java.util.Arrays.asList(FORTUNES));
         Collections.shuffle(shuffled, RANDOM);
-        double cardWidth = 120;
+        double cardWidth = cardCount > 5 ? 100 : 120;
         double cardHeight = 180;
-        double totalWidth = cardWidth * 3 + 40 * 2;
+        double gap = 20;
+        double totalWidth = cardWidth * cardCount + gap * (cardCount - 1);
         double startX = (canvasWidth - totalWidth) / 2.0;
         double cardY = 130;
         Color[] positionColors = {
-            Color.web("#4a6fa5"), Color.web("#7b4fbf"), Color.web("#4a9e8e")
+            Color.web("#4a6fa5"), Color.web("#7b4fbf"), Color.web("#4a9e8e"),
+            Color.web("#c0392b"), Color.web("#d4a017"), Color.web("#2e86c1"),
+            Color.web("#884ea0")
         };
         this.cards = new ArrayList<>();
-        for (int i = 0; i < 3; i++) {
-            double cx = startX + i * (cardWidth + 40);
+        for (int i = 0; i < cardCount; i++) {
+            double cx = startX + i * (cardWidth + gap);
             cards.add(new Card(cx, cardY, cardWidth, cardHeight,
                     shuffled.get(i), positionColors[i]));
         }
@@ -273,6 +291,12 @@ public class TarotGame implements GameInterface {
     public int getScore() {
         return score;
     }
+
+    @Override
+    public void setDifficulty(Difficulty d) { this.difficulty = d; applyDifficulty(); }
+
+    @Override
+    public Difficulty getDifficulty() { return difficulty; }
 
     @Override
     public void reset() {

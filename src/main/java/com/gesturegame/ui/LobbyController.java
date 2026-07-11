@@ -302,7 +302,7 @@ public class LobbyController {
         lastActionTime = now;
         LOGGER.info(() -> "[大厅] 启动游戏: " + game.getName() + " (形态索引 " + currentIndex + ")");
         appStateManager.setActiveGame(game);
-        appStateManager.switchState(AppStateManager.STATE_GAME);
+        appStateManager.switchState(AppStateManager.STATE_DIFFICULTY);
     }
 
     private GameInterface createGame(int index) {

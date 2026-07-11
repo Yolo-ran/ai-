@@ -1,5 +1,6 @@
 package com.gesturegame.ui;
 
+import com.gesturegame.common.Difficulty;
 import com.gesturegame.common.GameInterface;
 import com.gesturegame.common.GestureData;
 import com.gesturegame.engine.AppStateManager;
@@ -49,6 +50,10 @@ public class GameRenderer {
     private boolean settling;
     private double lastInitWidth;
     private double lastInitHeight;
+    private Difficulty selectedDifficulty = Difficulty.NORMAL;
+    private int compactHoldFrames;
+    private int openHoldFrames;
+    private static final int HOLD_FRAMES = 30; // 0.5秒
 
     @FXML
     public void initialize() {
@@ -212,6 +217,130 @@ public class GameRenderer {
         lastInitWidth = w;
         lastInitHeight = h;
         LOGGER.info(() -> "[GameRenderer] 画布缩放，重开当前局: " + w + "x" + h);
+    }
+
+    /** 难度选择界面：手移选难度，握拳确认 */
+    public void tickDifficultySelect(GestureData gesture) {
+        if (gameCanvas == null) return;
+        GraphicsContext g = gameCanvas.getGraphicsContext2D();
+        double w = gameCanvas.getWidth();
+        double h = gameCanvas.getHeight();
+        g.setFill(Color.web("#0f172a"));
+        g.fillRect(0, 0, w, h);
+
+        Difficulty[] diffs = Difficulty.values();
+        double cardW = 180, cardH = 200, gap = 30;
+        double totalW = cardW * 3 + gap * 2;
+        double startX = (w - totalW) / 2;
+        double cardY = h / 2 - cardH / 2;
+        int hoveredIndex = -1;
+
+        // 手势逻辑
+        if (gesture != null && gesture.isHandDetected()) {
+            double hx = gesture.getHandX() * w;
+            double hy = gesture.getHandY() * h;
+            for (int i = 0; i < 3; i++) {
+                double cx = startX + i * (cardW + gap);
+                if (hx >= cx && hx <= cx + cardW && hy >= cardY && hy <= cardY + cardH) {
+                    hoveredIndex = i;
+                    break;
+                }
+            }
+
+            boolean isCompact = gesture.getGesture() != null
+                    && (gesture.getGesture().name().equals("FIST")
+                        || gesture.getGesture().name().equals("PEACE"));
+            boolean isOpen = gesture.getGesture() != null
+                    && gesture.getGesture().name().equals("OPEN");
+
+            if (isCompact) {
+                compactHoldFrames++;
+                openHoldFrames = 0;
+            } else if (isOpen) {
+                openHoldFrames++;
+                compactHoldFrames = 0;
+            } else {
+                compactHoldFrames = 0;
+                openHoldFrames = 0;
+            }
+        } else {
+            compactHoldFrames = 0;
+            openHoldFrames = 0;
+        }
+
+        // 握拳确认 → 进入游戏
+        if (compactHoldFrames >= HOLD_FRAMES) {
+            compactHoldFrames = 0;
+            GameInterface game = AppStateManager.getInstance().getActiveGame();
+            if (game != null) {
+                game.setDifficulty(selectedDifficulty);
+                game.init((int) w, (int) h);
+                LOGGER.info("难度选择确认: " + selectedDifficulty.getLabel() + " → " + game.getName());
+            }
+            AppStateManager.getInstance().switchState(AppStateManager.STATE_GAME);
+            return;
+        }
+
+        // 张开手 → 返回大厅
+        if (openHoldFrames >= HOLD_FRAMES) {
+            openHoldFrames = 0;
+            LOGGER.info("难度选择取消，返回大厅");
+            AppStateManager.getInstance().switchState(AppStateManager.STATE_LOBBY);
+            return;
+        }
+
+        if (hoveredIndex >= 0) selectedDifficulty = diffs[hoveredIndex];
+
+        // 渲染
+        for (int i = 0; i < 3; i++) {
+            double cx = startX + i * (cardW + gap);
+            boolean sel = i == hoveredIndex || (hoveredIndex < 0 && diffs[i] == selectedDifficulty);
+            if (sel) {
+                g.setFill(Color.web("#1e3a5f"));
+                g.setStroke(Color.web("#deff9a"));
+                g.setLineWidth(3);
+            } else {
+                g.setFill(Color.web("#111827"));
+                g.setStroke(Color.web("#ffffff20"));
+                g.setLineWidth(1);
+            }
+            g.fillRoundRect(cx, cardY, cardW, cardH, 16, 16);
+            g.strokeRoundRect(cx, cardY, cardW, cardH, 16, 16);
+
+            g.setFill(sel ? Color.WHITE : Color.web("#94a3b8"));
+            g.setFont(javafx.scene.text.Font.font(18));
+            javafx.scene.text.Text t = new javafx.scene.text.Text(diffs[i].getLabel());
+            double tw = t.getLayoutBounds().getWidth();
+            g.fillText(diffs[i].getLabel(), cx + (cardW - tw) / 2, cardY + 40);
+
+            g.setFont(javafx.scene.text.Font.font(36));
+            t = new javafx.scene.text.Text(diffs[i].getStars());
+            tw = t.getLayoutBounds().getWidth();
+            g.fillText(diffs[i].getStars(), cx + (cardW - tw) / 2, cardY + 100);
+
+            String hint = i == 0 ? "5❤" : i == 1 ? "3❤" : "1❤";
+            g.setFont(javafx.scene.text.Font.font(14));
+            t = new javafx.scene.text.Text(hint);
+            tw = t.getLayoutBounds().getWidth();
+            g.fillText(hint, cx + (cardW - tw) / 2, cardY + cardH - 20);
+        }
+
+        // 手光标
+        if (gesture != null && gesture.isHandDetected()) {
+            double cx = gesture.getHandX() * w;
+            double cy = gesture.getHandY() * h;
+            g.setFill(Color.color(0.87, 1.0, 0.6, 0.1));
+            g.fillOval(cx - 22, cy - 22, 44, 44);
+            g.setStroke(Color.web("#deff9a"));
+            g.setLineWidth(2.0);
+            g.strokeOval(cx - 16, cy - 16, 32, 32);
+            g.setFill(Color.color(0.87, 1.0, 0.6, 0.95));
+            g.fillOval(cx - 3, cy - 3, 6, 6);
+        }
+
+        g.setFill(Color.web("#deff9a"));
+        g.setFont(javafx.scene.text.Font.font(16));
+        g.fillText("手移选难度 | 握拳确认 | 张开返回", w / 2 - 120, cardY + cardH + 50);
     }
 
     private void clearCanvas() {

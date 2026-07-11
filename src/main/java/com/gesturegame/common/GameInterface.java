@@ -51,4 +51,10 @@ public interface GameInterface {
 
     /** 重新开始游戏（重置状态）。 */
     void reset();
+
+    /** 设置游戏难度（大厅选择后调用）。 */
+    void setDifficulty(Difficulty difficulty);
+
+    /** 获取当前难度。 */
+    Difficulty getDifficulty();
 }
