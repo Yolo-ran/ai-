@@ -33,7 +33,7 @@ MODEL_URL = (
     "https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
     "hand_landmarker/float16/latest/hand_landmarker.task"
 )
-MODEL_PATH = Path(__file__).resolve().parent / "models" / "hand_landmarker.task"
+MODEL_PATH = Path.home() / ".mediapipe" / "hand_landmarker.task"
 
 
 logging.basicConfig(level=logging.INFO, format="[Python] %(message)s")
