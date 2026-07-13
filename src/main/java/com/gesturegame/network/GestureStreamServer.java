@@ -26,11 +26,11 @@ public class GestureStreamServer extends WebSocketServer {
 
     private static final Logger LOGGER = Logger.getLogger(GestureStreamServer.class.getName());
     // 滑动判定：位移触发（静止跟踪基准点，移动累计位移提交）+ 方向感知锁定（防回弹误触）
-    private static final double SWIPE_STILL_VELOCITY = 0.008;
-    private static final double SWIPE_DEADZONE = 0.025;
-    private static final double SWIPE_COMMIT_DISTANCE = 0.09;
+    private static final double SWIPE_STILL_VELOCITY = 0.003;
+    private static final double SWIPE_DEADZONE = 0.018;
+    private static final double SWIPE_COMMIT_DISTANCE = 0.07;
     private static final double SWIPE_ABORT_REVERSE = -0.04;
-    private static final long SWIPE_ARM_TIMEOUT_MS = 600L;
+    private static final long SWIPE_ARM_TIMEOUT_MS = 800L;
     private static final double SWIPE_REST_VELOCITY = 0.008;
     private static final long SWIPE_REST_MS = 150L;
     private static final double SWIPE_NEUTRAL_RADIUS = 0.05;
@@ -65,6 +65,8 @@ public class GestureStreamServer extends WebSocketServer {
     private long swipeBlockRestSince;
     private double swipeLastArmX;
     private double swipeRefX = 0.5;
+    private boolean swipeRefInitialized;
+    private long swipeIdleRestSince;
 
     private long lastStaticCommandTime;
     private long lastCameraFrameTime;
@@ -264,6 +266,13 @@ public class GestureStreamServer extends WebSocketServer {
         double handX = gestureData.getHandX();
         boolean still = Math.abs(vx) < SWIPE_STILL_VELOCITY;
 
+        if (!swipeRefInitialized) {
+            swipeRefX = handX;
+            swipeRefInitialized = true;
+            swipeIdleRestSince = now;
+            return GestureCommand.NONE;
+        }
+
         if (swipeBlockSign != 0) {
             if (still) {
                 if (swipeBlockRestSince == 0L) {
@@ -290,30 +299,39 @@ public class GestureStreamServer extends WebSocketServer {
                 swipeBlockRestSince = 0L;
                 swipePhase = SwipePhase.IDLE;
                 swipeRefX = handX;
+                swipeIdleRestSince = 0L;
                 return dir;
             }
             if (progress < SWIPE_ABORT_REVERSE || now - swipeArmTime > SWIPE_ARM_TIMEOUT_MS) {
                 swipePhase = SwipePhase.IDLE;
                 swipeRefX = handX;
+                swipeIdleRestSince = 0L;
             }
             return GestureCommand.NONE;
         }
 
-        if (still) {
-            swipeRefX = handX;
-        } else {
-            double delta = handX - swipeRefX;
-            if (Math.abs(delta) > SWIPE_DEADZONE) {
-                int dirSign = delta < 0 ? -1 : 1;
-                if (swipeBlockSign != 0 && dirSign == swipeBlockSign) {
-                    swipeRefX = handX;
-                } else {
-                    swipePhase = SwipePhase.ARMED;
-                    swipeArmX = swipeRefX;
-                    swipeArmDir = dirSign;
-                    swipeArmTime = now;
-                }
+        double delta = handX - swipeRefX;
+        if (Math.abs(delta) > SWIPE_DEADZONE) {
+            swipeIdleRestSince = 0L;
+            int dirSign = delta < 0 ? -1 : 1;
+            if (swipeBlockSign != 0 && dirSign == swipeBlockSign) {
+                swipeRefX = handX;
+            } else {
+                swipePhase = SwipePhase.ARMED;
+                swipeArmX = swipeRefX;
+                swipeArmDir = dirSign;
+                swipeArmTime = now;
             }
+        } else if (still) {
+            // 只有真正停稳一段时间后才吸收漂移。不能逐帧重置基准点，
+            // 否则慢速滑动的累计位移永远达不到触发距离。
+            if (swipeIdleRestSince == 0L) {
+                swipeIdleRestSince = now;
+            } else if (now - swipeIdleRestSince >= SWIPE_REST_MS) {
+                swipeRefX = handX;
+            }
+        } else {
+            swipeIdleRestSince = 0L;
         }
         return GestureCommand.NONE;
     }
@@ -323,6 +341,8 @@ public class GestureStreamServer extends WebSocketServer {
         swipeBlockSign = 0;
         swipeBlockRestSince = 0L;
         swipeRefX = 0.5;
+        swipeRefInitialized = false;
+        swipeIdleRestSince = 0L;
     }
 
     private void onStateObserved(String state) {

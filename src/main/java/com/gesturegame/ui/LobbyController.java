@@ -76,7 +76,9 @@ public class LobbyController {
     private static final double PX_PER_UNIT = 16.0;
     private static final double LERP_SPEED = 0.06;
     private static final double MORPH_LERP = 0.12;
-    private static final double STILL_X = 0.016;
+    private static final double HORIZONTAL_MOTION_VELOCITY = 0.004;
+    private static final double HORIZONTAL_MOTION_DISTANCE = 0.018;
+    private static final long MORPH_STILL_HOLD_MS = 220L;
     private static final double ROT_SPEED = 0.004;
     private static final double TURBULENCE = 0.03;
     private static final double PARTICLE_DRAW_SIZE = 10.0;
@@ -109,6 +111,9 @@ public class LobbyController {
     private double morph;
     private double rotY;
     private double pulse;
+    private boolean morphHandTracked;
+    private double morphMotionAnchorX;
+    private long morphStillSince;
 
     public void bindStateManager(AppStateManager appStateManager) {
         this.appStateManager = appStateManager;
@@ -151,9 +156,26 @@ public class LobbyController {
         double handX = hand ? gesture.getHandX() : 0.5;
         double handY = hand ? gesture.getHandY() : 0.5;
 
-        // 聚散：手静止时 OPEN=散(+1)/FIST=聚(-1)；挥手时(|vx|大)抑制，避免与切换冲突
+        // 聚散与导航互斥：横向移动立即视为滑动意图；停稳一小段时间后，
+        // OPEN/FIST 才能驱动聚散。用累计位移兜住滑动中偶发的低速帧。
         double morphTarget = 0.0;
-        if (hand && Math.abs(vx) < STILL_X) {
+        long now = System.currentTimeMillis();
+        if (!hand) {
+            morphHandTracked = false;
+            morphStillSince = 0L;
+        } else if (!morphHandTracked) {
+            morphHandTracked = true;
+            morphMotionAnchorX = handX;
+            morphStillSince = now;
+        } else if (Math.abs(vx) >= HORIZONTAL_MOTION_VELOCITY
+                || Math.abs(handX - morphMotionAnchorX) >= HORIZONTAL_MOTION_DISTANCE) {
+            morphMotionAnchorX = handX;
+            morphStillSince = now;
+        }
+
+        boolean settledForMorph = hand && morphHandTracked
+                && now - morphStillSince >= MORPH_STILL_HOLD_MS;
+        if (settledForMorph) {
             GestureType g = gesture.getGesture();
             if (g == GestureType.OPEN) {
                 morphTarget = 1.0;
