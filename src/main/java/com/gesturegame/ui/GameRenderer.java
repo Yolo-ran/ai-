@@ -54,6 +54,7 @@ public class GameRenderer {
     private double lastInitHeight;
     private Difficulty selectedDifficulty = Difficulty.NORMAL;
     private int compactHoldFrames;
+    private int openHoldFrames;
     private int exitHoldFrames;
     private int exitDropoutFrames;
     private static final int HOLD_FRAMES = 72; // 1.2秒@60fps
@@ -126,7 +127,7 @@ public class GameRenderer {
             settling = false;
             initGame(game);
             if (statusLabel != null) {
-                statusLabel.setText("双手入镜保持返回");
+                statusLabel.setText("塔罗牌".equals(game.getName()) ? "" : "双手入镜保持返回");
             }
         }
 
@@ -146,8 +147,12 @@ public class GameRenderer {
         if (gameNameLabel != null) {
             gameNameLabel.setText(game.getIcon() + "  " + game.getName());
         }
+        boolean tarotMode = "塔罗牌".equals(game.getName());
         if (scoreLabel != null) {
-            scoreLabel.setText("分数: " + game.getScore());
+            scoreLabel.setText(tarotMode ? "" : "分数: " + game.getScore());
+        }
+        if (statusLabel != null && tarotMode) {
+            statusLabel.setText("");
         }
 
         if (game.isOver() && !gameOverHandled) {
@@ -204,6 +209,8 @@ public class GameRenderer {
 
     private void exitToDifficulty() {
         exitHoldFrames = 0;
+        compactHoldFrames = 0;
+        openHoldFrames = 0;
         currentGame = null;
         gameOverHandled = false;
         settling = false;
@@ -217,6 +224,8 @@ public class GameRenderer {
 
     private void exitToLobby() {
         exitHoldFrames = 0;
+        compactHoldFrames = 0;
+        openHoldFrames = 0;
         GameInterface game = AppStateManager.getInstance().getActiveGame();
         if (game != null) {
             game.reset();
@@ -271,10 +280,15 @@ public class GameRenderer {
         GraphicsContext g = gameCanvas.getGraphicsContext2D();
         double w = gameCanvas.getWidth();
         double h = gameCanvas.getHeight();
-        g.setFill(Color.web("#0f172a"));
+        g.setFill(Color.web("#120718"));
         g.fillRect(0, 0, w, h);
 
         GameInterface activeGame = AppStateManager.getInstance().getActiveGame();
+        boolean tarotMode = activeGame != null && "塔罗牌".equals(activeGame.getName());
+        if (tarotMode) {
+            drawTarotEntryScreen(g, gesture, dualHands, w, h, activeGame);
+            return;
+        }
         Difficulty[] all = Difficulty.values();
         java.util.List<Difficulty> supported = new java.util.ArrayList<>();
         for (Difficulty d : all) {
@@ -343,12 +357,12 @@ public class GameRenderer {
             double cx = startX + i * (cardW + gap);
             boolean sel = i == hoveredIndex || (hoveredIndex < 0 && diffs[i] == selectedDifficulty);
             if (sel) {
-                g.setFill(Color.web("#1e3a5f"));
-                g.setStroke(Color.web("#deff9a"));
+                g.setFill(Color.web("#2a133a"));
+                g.setStroke(Color.web("#f0ca79"));
                 g.setLineWidth(3);
             } else {
-                g.setFill(Color.web("#111827"));
-                g.setStroke(Color.web("#ffffff20"));
+                g.setFill(Color.web("#160b20"));
+                g.setStroke(Color.web("#8b5bd144"));
                 g.setLineWidth(1);
             }
             g.fillRoundRect(cx, cardY, cardW, cardH, 16, 16);
@@ -387,34 +401,101 @@ public class GameRenderer {
 
             if (compactHoldFrames > 0 && hoveredIndex >= 0) {
                 // PEACE 按住中：外圈光晕 + 进度环
-                g.setFill(Color.color(0.87, 1.0, 0.6, 0.1));
+                g.setFill(Color.color(0.94, 0.79, 0.47, 0.12));
                 g.fillOval(cx - 22, cy - 22, 44, 44);
-                g.setStroke(Color.web("#deff9a"));
+                g.setStroke(Color.web("#f0ca79"));
                 g.setLineWidth(2.0);
                 g.strokeOval(cx - 16, cy - 16, 32, 32);
                 // 进度弧
                 double progress = (double) compactHoldFrames / HOLD_FRAMES;
-                g.setStroke(Color.web("#deff9a"));
+                g.setStroke(Color.web("#f0ca79"));
                 g.setLineWidth(3);
                 g.strokeArc(cx - 20, cy - 20, 40, 40,
                         90, -360 * progress, javafx.scene.shape.ArcType.OPEN);
             }
 
             // 中心小点（始终显示）
-            g.setFill(Color.color(0.87, 1.0, 0.6, 0.95));
+            g.setFill(Color.web("#f0ca79"));
             g.fillOval(cx - 3, cy - 3, 6, 6);
         }
 
-        g.setFill(Color.web("#deff9a"));
+        g.setFill(Color.web("#f0ca79"));
         g.setFont(javafx.scene.text.Font.font(16));
         drawExitTarget(g, w, h);
         drawExitProgress(gesture, dualHands);
         g.fillText("手移选难度 | ✊握拳确认 | 双手入镜保持返回", w / 2 - 150, cardY + cardH + 50);
     }
 
+    private void drawTarotEntryScreen(GraphicsContext g, GestureData gesture, DualHandState dualHands,
+                                      double w, double h, GameInterface activeGame) {
+        updateExitHold(dualHands);
+        boolean isFist = gesture != null && gesture.getGesture() == GestureType.FIST && !dualHands.captured();
+
+        if (isFist) {
+            compactHoldFrames++;
+        } else {
+            compactHoldFrames = 0;
+        }
+
+        if (compactHoldFrames >= HOLD_FRAMES) {
+            compactHoldFrames = 0;
+            currentGame = null;
+            LOGGER.info("塔罗牌跳过难度选择，直接进入自定义占读模式");
+            AppStateManager.getInstance().switchState(AppStateManager.STATE_GAME);
+            return;
+        }
+
+        if (exitHoldFrames >= HOLD_FRAMES) {
+            exitHoldFrames = 0;
+            LOGGER.info("塔罗牌入口取消，返回大厅");
+            AppStateManager.getInstance().switchState(AppStateManager.STATE_LOBBY);
+            return;
+        }
+
+        double panelW = 420;
+        double panelH = 260;
+        double x = (w - panelW) / 2.0;
+        double y = (h - panelH) / 2.0;
+        g.setFill(Color.web("#1a0c24"));
+        g.fillRoundRect(x, y, panelW, panelH, 26, 26);
+        g.setStroke(Color.web("#8b5bd1"));
+        g.setLineWidth(1.5);
+        g.strokeRoundRect(x, y, panelW, panelH, 26, 26);
+
+        g.setFill(Color.web("#f0ca79"));
+        g.setFont(javafx.scene.text.Font.font(16));
+        g.fillText("✦ 紫金秘仪模式", x + 28, y + 34);
+
+        g.setFill(Color.web("#fff3df"));
+        g.setFont(javafx.scene.text.Font.font(30));
+        g.fillText(activeGame.getIcon() + "  " + activeGame.getName(), x + 28, y + 84);
+
+        g.setFill(Color.web("#d8c2e6"));
+        g.setFont(javafx.scene.text.Font.font(16));
+        g.fillText("塔罗牌不使用普通难度系统，将直接按你的自定义占读逻辑进入。", x + 28, y + 126);
+        g.fillText("当前保留：紫金界面、78张牌、三种牌阵、完整解读。", x + 28, y + 154);
+
+        g.setFill(Color.web("#2e143f"));
+        g.fillRoundRect(x + 28, y + 188, 168, 42, 22, 22);
+        g.setStroke(Color.web("#f0ca79"));
+        g.strokeRoundRect(x + 28, y + 188, 168, 42, 22, 22);
+        g.setFill(Color.web("#f6dfae"));
+        g.fillText("✊ 握拳开始占读", x + 50, y + 215);
+
+        g.setFill(Color.web("#24112f"));
+        g.fillRoundRect(x + 220, y + 188, 148, 42, 22, 22);
+        g.setStroke(Color.web("#8b5bd1"));
+        g.strokeRoundRect(x + 220, y + 188, 148, 42, 22, 22);
+        g.setFill(Color.web("#d7c1e4"));
+        g.fillText("👥 双手保持退出", x + 248, y + 215);
+
+        drawExitTarget(g, w, h);
+        drawExitProgress(gesture, dualHands);
+    }
+
     private void clearCanvas() {
         if (gc != null && gameCanvas != null) {
-            gc.setFill(Color.web("#0f172a"));
+            gc.setFill(Color.web("#120718"));
             gc.fillRect(0, 0, gameCanvas.getWidth(), gameCanvas.getHeight());
         }
     }
