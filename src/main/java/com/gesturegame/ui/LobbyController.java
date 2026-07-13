@@ -114,6 +114,8 @@ public class LobbyController {
     private boolean morphHandTracked;
     private double morphMotionAnchorX;
     private long morphStillSince;
+    private int peaceHoldFrames;
+    private static final int PEACE_HOLD_FRAMES = 72; // 1.2秒@60fps
     private double morphTarget;
     private GestureType morphCandidate = GestureType.NONE;
     private long morphCandidateSince;
@@ -178,6 +180,10 @@ public class LobbyController {
         boolean settledForMorph = hand && morphHandTracked
                 && now - morphStillSince >= MORPH_STILL_HOLD_MS;
         GestureType g = hand ? gesture.getGesture() : GestureType.NONE;
+
+        // PEACE 确认进度跟踪（光标在选中的卡片区域内才计数）
+        updatePeaceHold(g, handX, handY, w, h);
+
         if (g == GestureType.OPEN || g == GestureType.FIST) {
             if (g != morphCandidate) {
                 morphCandidate = g;
@@ -374,12 +380,31 @@ public class LobbyController {
         gc.fillRect(0, 0, w, h);
     }
 
+    /** PEACE 确认进度：PEACE 保持时反馈进度环。 */
+    private void updatePeaceHold(GestureType g, double handX, double handY,
+                                  double w, double h) {
+        if (g == GestureType.PEACE) {
+            peaceHoldFrames++;
+        } else {
+            peaceHoldFrames = 0;
+        }
+    }
+
     private void drawHandCursor(double x, double y) {
-        gc.setFill(Color.color(0.87, 1.0, 0.6, 0.1));
-        gc.fillOval(x - 22, y - 22, 44, 44);
-        gc.setStroke(Color.web("#deff9a"));
-        gc.setLineWidth(2.0);
-        gc.strokeOval(x - 16, y - 16, 32, 32);
+        if (peaceHoldFrames > 0) {
+            // PEACE 按住中：外圈光晕 + 进度环
+            gc.setFill(Color.color(0.87, 1.0, 0.6, 0.1));
+            gc.fillOval(x - 22, y - 22, 44, 44);
+            gc.setStroke(Color.web("#deff9a"));
+            gc.setLineWidth(2.0);
+            gc.strokeOval(x - 16, y - 16, 32, 32);
+            double progress = (double) peaceHoldFrames / PEACE_HOLD_FRAMES;
+            gc.setStroke(Color.web("#deff9a"));
+            gc.setLineWidth(3);
+            gc.strokeArc(x - 20, y - 20, 40, 40, 90, -360 * progress,
+                    javafx.scene.shape.ArcType.OPEN);
+        }
+        // 中心小点（始终显示）
         gc.setFill(Color.color(0.87, 1.0, 0.6, 0.95));
         gc.fillOval(x - 3, y - 3, 6, 6);
     }
