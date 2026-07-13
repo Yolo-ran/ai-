@@ -12,6 +12,7 @@ import com.gesturegame.game.RhythmMaster;
 import com.gesturegame.game.TarotGame;
 import com.gesturegame.network.GestureCommand;
 import com.gesturegame.network.GestureCommandResolver;
+import com.gesturegame.network.GestureStreamServer.DualHandState;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.scene.canvas.Canvas;
@@ -76,9 +77,6 @@ public class LobbyController {
     private static final double PX_PER_UNIT = 16.0;
     private static final double LERP_SPEED = 0.06;
     private static final double MORPH_LERP = 0.12;
-    private static final double HORIZONTAL_MOTION_VELOCITY = 0.004;
-    private static final double HORIZONTAL_MOTION_DISTANCE = 0.018;
-    private static final long MORPH_STILL_HOLD_MS = 80L;
     private static final double ROT_SPEED = 0.004;
     private static final double TURBULENCE = 0.03;
     private static final double PARTICLE_DRAW_SIZE = 10.0;
@@ -111,12 +109,9 @@ public class LobbyController {
     private double morph;
     private double rotY;
     private double pulse;
-    private boolean morphHandTracked;
-    private double morphMotionAnchorX;
-    private long morphStillSince;
+    private int confirmHoldFrames;
+    private static final int CONFIRM_HOLD_FRAMES = 72; // 1.2秒@60fps
     private double morphTarget;
-    private GestureType morphCandidate = GestureType.NONE;
-    private long morphCandidateSince;
 
     public void bindStateManager(AppStateManager appStateManager) {
         this.appStateManager = appStateManager;
@@ -145,6 +140,10 @@ public class LobbyController {
     }
 
     public void tick(GestureData gesture) {
+        tick(gesture, new DualHandState(false, false, 0.0, false, 0.0, 0.0));
+    }
+
+    public void tick(GestureData gesture, DualHandState dualHands) {
         if (gc == null || lobbyCanvas == null) {
             return;
         }
@@ -154,51 +153,16 @@ public class LobbyController {
             return;
         }
 
-        double vx = gesture != null ? gesture.getVelocityX() : 0.0;
         boolean hand = gesture != null && gesture.isHandDetected();
         double handX = hand ? gesture.getHandX() : 0.5;
         double handY = hand ? gesture.getHandY() : 0.5;
 
-        // 聚散与导航互斥：横向移动立即视为滑动意图；停稳一小段时间后，
-        // OPEN/FIST 才能驱动聚散。用累计位移兜住滑动中偶发的低速帧。
-        long now = System.currentTimeMillis();
-        if (!hand) {
-            morphHandTracked = false;
-            morphStillSince = 0L;
-        } else if (!morphHandTracked) {
-            morphHandTracked = true;
-            morphMotionAnchorX = handX;
-            morphStillSince = now;
-        } else if (Math.abs(vx) >= HORIZONTAL_MOTION_VELOCITY
-                || Math.abs(handX - morphMotionAnchorX) >= HORIZONTAL_MOTION_DISTANCE) {
-            morphMotionAnchorX = handX;
-            morphStillSince = now;
+        GestureType gestureType = hand ? gesture.getGesture() : GestureType.NONE;
+        updateConfirmHold(dualHands.captured() ? GestureType.NONE : gestureType);
+        if (dualHands.active()) {
+            // 双手靠近时聚拢、分开时散开；单手模式不再改变聚散状态。
+            morphTarget = 2.0 * dualHands.spread() - 1.0;
         }
-
-        boolean settledForMorph = hand && morphHandTracked
-                && now - morphStillSince >= MORPH_STILL_HOLD_MS;
-        GestureType g = hand ? gesture.getGesture() : GestureType.NONE;
-        if (g == GestureType.OPEN || g == GestureType.FIST) {
-            if (g != morphCandidate) {
-                morphCandidate = g;
-                morphCandidateSince = now;
-            }
-        } else {
-            morphCandidate = GestureType.NONE;
-            morphCandidateSince = 0L;
-        }
-        // 允许连续稳定识别兜底：轻微关键点抖动不应让“握拳聚/张手散”永远无法触发。
-        boolean gestureStable = morphCandidate != GestureType.NONE
-                && now - morphCandidateSince >= MORPH_STILL_HOLD_MS;
-        if (settledForMorph || gestureStable) {
-            if (g == GestureType.OPEN) {
-                morphTarget = 1.0;
-            } else if (g == GestureType.FIST) {
-                morphTarget = -1.0;
-            }
-        }
-        // 聚散状态采用锁存：短暂识别为 NONE、手部轻微移动或开始滑动时保持当前形态，
-        // 只有识别到另一个明确手势才反向。避免每次噪声帧都回到中性位置。
         morph += (morphTarget - morph) * MORPH_LERP;
         rotY += ROT_SPEED * (1.0 + Math.max(0.0, morph) * 2.0);
         double time = pulse;
@@ -264,6 +228,9 @@ public class LobbyController {
 
         if (hand) {
             drawHandCursor(handX * w, handY * h);
+            if (dualHands.active()) {
+                drawHandCursor(dualHands.secondHandX() * w, dualHands.secondHandY() * h);
+            }
         }
     }
 
@@ -318,11 +285,7 @@ public class LobbyController {
         if (now - lastNavigationTime < NAVIGATION_COOLDOWN_MS) {
             return;
         }
-        int nextIndex = currentIndex + direction;
-        if (nextIndex < 0 || nextIndex >= MAX_GAMES) {
-            return;
-        }
-        currentIndex = nextIndex;
+        currentIndex = Math.floorMod(currentIndex + direction, MAX_GAMES);
         lastNavigationTime = now;
         updateStatusText();
     }
@@ -356,7 +319,7 @@ public class LobbyController {
         }
         GameInfo gi = GAME_INFO.get(currentIndex);
         statusLabel.setText(gi.icon() + "  " + gi.name() + " — " + gi.desc()
-                + "    ·    挥手切换 · 张手散 · 握拳聚 · ✌️开始");
+                + "    ·    单手张开挥动切换 · 双手开合聚散 · ✊握拳开始");
     }
 
     // ===== 渲染 =====
@@ -374,12 +337,28 @@ public class LobbyController {
         gc.fillRect(0, 0, w, h);
     }
 
+    private void updateConfirmHold(GestureType gesture) {
+        if (gesture == GestureType.FIST) {
+            confirmHoldFrames++;
+        } else {
+            confirmHoldFrames = 0;
+        }
+    }
+
     private void drawHandCursor(double x, double y) {
-        gc.setFill(Color.color(0.87, 1.0, 0.6, 0.1));
-        gc.fillOval(x - 22, y - 22, 44, 44);
-        gc.setStroke(Color.web("#deff9a"));
-        gc.setLineWidth(2.0);
-        gc.strokeOval(x - 16, y - 16, 32, 32);
+        if (confirmHoldFrames > 0) {
+            gc.setFill(Color.color(0.87, 1.0, 0.6, 0.1));
+            gc.fillOval(x - 22, y - 22, 44, 44);
+            gc.setStroke(Color.web("#deff9a"));
+            gc.setLineWidth(2.0);
+            gc.strokeOval(x - 16, y - 16, 32, 32);
+            double progress = Math.min(1.0, (double) confirmHoldFrames / CONFIRM_HOLD_FRAMES);
+            gc.setStroke(Color.web("#deff9a"));
+            gc.setLineWidth(3);
+            gc.strokeArc(x - 20, y - 20, 40, 40, 90, -360 * progress,
+                    javafx.scene.shape.ArcType.OPEN);
+        }
+        // 中心小点（始终显示）
         gc.setFill(Color.color(0.87, 1.0, 0.6, 0.95));
         gc.fillOval(x - 3, y - 3, 6, 6);
     }
