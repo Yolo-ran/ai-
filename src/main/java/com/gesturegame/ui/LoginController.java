@@ -21,6 +21,8 @@ public class LoginController {
 
     private static final Logger LOGGER = Logger.getLogger(LoginController.class.getName());
     private static final double CONFIRM_THRESHOLD = 0.80;
+    private static final String SIGN_IN_GESTURE_NAME = "握拳";
+    private static final String WAITING_MESSAGE = "正在等待握拳手势签入...";
 
     @FXML
     private Label statusLabel;
@@ -43,17 +45,17 @@ public class LoginController {
     public void initialize() {
         confirmProgress.setProgress(0.0);
         confirmProgress.setVisible(false);
-        statusLabel.setText("正在等待剪刀手势签入...");
+        statusLabel.setText(WAITING_MESSAGE);
     }
 
     public void handleAgentCommand(GestureCommand command, double confidence, String hand) {
         Platform.runLater(() -> {
-            if (!"LOGIN".equals(AppStateManager.getInstance().getCurrentState())) {
+            if (!AppStateManager.STATE_LOGIN.equals(AppStateManager.getInstance().getCurrentState())) {
                 return;
             }
 
             if (command == GestureCommand.CONFIRM && confidence >= CONFIRM_THRESHOLD && !signingIn) {
-                startConfirmSequence(hand, confidence);
+                startConfirmSequence(confidence);
             } else if (!signingIn) {
                 refreshIdleStatus(command);
             }
@@ -100,12 +102,12 @@ public class LoginController {
                 confirmProgress.setProgress(0.0);
                 break;
             case BACK:
-                statusLabel.setText("检测到返回手势，请使用剪刀手势进入大厅");
+                statusLabel.setText("检测到返回手势，请使用" + SIGN_IN_GESTURE_NAME + "进入大厅");
                 confirmProgress.setVisible(false);
                 confirmProgress.setProgress(0.0);
                 break;
             default:
-                statusLabel.setText("正在等待剪刀手势签入...");
+                statusLabel.setText(WAITING_MESSAGE);
                 confirmProgress.setVisible(false);
                 confirmProgress.setProgress(0.0);
                 break;
@@ -113,9 +115,9 @@ public class LoginController {
         lastIdleUpdateTime = now;
     }
 
-    private void startConfirmSequence(String hand, double confidence) {
+    private void startConfirmSequence(double confidence) {
         signingIn = true;
-        statusLabel.setText(String.format("检测到 %s 手确认手势，正在完成签入...", hand));
+        statusLabel.setText("检测到" + SIGN_IN_GESTURE_NAME + "手势，正在完成签入...");
         confirmProgress.setVisible(true);
         confirmProgress.setProgress(0.0);
         LOGGER.info(() -> "登录界面开始处理 CONFIRM 指令, confidence=" + confidence);

@@ -4,6 +4,7 @@ import com.gesturegame.common.GameInterface;
 import com.gesturegame.common.GestureData;
 import com.gesturegame.engine.AppStateManager;
 import com.gesturegame.network.GestureStreamServer;
+import com.gesturegame.network.GestureStreamServer.DualHandState;
 import com.gesturegame.ui.GameRenderer;
 import com.gesturegame.ui.LobbyController;
 import com.gesturegame.ui.LoginController;
@@ -109,14 +110,15 @@ public class MainApp extends Application {
 
                 String state = AppStateManager.getInstance().getCurrentState();
                 GestureData gesture = gestureStreamServer.getLatestGesture();
+                DualHandState dualHands = gestureStreamServer.getLatestDualHandState();
                 if (AppStateManager.STATE_LOBBY.equals(state)) {
-                    lobbyController.tick(gesture);
+                    lobbyController.tick(gesture, dualHands);
                 } else if (AppStateManager.STATE_DIFFICULTY.equals(state)) {
-                    gameRenderer.tickDifficultySelect(gesture);
+                    gameRenderer.tickDifficultySelect(gesture, dualHands);
                 } else if (AppStateManager.STATE_GAME.equals(state)
                         || AppStateManager.STATE_GAME_OVER.equals(state)) {
                     GameInterface game = AppStateManager.getInstance().getActiveGame();
-                    gameRenderer.tick(gesture, game);
+                    gameRenderer.tick(gesture, game, dualHands);
                 }
             }
         };

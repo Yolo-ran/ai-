@@ -81,8 +81,8 @@ class GestureState:
         self.last_encoded_image = ""
         self.last_raw_gesture = "none"
 
-    def build_payload(self, result) -> dict:
-        if result is None:
+    def build_payload(self, hands) -> dict:
+        if not hands:
             self.previous_detected = False
             self.last_raw_gesture = "none"
             return {
@@ -95,9 +95,15 @@ class GestureState:
                 "gesture": "none",
                 "confidence": 0.0,
                 "handDetected": False,
+                "handCount": 0,
+                "navigationPalm": False,
+                "secondHandX": 0.0,
+                "secondHandY": 0.0,
+                "twoHandSpread": 0.0,
+                "bothHandsOpen": False,
             }
 
-        hand_landmarks, handedness_label = result
+        hand_landmarks, handedness_label = hands[0]
         hand_x, hand_y = calculate_hand_center(hand_landmarks)
         if self.previous_detected:
             velocity_x = clamp(hand_x - self.prev_hand_x)
@@ -111,12 +117,25 @@ class GestureState:
             prev_hand_y = hand_y
 
         raw_gesture, gesture, confidence = classify_gesture(hand_landmarks, handedness_label)
+        navigation_palm = is_navigation_palm(hand_landmarks)
         pointing_direction = classify_pointing_direction(hand_landmarks) if gesture == "pointing" else "none"
         self.last_raw_gesture = raw_gesture
 
         self.prev_hand_x = hand_x
         self.prev_hand_y = hand_y
         self.previous_detected = True
+
+        second_hand_x = 0.0
+        second_hand_y = 0.0
+        two_hand_spread = 0.0
+        both_hands_open = False
+        if len(hands) >= 2:
+            second_landmarks, second_handedness = hands[1]
+            second_hand_x, second_hand_y = calculate_hand_center(second_landmarks)
+            _, second_gesture, _ = classify_gesture(second_landmarks, second_handedness)
+            center_distance = ((hand_x - second_hand_x) ** 2 + (hand_y - second_hand_y) ** 2) ** 0.5
+            two_hand_spread = max(0.0, min(1.0, (center_distance - 0.15) / 0.50))
+            both_hands_open = gesture == "open" and second_gesture == "open"
 
         return {
             "handX": round(hand_x, 4),
@@ -130,6 +149,12 @@ class GestureState:
             "pointingDirection": pointing_direction,
             "confidence": round(confidence, 4),
             "handDetected": True,
+            "handCount": len(hands),
+            "navigationPalm": navigation_palm,
+            "secondHandX": round(second_hand_x, 4),
+            "secondHandY": round(second_hand_y, 4),
+            "twoHandSpread": round(two_hand_spread, 4),
+            "bothHandsOpen": both_hands_open,
         }
 
 
@@ -167,6 +192,13 @@ def is_finger_extended(points, tip_index: int, pip_index: int) -> bool:
     tip_from_wrist = landmark_distance(points[tip_index], points[0])
     pip_from_wrist = landmark_distance(points[pip_index], points[0])
     return straight and tip_from_wrist > pip_from_wrist * 1.04
+
+
+def is_navigation_palm(points) -> bool:
+    """Loose open-palm test used only for lobby navigation."""
+    extended = sum(is_finger_extended(points, tip, pip)
+                   for tip, pip in ((8, 6), (12, 10), (16, 14), (20, 18)))
+    return extended >= 3
 
 
 def is_thumb_extended(points, handedness_label: str) -> bool:
@@ -429,10 +461,10 @@ def create_landmarker():
     options = HAND_LANDMARKER_OPTIONS(
         base_options=BASE_OPTIONS(model_asset_path=str(model_path)),
         running_mode=RUNNING_MODE.VIDEO,
-        num_hands=1,
-        min_hand_detection_confidence=0.6,
-        min_hand_presence_confidence=0.6,
-        min_tracking_confidence=0.6,
+        num_hands=2,
+        min_hand_detection_confidence=0.42,
+        min_hand_presence_confidence=0.42,
+        min_tracking_confidence=0.45,
     )
     return HAND_LANDMARKER.create_from_options(options)
 
@@ -468,15 +500,17 @@ def open_camera():
     )
 
 
-def extract_primary_hand(result):
+def extract_hands(result):
     if not result or not result.hand_landmarks:
-        return None
+        return []
 
-    handedness_label = "Right"
-    if result.handedness and result.handedness[0]:
-        handedness_label = result.handedness[0][0].category_name or "Right"
-
-    return result.hand_landmarks[0], handedness_label
+    hands = []
+    for index, landmarks in enumerate(result.hand_landmarks[:2]):
+        handedness_label = "Right"
+        if result.handedness and len(result.handedness) > index and result.handedness[index]:
+            handedness_label = result.handedness[index][0].category_name or "Right"
+        hands.append((landmarks, handedness_label))
+    return hands
 
 
 async def stream_gestures():
@@ -507,18 +541,26 @@ async def stream_gestures():
                                 mp_image,
                                 int(now * 1000),
                             )
-                            first_hand = extract_primary_hand(result)
+                            hands = extract_hands(result)
 
-                            payload = state.build_payload(first_hand)
+                            payload = state.build_payload(hands)
                             output_frame = frame
                             if SHOW_PREVIEW or SEND_IMAGE_STREAM:
                                 output_frame = frame.copy()
                                 draw_preview(
                                     output_frame,
-                                    first_hand[0] if first_hand is not None else None,
+                                    hands[0][0] if hands else None,
                                     payload,
                                     state.last_raw_gesture,
                                 )
+                                if len(hands) > 1:
+                                    MP_DRAW.draw_landmarks(
+                                        output_frame,
+                                        hands[1][0],
+                                        HAND_CONNECTIONS,
+                                        MP_STYLES.get_default_hand_landmarks_style(),
+                                        MP_STYLES.get_default_hand_connections_style(),
+                                    )
 
                             if SEND_IMAGE_STREAM:
                                 if now - state.last_image_send_time >= 1.0 / IMAGE_STREAM_FPS:

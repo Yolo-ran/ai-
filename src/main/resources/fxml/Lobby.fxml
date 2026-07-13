@@ -32,13 +32,13 @@
               AnchorPane.bottomAnchor="26.0" AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0">
             <children>
                 <Label fx:id="statusLabel" styleClass="lobby-status"
-                       text="左右挥手切换星球 · ✌️剪刀手开始" wrapText="true" />
+                       text="单手张开左右挥动切换 · 双手开合控制聚散 · ✊握拳保持开始" wrapText="true" />
                 <HBox alignment="CENTER" spacing="14.0">
                     <children>
                         <Label styleClass="hint-badge" text="挥手切换" />
-                        <Label styleClass="hint-badge" text="张手散" />
-                        <Label styleClass="hint-badge" text="握拳聚" />
-                        <Label styleClass="hint-badge" text="✌️开始" />
+                        <Label styleClass="hint-badge" text="双手靠近聚" />
+                        <Label styleClass="hint-badge" text="双手分开散" />
+                        <Label styleClass="hint-badge" text="✊开始" />
                     </children>
                 </HBox>
             </children>

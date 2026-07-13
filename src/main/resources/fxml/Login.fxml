@@ -23,7 +23,7 @@
             </padding>
             <children>
                 <Label styleClass="title-label" text="Gesture Sign In Portal" />
-                <Label styleClass="panel-subtitle" text="请将手放入监控框，等待识别稳定后执行剪刀手势" wrapText="true" />
+                <Label styleClass="panel-subtitle" text="请将手放入监控框，等待识别稳定后执行握拳手势" wrapText="true" />
                 <StackPane maxHeight="360.0" maxWidth="520.0" minHeight="360.0" minWidth="520.0"
                            prefHeight="360.0" prefWidth="520.0" styleClass="camera-frame">
                     <children>
@@ -43,7 +43,7 @@
                         </HBox>
                     </children>
                 </StackPane>
-                <Label fx:id="statusLabel" styleClass="status-label" text="正在等待剪刀手势签入..." wrapText="true" />
+                <Label fx:id="statusLabel" styleClass="status-label" text="正在等待握拳手势签入..." wrapText="true" />
                 <ProgressIndicator fx:id="confirmProgress" maxHeight="88.0" maxWidth="88.0"
                                    prefHeight="88.0" prefWidth="88.0" progress="-1.0"
                                    styleClass="confirm-progress" />
