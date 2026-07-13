@@ -50,6 +50,8 @@ public class CatchFruit implements GameInterface {
     private int baseLives;
     private double bombProbability;
     private int accelerateFrames;
+    private int targetScore; // 目标分数，-1 表示无尽模式
+    private boolean won;     // 是否通关
 
     @Override
     public String getName() {
@@ -72,6 +74,7 @@ public class CatchFruit implements GameInterface {
         this.canvasHeight = height;
         this.score = 0;
         this.over = false;
+        this.won = false;
         this.fruits = new ArrayList<>();
         this.basketX = canvasWidth / 2.0 - basketWidth / 2;
         this.basketY = canvasHeight - 60;
@@ -83,38 +86,35 @@ public class CatchFruit implements GameInterface {
     private void applyDifficulty() {
         switch (difficulty) {
             case EASY:
-                baseLives = 5;
-                spawnInterval = 45;
-                speedMultiplier = 0.7;
-                basketWidth = 120;
-                bombProbability = 0.05;
-                accelerateFrames = Integer.MAX_VALUE; // 不加速
+                baseLives = 5; targetScore = 100;
+                spawnInterval = 45; speedMultiplier = 0.7;
+                basketWidth = 120; bombProbability = 0.05;
+                accelerateFrames = Integer.MAX_VALUE;
                 break;
             case NORMAL:
-                baseLives = 3;
-                spawnInterval = 30;
-                speedMultiplier = 1.0;
-                basketWidth = 80;
-                bombProbability = 0.20;
-                accelerateFrames = 900; // 15秒
+                baseLives = 3; targetScore = 200;
+                spawnInterval = 30; speedMultiplier = 1.0;
+                basketWidth = 80; bombProbability = 0.20;
+                accelerateFrames = 900;
                 break;
             case HARD:
-                baseLives = 1;
-                spawnInterval = 18;
-                speedMultiplier = 1.5;
-                basketWidth = 50;
-                bombProbability = 0.35;
-                accelerateFrames = 480; // 8秒
+                baseLives = 1; targetScore = 300;
+                spawnInterval = 18; speedMultiplier = 1.5;
+                basketWidth = 50; bombProbability = 0.35;
+                accelerateFrames = 480;
+                break;
+            case ENDLESS:
+                baseLives = 3; targetScore = -1;
+                spawnInterval = 30; speedMultiplier = 1.0;
+                basketWidth = 80; bombProbability = 0.10;
+                accelerateFrames = -1;
                 break;
         }
         lives = baseLives;
     }
 
     @Override
-    public void setDifficulty(Difficulty d) {
-        this.difficulty = d;
-        applyDifficulty();
-    }
+    public void setDifficulty(Difficulty d) { this.difficulty = d; }
 
     @Override
     public Difficulty getDifficulty() {
@@ -125,8 +125,15 @@ public class CatchFruit implements GameInterface {
     public void update(GestureData gesture) {
         if (over) return;
 
-        // 加速（困难更频繁）
-        if (frameCount > 0 && accelerateFrames < Integer.MAX_VALUE && frameCount % accelerateFrames == 0) {
+        // 加速
+        if (accelerateFrames == -1) {
+            // 无尽模式：分数每+50，速度加快
+            int level = score / 50;
+            speedMultiplier = 1.0 + level * 0.2;
+            spawnInterval = Math.max(10, 30 - level * 2);
+            bombProbability = Math.min(0.40, 0.10 + level * 0.02);
+        } else if (frameCount > 0 && accelerateFrames < Integer.MAX_VALUE
+                && frameCount % accelerateFrames == 0) {
             speedMultiplier += 0.3;
             spawnInterval = Math.max(10, spawnInterval - 3);
         }
@@ -174,7 +181,10 @@ public class CatchFruit implements GameInterface {
                 toRemove.add(f);
                 if (f.isBomb) {
                     score = Math.max(0, score - 20);
-                    lives--;
+                    // 简单/普通：炸弹只扣分；困难/无尽：炸弹还扣命
+                    if (difficulty == Difficulty.HARD || difficulty == Difficulty.ENDLESS) {
+                        lives--;
+                    }
                 } else {
                     score += 10;
                 }
@@ -188,7 +198,13 @@ public class CatchFruit implements GameInterface {
         }
         fruits.removeAll(toRemove);
 
-        // 7. 检查游戏结束
+        // 7. 通关检测（非无尽模式）
+        if (targetScore > 0 && score >= targetScore) {
+            won = true;
+            over = true;
+        }
+
+        // 8. 生命耗尽
         if (lives <= 0) {
             lives = 0;
             over = true;
@@ -235,14 +251,43 @@ public class CatchFruit implements GameInterface {
         gc.fillRoundRect(basketX, basketY, basketWidth, BASKET_HEIGHT, 10, 10);
         gc.strokeRoundRect(basketX, basketY, basketWidth, BASKET_HEIGHT, 10, 10);
 
-        // 4. 画HUD
-        gc.setFill(Color.WHITE);
-        gc.fillText("❤ x " + lives, 20, 30);
-        gc.fillText("分数: " + score, canvasWidth - 120, 30);
+        // 4. 画HUD补充信息（标题/分数框由FXML处理）
+        // 左上：生命（游戏名标签下方）
+        gc.setFill(Color.rgb(255, 255, 255, 0.8));
+        gc.setFont(javafx.scene.text.Font.font(15));
+        gc.fillText("❤ x " + lives, 28, 86);
+        // 右上：目标分数（分数标签下方，无尽模式无目标）
+        if (targetScore > 0) {
+            gc.setFill(Color.rgb(255, 255, 255, 0.6));
+            gc.setFont(javafx.scene.text.Font.font(13));
+            gc.fillText("目标 " + targetScore, canvasWidth - 80, 88);
+        }
 
+        // 游戏结束遮罩
         if (over) {
+            gc.setFill(Color.rgb(0, 0, 0, 0.75));
+            gc.fillRect(0, 0, canvasWidth, canvasHeight);
+
+            if (won) {
+                gc.setFill(Color.GOLD);
+                gc.setFont(javafx.scene.text.Font.font(36));
+                gc.fillText("🎉 通关！", canvasWidth / 2.0 - 80, canvasHeight / 2.0 - 20);
+            } else {
+                gc.setFill(Color.RED);
+                gc.setFont(javafx.scene.text.Font.font(36));
+                gc.fillText("游戏结束", canvasWidth / 2.0 - 80, canvasHeight / 2.0 - 20);
+            }
             gc.setFill(Color.WHITE);
-            gc.fillText("游戏结束！得分: " + score + "  握拳重新开始", canvasWidth / 2.0 - 120, canvasHeight / 2.0);
+            gc.setFont(javafx.scene.text.Font.font(20));
+            gc.fillText("得分: " + score, canvasWidth / 2.0 - 40, canvasHeight / 2.0 + 25);
+            if (targetScore > 0 && !won) {
+                gc.setFill(Color.GRAY);
+                gc.setFont(javafx.scene.text.Font.font(14));
+                gc.fillText("目标: " + targetScore, canvasWidth / 2.0 - 25, canvasHeight / 2.0 + 50);
+            }
+            gc.setFill(Color.web("#deff9a"));
+            gc.setFont(javafx.scene.text.Font.font(14));
+            gc.fillText("✊重玩 | 👆返回", canvasWidth / 2.0 - 55, canvasHeight / 2.0 + 75);
         }
     }
 

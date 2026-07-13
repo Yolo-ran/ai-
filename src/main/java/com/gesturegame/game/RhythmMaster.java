@@ -133,11 +133,7 @@ public class RhythmMaster implements GameInterface {
     }
 
     @Override
-    public void setDifficulty(Difficulty d) {
-        this.difficulty = d;
-        applyDifficulty();
-        generateBeatMap();
-    }
+    public void setDifficulty(Difficulty d) { this.difficulty = d; }
 
     private void applyDifficulty() {
         switch (difficulty) {

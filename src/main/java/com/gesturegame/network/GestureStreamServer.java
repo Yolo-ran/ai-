@@ -20,29 +20,32 @@ import java.util.logging.Logger;
  *
  * <p>对 GAME 状态：仅缓存最新 {@link GestureData} 供游戏循环通过
  * {@link #getLatestGesture()} 读取，摄像头画面不再分发（游戏全屏渲染）。
- * 仍会派发 {@code BACK} 命令到 {@link GameRenderer} 以便玩家指向左上角返回大厅。
+ * 仍会派发 {@code BACK} 命令到 {@link GameRenderer} 以便玩家张手返回大厅。
  */
 public class GestureStreamServer extends WebSocketServer {
 
     private static final Logger LOGGER = Logger.getLogger(GestureStreamServer.class.getName());
     // 滑动判定：位移触发（静止跟踪基准点，移动累计位移提交）+ 方向感知锁定（防回弹误触）
-    private static final double SWIPE_STILL_VELOCITY = 0.003;
-    private static final double SWIPE_DEADZONE = 0.018;
-    private static final double SWIPE_COMMIT_DISTANCE = 0.07;
+    private static final double SWIPE_STILL_VELOCITY = 0.008;
+    private static final double SWIPE_DEADZONE = 0.025;
+    private static final double SWIPE_COMMIT_DISTANCE = 0.09;
     private static final double SWIPE_ABORT_REVERSE = -0.04;
-    private static final long SWIPE_ARM_TIMEOUT_MS = 800L;
+    private static final long SWIPE_ARM_TIMEOUT_MS = 600L;
     private static final double SWIPE_REST_VELOCITY = 0.008;
     private static final long SWIPE_REST_MS = 150L;
     private static final double SWIPE_NEUTRAL_RADIUS = 0.05;
-    private static final long START_HOLD_MS = 450L;
-    private static final long EXIT_HOLD_MS = 650L;
-    private static final long GAME_OVER_ENTRY_GUARD_MS = 250L;
-    private static final long COMMAND_COOLDOWN_MS = 300L;
+    private static final long LOGIN_CONFIRM_HOLD_MS = 800L;
+    private static final long LOBBY_CONFIRM_HOLD_MS = 1200L;
+    private static final long GAME_BACK_HOLD_MS = 1200L;
+    private static final long GAME_OVER_ENTRY_GUARD_MS = 400L;
+    private static final long GAME_OVER_CONFIRM_HOLD_MS = 1000L;
+    private static final long GAME_OVER_BACK_HOLD_MS = 1200L;
+    private static final long COMMAND_COOLDOWN_MS = 450L;
     private static final long CAMERA_FRAME_INTERVAL_MS = 40L;
     private static final long IDLE_DISPATCH_INTERVAL_MS = 200L;
-    private static final long LOGIN_ENTRY_GUARD_MS = 300L;
-    private static final long LOBBY_ENTRY_GUARD_MS = 300L;
-    private static final long GAME_ENTRY_GUARD_MS = 700L;
+    private static final long LOGIN_ENTRY_GUARD_MS = 800L;
+    private static final long LOBBY_ENTRY_GUARD_MS = 600L;
+    private static final long GAME_ENTRY_GUARD_MS = 2500L;
 
     private final LoginController loginController;
     private final LobbyController lobbyController;
@@ -62,8 +65,6 @@ public class GestureStreamServer extends WebSocketServer {
     private long swipeBlockRestSince;
     private double swipeLastArmX;
     private double swipeRefX = 0.5;
-    private boolean swipeRefInitialized;
-    private long swipeIdleRestSince;
 
     private long lastStaticCommandTime;
     private long lastCameraFrameTime;
@@ -97,8 +98,7 @@ public class GestureStreamServer extends WebSocketServer {
             if (containsGestureData(json)) {
                 GestureData gestureData = buildGestureData(json);
                 this.latestGestureData = gestureData;
-                String pointingDirection = json.optString("pointingDirection", "none");
-                GestureCommand command = mapGestureDataToCommand(state, gestureData, pointingDirection);
+                GestureCommand command = mapGestureDataToCommand(state, gestureData);
                 dispatchGesture(state, gestureData.getGesture().name(), command, gestureData.getConfidence());
                 return;
             }
@@ -180,8 +180,6 @@ public class GestureStreamServer extends WebSocketServer {
             loginController.handleAgentCommand(command, confidence, "STREAM");
         } else if (AppStateManager.STATE_LOBBY.equals(state) && lobbyController != null) {
             lobbyController.handleAgentCommand(command, confidence, "STREAM");
-        } else if (AppStateManager.STATE_DIFFICULTY.equals(state) && gameRenderer != null) {
-            gameRenderer.handleAgentCommand(command, confidence, "STREAM");
         } else if (AppStateManager.STATE_GAME.equals(state) && gameRenderer != null) {
             gameRenderer.handleAgentCommand(command, confidence, "STREAM");
         } else if (AppStateManager.STATE_GAME_OVER.equals(state) && gameRenderer != null) {
@@ -197,8 +195,7 @@ public class GestureStreamServer extends WebSocketServer {
         return latestGestureData;
     }
 
-    private GestureCommand mapGestureDataToCommand(String state, GestureData gestureData,
-                                                   String pointingDirection) {
+    private GestureCommand mapGestureDataToCommand(String state, GestureData gestureData) {
         if (!gestureData.isHandDetected()) {
             handLostFrames++;
             if (handLostFrames > HAND_LOST_GRACE_FRAMES) {
@@ -231,10 +228,6 @@ public class GestureStreamServer extends WebSocketServer {
         }
 
         GestureType gestureType = gestureData.getGesture();
-        if (gestureType == GestureType.POINTING && !"up_left".equalsIgnoreCase(pointingDirection)) {
-            resetHoldState();
-            return GestureCommand.NONE;
-        }
         if (!isActionGesture(state, gestureType)) {
             resetHoldState();
             return GestureCommand.NONE;
@@ -271,13 +264,6 @@ public class GestureStreamServer extends WebSocketServer {
         double handX = gestureData.getHandX();
         boolean still = Math.abs(vx) < SWIPE_STILL_VELOCITY;
 
-        if (!swipeRefInitialized) {
-            swipeRefX = handX;
-            swipeRefInitialized = true;
-            swipeIdleRestSince = now;
-            return GestureCommand.NONE;
-        }
-
         if (swipeBlockSign != 0) {
             if (still) {
                 if (swipeBlockRestSince == 0L) {
@@ -304,39 +290,30 @@ public class GestureStreamServer extends WebSocketServer {
                 swipeBlockRestSince = 0L;
                 swipePhase = SwipePhase.IDLE;
                 swipeRefX = handX;
-                swipeIdleRestSince = 0L;
                 return dir;
             }
             if (progress < SWIPE_ABORT_REVERSE || now - swipeArmTime > SWIPE_ARM_TIMEOUT_MS) {
                 swipePhase = SwipePhase.IDLE;
                 swipeRefX = handX;
-                swipeIdleRestSince = 0L;
             }
             return GestureCommand.NONE;
         }
 
-        double delta = handX - swipeRefX;
-        if (Math.abs(delta) > SWIPE_DEADZONE) {
-            swipeIdleRestSince = 0L;
-            int dirSign = delta < 0 ? -1 : 1;
-            if (swipeBlockSign != 0 && dirSign == swipeBlockSign) {
-                swipeRefX = handX;
-            } else {
-                swipePhase = SwipePhase.ARMED;
-                swipeArmX = swipeRefX;
-                swipeArmDir = dirSign;
-                swipeArmTime = now;
-            }
-        } else if (still) {
-            // 只有真正停稳一段时间后才吸收漂移。不能逐帧重置基准点，
-            // 否则慢速滑动的累计位移永远达不到触发距离。
-            if (swipeIdleRestSince == 0L) {
-                swipeIdleRestSince = now;
-            } else if (now - swipeIdleRestSince >= SWIPE_REST_MS) {
-                swipeRefX = handX;
-            }
+        if (still) {
+            swipeRefX = handX;
         } else {
-            swipeIdleRestSince = 0L;
+            double delta = handX - swipeRefX;
+            if (Math.abs(delta) > SWIPE_DEADZONE) {
+                int dirSign = delta < 0 ? -1 : 1;
+                if (swipeBlockSign != 0 && dirSign == swipeBlockSign) {
+                    swipeRefX = handX;
+                } else {
+                    swipePhase = SwipePhase.ARMED;
+                    swipeArmX = swipeRefX;
+                    swipeArmDir = dirSign;
+                    swipeArmTime = now;
+                }
+            }
         }
         return GestureCommand.NONE;
     }
@@ -346,8 +323,6 @@ public class GestureStreamServer extends WebSocketServer {
         swipeBlockSign = 0;
         swipeBlockRestSince = 0L;
         swipeRefX = 0.5;
-        swipeRefInitialized = false;
-        swipeIdleRestSince = 0L;
     }
 
     private void onStateObserved(String state) {
@@ -386,44 +361,37 @@ public class GestureStreamServer extends WebSocketServer {
 
     /**
      * 当前状态下该手势是否为"动作手势"（需按住计时触发命令）。
-     * 全局统一使用 PEACE 开始/确认、POINTING 退出/返回。
-     * FIST/OPEN 专用于大厅粒子聚散，避免一个手势承担两种动作。
+     * LOBBY 用 PEACE 确认，FIST/OPEN 留给大厅聚散实时效果，互不冲突。
      */
     private boolean isActionGesture(String state, GestureType g) {
         if (AppStateManager.STATE_LOGIN.equals(state)) {
-            return g == GestureType.PEACE;
+            return g == GestureType.FIST || g == GestureType.POINTING;
         }
         if (AppStateManager.STATE_LOBBY.equals(state)) {
             return g == GestureType.PEACE || g == GestureType.POINTING;
-        }
-        if (AppStateManager.STATE_DIFFICULTY.equals(state)) {
-            return g == GestureType.POINTING;
         }
         if (AppStateManager.STATE_GAME.equals(state)) {
             return g == GestureType.POINTING;
         }
         if (AppStateManager.STATE_GAME_OVER.equals(state)) {
-            return g == GestureType.PEACE || g == GestureType.POINTING;
+            return g == GestureType.FIST || g == GestureType.POINTING;
         }
         return false;
     }
 
     private GestureCommand commandFor(String state, GestureType g) {
         if (AppStateManager.STATE_LOGIN.equals(state)) {
-            if (g == GestureType.PEACE) return GestureCommand.CONFIRM;
+            if (g == GestureType.FIST || g == GestureType.POINTING) return GestureCommand.CONFIRM;
         }
         if (AppStateManager.STATE_LOBBY.equals(state)) {
             if (g == GestureType.PEACE) return GestureCommand.CONFIRM;
             if (g == GestureType.POINTING) return GestureCommand.BACK;
         }
-        if (AppStateManager.STATE_DIFFICULTY.equals(state) && g == GestureType.POINTING) {
-            return GestureCommand.BACK;
-        }
         if (AppStateManager.STATE_GAME.equals(state) && g == GestureType.POINTING) {
             return GestureCommand.BACK;
         }
         if (AppStateManager.STATE_GAME_OVER.equals(state)) {
-            if (g == GestureType.PEACE) return GestureCommand.CONFIRM;
+            if (g == GestureType.FIST) return GestureCommand.CONFIRM;
             if (g == GestureType.POINTING) return GestureCommand.BACK;
         }
         return GestureCommand.NONE;
@@ -431,21 +399,20 @@ public class GestureStreamServer extends WebSocketServer {
 
     private long resolveRequiredHoldMs(String state, GestureType gestureType) {
         if (AppStateManager.STATE_LOGIN.equals(state)) {
-            if (gestureType == GestureType.PEACE) return START_HOLD_MS;
+            if (gestureType == GestureType.FIST || gestureType == GestureType.POINTING) {
+                return LOGIN_CONFIRM_HOLD_MS;
+            }
         }
         if (AppStateManager.STATE_LOBBY.equals(state)) {
-            if (gestureType == GestureType.PEACE) return START_HOLD_MS;
-            if (gestureType == GestureType.POINTING) return EXIT_HOLD_MS;
-        }
-        if (AppStateManager.STATE_DIFFICULTY.equals(state) && gestureType == GestureType.POINTING) {
-            return EXIT_HOLD_MS;
+            if (gestureType == GestureType.PEACE) return LOBBY_CONFIRM_HOLD_MS;
+            if (gestureType == GestureType.POINTING) return LOBBY_CONFIRM_HOLD_MS;
         }
         if (AppStateManager.STATE_GAME.equals(state) && gestureType == GestureType.POINTING) {
-            return EXIT_HOLD_MS;
+            return GAME_BACK_HOLD_MS;
         }
         if (AppStateManager.STATE_GAME_OVER.equals(state)) {
-            if (gestureType == GestureType.PEACE) return START_HOLD_MS;
-            if (gestureType == GestureType.POINTING) return EXIT_HOLD_MS;
+            if (gestureType == GestureType.FIST) return GAME_OVER_CONFIRM_HOLD_MS;
+            if (gestureType == GestureType.POINTING) return GAME_OVER_BACK_HOLD_MS;
         }
         return Long.MAX_VALUE;
     }

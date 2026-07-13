@@ -7,7 +7,8 @@ package com.gesturegame.common;
 public enum Difficulty {
     EASY("简单", "⭐"),
     NORMAL("普通", "⭐⭐"),
-    HARD("困难", "⭐⭐⭐");
+    HARD("困难", "⭐⭐⭐"),
+    ENDLESS("无尽", "♾️");
 
     private final String label;
     private final String stars;

@@ -110,10 +110,7 @@ public class PopBubbles implements GameInterface {
     }
 
     @Override
-    public void setDifficulty(Difficulty d) {
-        this.difficulty = d;
-        applyDifficulty();
-    }
+    public void setDifficulty(Difficulty d) { this.difficulty = d; }
 
     @Override
     public Difficulty getDifficulty() {
