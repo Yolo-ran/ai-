@@ -57,7 +57,9 @@ public class GameRenderer {
     private int openHoldFrames;
     private int exitHoldFrames;
     private int exitDropoutFrames;
+    private int diffDropoutFrames; // 难度选择手势闪断容错
     private static final int HOLD_FRAMES = 72; // 1.2秒@60fps
+    private static final int DROPOUT_MAX = 3;  // 最多容忍3帧闪断
 
     @FXML
     public void initialize() {
@@ -322,11 +324,16 @@ public class GameRenderer {
 
             if (isFist && hoveredIndex >= 0) {
                 compactHoldFrames++;
+                diffDropoutFrames = 0;
+            } else if (compactHoldFrames > 0 && diffDropoutFrames < DROPOUT_MAX) {
+                diffDropoutFrames++; // 容错：允许几帧闪断
             } else {
                 compactHoldFrames = 0;
+                diffDropoutFrames = 0;
             }
         } else {
             compactHoldFrames = 0;
+            diffDropoutFrames = 0;
         }
 
         // PEACE确认(1.2s) → 进入游戏
