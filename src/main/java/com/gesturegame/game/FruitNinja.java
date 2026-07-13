@@ -58,6 +58,8 @@ FruitNinja implements GameInterface {
     private int waveMinFrames;
     private int waveMaxFrames;
     private int comboBonusThreshold;
+    private int targetScore;
+    private boolean won;
 
     @Override
     public String getName() {
@@ -81,6 +83,7 @@ FruitNinja implements GameInterface {
         this.score = 0;
         this.combo = 0;
         this.over = false;
+        this.won = false;
         this.fruits = new ArrayList<>();
         this.particles = new ArrayList<>();
         this.trail = new LinkedList<>();
@@ -93,17 +96,25 @@ FruitNinja implements GameInterface {
     private void applyDifficulty() {
         switch (difficulty) {
             case EASY:
-                baseLives = 5; minFruitsPerWave = 2; maxFruitsPerWave = 3;
+                baseLives = 5; targetScore = 100;
+                minFruitsPerWave = 2; maxFruitsPerWave = 3;
                 bombProb = 0.03; waveMinFrames = 90; waveMaxFrames = 120;
                 comboBonusThreshold = 3; break;
             case NORMAL:
-                baseLives = 3; minFruitsPerWave = 3; maxFruitsPerWave = 5;
+                baseLives = 3; targetScore = 200;
+                minFruitsPerWave = 3; maxFruitsPerWave = 5;
                 bombProb = 0.15; waveMinFrames = 60; waveMaxFrames = 100;
                 comboBonusThreshold = 3; break;
             case HARD:
-                baseLives = 1; minFruitsPerWave = 5; maxFruitsPerWave = 8;
+                baseLives = 1; targetScore = 300;
+                minFruitsPerWave = 5; maxFruitsPerWave = 8;
                 bombProb = 0.30; waveMinFrames = 40; waveMaxFrames = 70;
                 comboBonusThreshold = 5; break;
+            case ENDLESS:
+                baseLives = 3; targetScore = -1;
+                minFruitsPerWave = 3; maxFruitsPerWave = 5;
+                bombProb = 0.12; waveMinFrames = 60; waveMaxFrames = 100;
+                comboBonusThreshold = 3; break;
         }
         lives = baseLives;
     }
@@ -179,7 +190,7 @@ FruitNinja implements GameInterface {
                                 int life = 20 + RANDOM.nextInt(20);
                                 particles.add(new Particle(f.x, f.y, pvx, pvy, life, f.fleshColor));
                             }
-                            score += 10 * combo;
+                            score += 3 + Math.min(combo, 5); // 每切一个基础3分，连击最多+5
                         }
                     }
                 }
@@ -195,28 +206,26 @@ FruitNinja implements GameInterface {
         }
         particles.removeIf(p -> p.life <= 0);
 
-        // 6-7. 移除飞出屏幕的水果 + 漏掉检测
+        // 6-7. 移除飞出屏幕的水果 + 漏掉检测（不漏命，只重置连击）
         List<Fruit> toRemove = new ArrayList<>();
         for (Fruit f : fruits) {
             if (f.y - f.radius > canvasHeight + 50) {
                 toRemove.add(f);
                 if (!f.sliced && !f.isBomb) {
-                    lives--;
                     combo = 0;
                 }
             }
-            // 横向飞出太远也移除
             if (f.x < -100 || f.x > canvasWidth + 100) {
                 toRemove.add(f);
             }
         }
         fruits.removeAll(toRemove);
 
+        // 通关检测
+        if (targetScore > 0 && score >= targetScore) { won = true; over = true; }
+
         // 生命归零 → 游戏结束
-        if (lives <= 0) {
-            lives = 0;
-            over = true;
-        }
+        if (lives <= 0) { lives = 0; over = true; }
 
         frameCount++;
     }
@@ -301,17 +310,44 @@ FruitNinja implements GameInterface {
             gc.fillOval(p.x - 3, p.y - 3, 6, 6);
         }
 
-        // 4. HUD
-        gc.setFill(Color.WHITE);
-        gc.setFont(javafx.scene.text.Font.font(18));
-        StringBuilder hearts = new StringBuilder();
-        for (int i = 0; i < lives; i++) hearts.append("❤");
-        gc.fillText(hearts.toString(), 20, 30);
-        gc.fillText("分数: " + score, canvasWidth - 120, 30);
+        // 4. HUD（游戏名/分数由 FXML 显示，这里只画补充信息）
+        // 右上：目标分数（无尽不显示）
+        if (targetScore > 0) {
+            gc.setFill(Color.rgb(255, 255, 255, 0.6));
+            gc.setFont(javafx.scene.text.Font.font(13));
+            gc.fillText("目标 " + targetScore, canvasWidth - 80, 88);
+        }
+        // 中间：连击
         if (combo >= 3) {
             gc.setFill(Color.GOLD);
             gc.setFont(javafx.scene.text.Font.font(36));
             gc.fillText("COMBO x" + combo, canvasWidth / 2.0 - 80, canvasHeight / 2.0 - 40);
+        }
+
+        // 游戏结束遮罩
+        if (over) {
+            gc.setFill(Color.rgb(0, 0, 0, 0.75));
+            gc.fillRect(0, 0, canvasWidth, canvasHeight);
+            if (won) {
+                gc.setFill(Color.GOLD);
+                gc.setFont(javafx.scene.text.Font.font(36));
+                gc.fillText("🎉 通关！", canvasWidth / 2.0 - 80, canvasHeight / 2.0 - 20);
+            } else {
+                gc.setFill(Color.RED);
+                gc.setFont(javafx.scene.text.Font.font(36));
+                gc.fillText("💥 游戏结束", canvasWidth / 2.0 - 100, canvasHeight / 2.0 - 20);
+            }
+            gc.setFill(Color.WHITE);
+            gc.setFont(javafx.scene.text.Font.font(20));
+            gc.fillText("得分: " + score, canvasWidth / 2.0 - 40, canvasHeight / 2.0 + 25);
+            if (targetScore > 0 && !won) {
+                gc.setFill(Color.GRAY);
+                gc.setFont(javafx.scene.text.Font.font(14));
+                gc.fillText("目标: " + targetScore, canvasWidth / 2.0 - 25, canvasHeight / 2.0 + 50);
+            }
+            gc.setFill(Color.web("#deff9a"));
+            gc.setFont(javafx.scene.text.Font.font(14));
+            gc.fillText("✊重玩 | 👆返回", canvasWidth / 2.0 - 55, canvasHeight / 2.0 + 75);
         }
 
         // 5. 未检测到手 → 提示
@@ -321,11 +357,6 @@ FruitNinja implements GameInterface {
             gc.fillText("请伸出手", canvasWidth / 2.0 - 60, canvasHeight / 2.0);
         }
 
-        if (over) {
-            gc.setFill(Color.RED);
-            gc.fillText("💥 切到炸弹！得分: " + score + "  握拳重新开始",
-                    canvasWidth / 2.0 - 150, canvasHeight / 2.0);
-        }
     }
 
     @Override
@@ -350,7 +381,7 @@ FruitNinja implements GameInterface {
         double x = 30 + RANDOM.nextDouble() * (canvasWidth - 60);
         double y = canvasHeight + 30;
         double vx = -8 + RANDOM.nextDouble() * 16;
-        double vy = -22 - RANDOM.nextDouble() * 8;
+        double vy = -28 - RANDOM.nextDouble() * 10; // 抛更高
         double gravity = 0.8;
         double rotation = RANDOM.nextDouble() * 360;
         double rotationSpeed = -5 + RANDOM.nextDouble() * 10;
