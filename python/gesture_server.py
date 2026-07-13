@@ -188,10 +188,10 @@ def joint_angle(point_a, vertex, point_c) -> float:
 def is_finger_extended(points, tip_index: int, pip_index: int) -> bool:
     """Rotation-independent extension test using PIP angle and wrist distance."""
     mcp_index = pip_index - 1
-    straight = joint_angle(points[mcp_index], points[pip_index], points[tip_index]) >= 145.0
+    straight = joint_angle(points[mcp_index], points[pip_index], points[tip_index]) >= 138.0
     tip_from_wrist = landmark_distance(points[tip_index], points[0])
     pip_from_wrist = landmark_distance(points[pip_index], points[0])
-    return straight and tip_from_wrist > pip_from_wrist * 1.04
+    return straight and tip_from_wrist > pip_from_wrist * 1.02
 
 
 def is_navigation_palm(points) -> bool:
@@ -202,11 +202,11 @@ def is_navigation_palm(points) -> bool:
 
 
 def is_thumb_extended(points, handedness_label: str) -> bool:
-    thumb_tip_x = points[4].x
-    thumb_ip_x = points[3].x
-    if handedness_label == "Right":
-        return thumb_tip_x < thumb_ip_x
-    return thumb_tip_x > thumb_ip_x
+    """旋转无关的拇指伸开检测：关节角度 + 指尖比指根远离手腕。"""
+    straight = joint_angle(points[2], points[3], points[4]) >= 135.0
+    tip_from_wrist = landmark_distance(points[4], points[0])
+    ip_from_wrist = landmark_distance(points[3], points[0])
+    return straight and tip_from_wrist > ip_from_wrist * 1.02
 
 
 def landmark_distance(point_a, point_b) -> float:
@@ -293,6 +293,13 @@ def classify_gesture(hand_landmarks, handedness_label: str):
         [thumb_extended, index_extended, middle_extended, ring_extended, pinky_extended]
     )
 
+    # PEACE 预处理：角度兜底放 fist 之前，防止背朝摄像头时误判为握拳
+    if not ring_extended and not pinky_extended:
+        idx_angle = joint_angle(points[5], points[6], points[8])
+        mid_angle = joint_angle(points[9], points[10], points[12])
+        if idx_angle >= 128.0 and mid_angle >= 128.0:
+            return "two", "peace", 0.90
+
     # A fist is defined by the four non-thumb fingers being curled. Do this before
     # thumb variants: a side-on fist often makes the thumb look horizontally
     # extended and used to be misclassified as another gesture.
@@ -358,13 +365,34 @@ def classify_gesture(hand_landmarks, handedness_label: str):
     if index_extended and middle_extended and ring_extended and not pinky_extended and not thumb_extended:
         return "three", "none", 0.92
 
+    # PEACE：食指+中指伸开，无名指小指蜷
     if index_extended and middle_extended and not ring_extended and not pinky_extended:
-        if not thumb_extended or extended_count <= 3:
-            return "two", "peace", 0.95
+        return "two", "peace", 0.95
+    # 兜底1：食指中指角度不太够但无名指小指蜷 → 大概率是 PEACE
+    if not ring_extended and not pinky_extended:
+        idx_d = landmark_distance(points[8], points[0])
+        mid_d = landmark_distance(points[12], points[0])
+        avg_other = (landmark_distance(points[16], points[0]) + landmark_distance(points[20], points[0])) / 2.0
+        if max(idx_d, mid_d) > avg_other * 1.05:
+            return "two", "peace", 0.88
+    # 兜底2：背朝摄像头时指尖比指根近 → 角度对就行
+    if not ring_extended and not pinky_extended:
+        idx_angle = joint_angle(points[5], points[6], points[8])
+        mid_angle = joint_angle(points[9], points[10], points[12])
+        if idx_angle >= 130.0 and mid_angle >= 130.0:
+            return "two", "peace", 0.85
 
-    if index_extended and not middle_extended and not ring_extended and not pinky_extended:
-        if not thumb_extended or extended_count <= 2:
+    # POINTING：角度判定 + 旋转无关的距离特判
+    if index_extended and not ring_extended and not pinky_extended:
+        if extended_count <= 3 and (not middle_extended or extended_count == 3):
             return "one", "pointing", 0.94
+    # 兜底：食指伸直度不够，但食指指尖明显是离手腕最远的指尖 → 还是指向
+    index_dist = landmark_distance(points[8], points[0])
+    other_tips_max = max(landmark_distance(points[12], points[0]),
+                         landmark_distance(points[16], points[0]),
+                         landmark_distance(points[20], points[0]))
+    if index_dist > other_tips_max * 1.08 and not ring_extended and not pinky_extended and not middle_extended:
+        return "one", "pointing", 0.90
 
     if extended_count >= 4 and index_extended and middle_extended and ring_extended and pinky_extended:
         return "five", "open", 0.98

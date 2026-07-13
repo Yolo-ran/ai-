@@ -35,7 +35,7 @@ import java.util.Random;
  * 手势类型（3种就够了）：
  *   ✊ FIST     — 握拳
  *   ✋ OPEN     — 张开手掌
- *   👆 POINTING — 食指指向
+ *   ✌ PEACE — 食指指向
  *
  * 你需要实现：
  * 1. Note 内部类（手势类型, y坐标, judged）
@@ -46,7 +46,7 @@ import java.util.Random;
  * 6. Combo系统：连续命中加成
  *
  * 可用的手势数据：
- * - gesture.getGesture()   : 当前手势 FIST/OPEN/POINTING/NONE
+ * - gesture.getGesture()   : 当前手势 FIST/OPEN/PEACE/NONE
  */
 public class RhythmMaster implements GameInterface {
 
@@ -58,7 +58,7 @@ public class RhythmMaster implements GameInterface {
     // ===== 手势-图标映射 =====
     // FIST     → ✊ 握拳  （颜色：红色 #ef4444）
     // OPEN     → ✋ 张开  （颜色：蓝色 #3b82f6）
-    // POINTING → 👆 指向  （颜色：绿色 #22c55e）
+    // PEACE → ✌ 剪刀手（颜色：绿色 #22c55e）
 
     private List<Note> notes;
     private List<FloatText> floatTexts;
@@ -167,6 +167,9 @@ public class RhythmMaster implements GameInterface {
     @Override
     public Difficulty getDifficulty() { return difficulty; }
 
+    @Override
+    public boolean supportsDifficulty(Difficulty d) { return d != Difficulty.ENDLESS; }
+
     private void generateBeatMap() {
         // 生成节拍序列（记录每一帧是否生成音符）
         this.beatFrames = new java.util.HashSet<>();
@@ -202,7 +205,7 @@ public class RhythmMaster implements GameInterface {
 
         // ===== 1. 生成新音符 =====
         if (beatFrames.contains(frameCount)) {
-            GestureType[] types = {GestureType.FIST, GestureType.OPEN, GestureType.POINTING};
+            GestureType[] types = {GestureType.FIST, GestureType.OPEN, GestureType.PEACE};
             GestureType type = types[RANDOM.nextInt(types.length)];
             Note note = new Note(type, canvasHeight + 50);
             notes.add(note);
@@ -312,7 +315,7 @@ public class RhythmMaster implements GameInterface {
                 emoji = "✋";
             } else {
                 noteColor = Color.web("#22c55e");
-                emoji = "👆";
+                emoji = "✌";
             }
 
             // 离判定圈越近越大
@@ -352,32 +355,29 @@ public class RhythmMaster implements GameInterface {
             String previewEmoji;
             if (nextNote.gestureType == GestureType.FIST) previewEmoji = "✊";
             else if (nextNote.gestureType == GestureType.OPEN) previewEmoji = "✋";
-            else previewEmoji = "👆";
+            else previewEmoji = "✌";
             gc.setFill(Color.WHITE.deriveColor(0, 1, 1, 0.5));
             gc.setFont(Font.font(16));
             gc.fillText("下一个 → " + previewEmoji, canvasWidth - 160, judgeCircleY - 80);
         }
 
-        // ===== 6. HUD =====
-        // 左上：分数 + combo
-        gc.setFill(Color.WHITE);
-        gc.setFont(Font.font(18));
-        gc.fillText("分数: " + score, 20, 30);
+        // ===== 6. HUD（分数/游戏名由 FXML 标签显示）=====
+        // 左上：combo
         if (combo >= 10) {
             gc.setFill(Color.GOLD);
             gc.setFont(Font.font(16));
             gc.fillText("🔥 " + combo + " combo  x" + String.format("%.1f", getComboMultiplier()),
-                    20, 55);
+                    28, 86);
         }
 
-        // 右上：判定统计
+        // 右上：判定统计（放在 FXML 分数标签下方）
         gc.setFill(Color.GOLD);
-        gc.setFont(Font.font(16));
-        gc.fillText("P:" + perfectCount, canvasWidth - 180, 30);
+        gc.setFont(Font.font(14));
+        gc.fillText("P:" + perfectCount, canvasWidth - 150, 88);
         gc.setFill(Color.LIME);
-        gc.fillText("G:" + greatCount, canvasWidth - 120, 30);
+        gc.fillText("G:" + greatCount, canvasWidth - 105, 88);
         gc.setFill(Color.RED);
-        gc.fillText("M:" + missCount, canvasWidth - 60, 30);
+        gc.fillText("M:" + missCount, canvasWidth - 60, 88);
 
         // 底部：当前检测手势
         gc.setFill(Color.WHITE.deriveColor(0, 1, 1, 0.5));
@@ -386,17 +386,21 @@ public class RhythmMaster implements GameInterface {
             String gestureName;
             if (currentGesture == GestureType.FIST) gestureName = "✊ FIST";
             else if (currentGesture == GestureType.OPEN) gestureName = "✋ OPEN";
-            else if (currentGesture == GestureType.POINTING) gestureName = "👆 POINTING";
+            else if (currentGesture == GestureType.PEACE) gestureName = "✌ PEACE";
             else gestureName = "✋ 未知";
             gc.fillText("当前手势: " + gestureName, judgeCircleX - 60, canvasHeight - 30);
         } else {
             gc.fillText("未检测到手", judgeCircleX - 40, canvasHeight - 30);
         }
 
-        // ===== 7. 进度条（顶部）=====
+        // ===== 7. 进度条 + 倒计时（顶部）=====
         double progress = (double) frameCount / gameDurationFrames;
         gc.setFill(Color.web("#deff9a"));
         gc.fillRect(0, 0, canvasWidth * progress, 3);
+        int remainingSecs = Math.max(0, (gameDurationFrames - frameCount) / 60);
+        gc.setFill(Color.web("#deff9a"));
+        gc.setFont(Font.font(16));
+        gc.fillText("⏱ " + remainingSecs + "s", canvasWidth / 2.0 - 25, 86);
 
         // ===== 游戏结束画面 =====
         if (over) {
