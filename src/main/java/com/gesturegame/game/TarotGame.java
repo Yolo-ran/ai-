@@ -523,6 +523,7 @@ public class TarotGame implements GameInterface {
         drawSpreadPanel(gc);
         drawDetailPanel(gc);
         drawReadingNotes(gc);
+        drawBottomHint(gc);
         drawHandCursor(gc);
     }
 
@@ -555,9 +556,6 @@ public class TarotGame implements GameInterface {
         switch (currentSpreadMode) {
             case SINGLE_CARD:
                 createSingleSpread(shuffled);
-                break;
-            case CELTIC_CROSS:
-                createCelticCrossSpread(shuffled);
                 break;
             case THREE_CARD:
             default:
@@ -663,9 +661,6 @@ public class TarotGame implements GameInterface {
                 currentSpreadMode = SpreadMode.THREE_CARD;
                 break;
             case THREE_CARD:
-                currentSpreadMode = SpreadMode.CELTIC_CROSS;
-                break;
-            case CELTIC_CROSS:
             default:
                 currentSpreadMode = SpreadMode.SINGLE_CARD;
                 break;
@@ -725,17 +720,18 @@ public class TarotGame implements GameInterface {
         gc.setLineWidth(1);
         gc.strokeRoundRect(22, barY, canvasWidth - 44, barH, 18, 18);
 
+        gc.setFill(Color.web("#1b0d25"));
+        gc.fillRoundRect(34, barY + 11, 116, 28, 16, 16);
+        gc.setStroke(Color.web("#8b5bd1", 0.45));
+        gc.strokeRoundRect(34, barY + 11, 116, 28, 16, 16);
         gc.setFill(GOLD_SOFT);
-        gc.setFont(Font.font("Microsoft YaHei UI", FontWeight.NORMAL, 20));
-        gc.fillText("☾ 月相秘仪塔罗", 48, barY + 14);
+        gc.setFont(Font.font("Microsoft YaHei UI", FontWeight.NORMAL, 14));
+        gc.fillText("☾ 月相秘仪", 48, barY + 18);
 
-        drawTopTab(gc, "单张启示", canvasWidth * 0.34, currentSpreadMode == SpreadMode.SINGLE_CARD);
-        drawTopTab(gc, "三张流向", canvasWidth * 0.44, currentSpreadMode == SpreadMode.THREE_CARD);
-        drawTopTab(gc, "凯尔特十字", canvasWidth * 0.54, currentSpreadMode == SpreadMode.CELTIC_CROSS);
-
-        gc.setFill(Color.web("#d4bddf"));
-        gc.setFont(Font.font("Microsoft YaHei UI", 12));
-        gc.fillText("✌ 切换牌阵 · ✊ 翻牌启示 · ✋ 全开后重洗", canvasWidth - 330, barY + 18);
+        double tabsCenter = canvasWidth * 0.50;
+        double tabsGap = 114;
+        drawTopTab(gc, "单张启示", tabsCenter - tabsGap / 2.0, currentSpreadMode == SpreadMode.SINGLE_CARD);
+        drawTopTab(gc, "三张流向", tabsCenter + tabsGap / 2.0, currentSpreadMode == SpreadMode.THREE_CARD);
 
         gc.setStroke(Color.web("#8b5bd1", 0.55));
         gc.strokeRoundRect(canvasWidth - 130, barY + 11, 92, 28, 18, 18);
@@ -809,9 +805,9 @@ public class TarotGame implements GameInterface {
     }
 
     private void drawSpreadPanel(GraphicsContext gc) {
-        double x = currentSpreadMode == SpreadMode.CELTIC_CROSS ? canvasWidth * 0.18 : canvasWidth * 0.24;
+        double x = canvasWidth * 0.24;
         double y = canvasHeight * 0.19;
-        double w = currentSpreadMode == SpreadMode.CELTIC_CROSS ? canvasWidth * 0.48 : canvasWidth * 0.42;
+        double w = canvasWidth * 0.42;
         double h = canvasHeight * 0.42;
 
         gc.setFill(Color.web("#ebc980"));
@@ -826,7 +822,7 @@ public class TarotGame implements GameInterface {
 
         gc.setTextAlign(TextAlignment.LEFT);
         gc.setFill(Color.web("#f8eedf"));
-        gc.setFont(Font.font("Microsoft YaHei UI", FontWeight.LIGHT, currentSpreadMode == SpreadMode.CELTIC_CROSS ? 24 : 28));
+        gc.setFont(Font.font("Microsoft YaHei UI", FontWeight.LIGHT, 28));
         gc.fillText(getSpreadHeadline(), x + 34, y + 28);
         gc.setFont(Font.font("Microsoft YaHei UI", 12));
         gc.setFill(Color.web("#d1bce0"));
@@ -845,10 +841,6 @@ public class TarotGame implements GameInterface {
             gc.strokeArc(x + 40 + i * 6, waveY, w - 100, 60 + i * 8, 0, 180, javafx.scene.shape.ArcType.OPEN);
         }
 
-        if (currentSpreadMode == SpreadMode.CELTIC_CROSS) {
-            drawCelticCrossGuide(gc);
-        }
-
         for (int i = 0; i < cards.size(); i++) {
             Card card = cards.get(i);
             gc.setFill(Color.web("#ebd397"));
@@ -863,6 +855,13 @@ public class TarotGame implements GameInterface {
             }
 
             drawSpreadCard(gc, card, i == flippingIndex ? flipProgress : 1.0, i);
+        }
+
+        if (selectedIndex >= 0 && selectedIndex < cards.size()) {
+            Card selected = cards.get(selectedIndex);
+            if (selected.revealed && flippingIndex < 0) {
+                drawMagnifiedCardPreview(gc, selected);
+            }
         }
     }
 
@@ -950,6 +949,20 @@ public class TarotGame implements GameInterface {
         gc.setStroke(Color.web("#d896ff", 0.16 + centerStrength * 0.26));
         gc.setLineWidth(1.1);
         gc.strokeLine(sweepX, y + h * 0.14, sweepX, y + h * 0.86);
+    }
+
+    private void drawMagnifiedCardPreview(GraphicsContext gc, Card card) {
+        double scale = 1.22 + hoverPulse * 0.06;
+        double previewW = card.width * scale;
+        double previewH = card.height * scale;
+        double previewX = card.x + (card.width - previewW) / 2.0;
+        double previewY = card.y - previewH * 0.10 - 8;
+
+        gc.save();
+        gc.setGlobalAlpha(0.96);
+        drawCardFront(gc, previewX, previewY, previewW, previewH, card, true);
+        drawActiveCardHalo(gc, previewX, previewY, previewW, previewH);
+        gc.restore();
     }
 
     private void drawCelticCrossGuide(GraphicsContext gc) {
@@ -3142,72 +3155,84 @@ public class TarotGame implements GameInterface {
             gc.fillText("✧", x + w / 2.0, y + h * 0.42);
             gc.setFill(Color.web("#eddac0"));
             gc.setFont(Font.font("Microsoft YaHei UI", 14));
-            gc.fillText("请先翻开一张牌，右侧将显现这张牌的深层讯息。", x + w / 2.0, y + h * 0.52);
+            drawWrappedTextCentered(gc, "请先翻开一张牌", x + w / 2.0, y + h * 0.50, w - 56, 18, 2);
+            gc.setFont(Font.font("Microsoft YaHei UI", 12));
+            gc.setFill(Color.web("#cdb6da"));
+            drawWrappedTextCentered(gc, "右侧将显现这张牌的深层讯息。", x + w / 2.0, y + h * 0.57, w - 56, 16, 2);
             gc.setTextAlign(TextAlignment.LEFT);
             return;
         }
 
-        gc.setFill(Color.web("#cfa25d"));
-        gc.setFont(Font.font("Microsoft YaHei UI", 10));
-        gc.fillText("✦ CARD ORACLE", x + 24, y + 18);
+        gc.setFill(Color.web("#cfa25d", 0.72));
+        gc.setFont(Font.font("Georgia", FontWeight.SEMI_BOLD, 10));
+        gc.fillText("✦ CARD ORACLE", x + 24, y + 16);
 
-        gc.setFill(Color.web("#1d0f27"));
-        gc.fillRoundRect(x + 18, y + 24, w - 36, 58, 14, 14);
+        gc.setFill(Color.web("#1d0f27", 0.82));
+        gc.fillRoundRect(x + 18, y + 30, w - 36, 52, 14, 14);
         gc.setStroke(Color.web("#6d4397", 0.55));
-        gc.strokeRoundRect(x + 18, y + 24, w - 36, 58, 14, 14);
+        gc.strokeRoundRect(x + 18, y + 30, w - 36, 52, 14, 14);
 
         gc.setFill(Color.web("#f4ead7"));
         gc.setFont(Font.font("Microsoft YaHei UI", FontWeight.BOLD, 28));
-        gc.fillText(card.meaning.title, x + 24, y + 36);
+        gc.fillText(card.meaning.title, x + 24, y + 40);
 
         gc.setFill(Color.web("#d9b57d"));
         gc.setFont(Font.font("Microsoft YaHei UI", 12));
-        gc.fillText(card.meaning.family + " · " + card.meaning.number, x + 24, y + 66);
+        gc.fillText(card.meaning.family + " · " + card.meaning.number, x + 24, y + 64);
 
         double tagW = 66;
         gc.setFill(Color.web("#4f1f73"));
-        gc.fillRoundRect(x + w - tagW - 18, y + 22, tagW, 24, 14, 14);
+        gc.fillRoundRect(x + w - tagW - 18, y + 28, tagW, 24, 14, 14);
         gc.setFill(Color.web("#f7c16e"));
         gc.setFont(Font.font("Microsoft YaHei UI", FontWeight.SEMI_BOLD, 11));
-        gc.fillText(card.reversed ? "逆位" : "正位", x + w - tagW + 1, y + 28);
+        gc.fillText(card.reversed ? "逆位" : "正位", x + w - tagW + 1, y + 34);
 
-        gc.setFill(Color.web("#22112d"));
+        gc.setFill(Color.web("#22112d", 0.80));
         gc.fillRoundRect(x + 18, y + 98, w - 36, 58, 14, 14);
         gc.setStroke(Color.web("#6a4092", 0.52));
         gc.strokeRoundRect(x + 18, y + 98, w - 36, 58, 14, 14);
 
+        gc.setFill(Color.web("#cfa25d", 0.55));
+        gc.setFont(Font.font("Georgia", FontWeight.SEMI_BOLD, 9));
+        gc.fillText("KEYWORDS", x + 24, y + 106);
         gc.setFill(Color.web("#c79339"));
         gc.setFont(Font.font("Microsoft YaHei UI", FontWeight.SEMI_BOLD, 12));
-        gc.fillText("核心关键词", x + 24, y + 112);
+        gc.fillText("核心关键词", x + 24, y + 118);
         gc.setFill(Color.web("#eddcb9"));
         gc.setFont(Font.font("Microsoft YaHei UI", 13));
-        drawWrappedText(gc, String.join("、", card.meaning.keywords), x + 24, y + 134, w - 48, 18, 2, 13);
+        drawWrappedText(gc, String.join("、", card.meaning.keywords), x + 24, y + 138, w - 48, 18, 2, 13);
 
-        gc.setFill(Color.web("#1a0d22"));
+        gc.setFill(Color.web("#1a0d22", 0.80));
         gc.fillRoundRect(x + 18, y + 168, w - 36, 168, 14, 14);
         gc.setStroke(Color.web("#6b4294", 0.54));
         gc.strokeRoundRect(x + 18, y + 168, w - 36, 168, 14, 14);
+        gc.setFill(Color.web("#cfa25d", 0.55));
+        gc.setFont(Font.font("Georgia", FontWeight.SEMI_BOLD, 9));
+        gc.fillText("INTERPRETATION", x + 24, y + 176);
         gc.setFill(Color.web("#c79339"));
         gc.setFont(Font.font("Microsoft YaHei UI", FontWeight.SEMI_BOLD, 12));
-        gc.fillText("牌义启示", x + 24, y + 180);
+        gc.fillText("牌义启示", x + 24, y + 186);
         gc.setFill(Color.web("#f3e2c5"));
         gc.setFont(Font.font("Microsoft YaHei UI", 13));
         String meaning = card.reversed ? card.meaning.reversedMeaning : card.meaning.uprightMeaning;
-        double afterMeaningY = drawWrappedText(gc, meaning, x + 24, y + 202, w - 48, 19, 8, 13);
+        double afterMeaningY = drawWrappedText(gc, meaning, x + 24, y + 206, w - 48, 19, 8, 13);
 
         gc.setStroke(Color.web("#7a4ca8", 0.48));
         gc.strokeLine(x + 30, afterMeaningY + 2, x + w - 30, afterMeaningY + 2);
 
-        gc.setFill(Color.web("#211128"));
+        gc.setFill(Color.web("#211128", 0.82));
         gc.fillRoundRect(x + 18, afterMeaningY + 14, w - 36, 74, 14, 14);
         gc.setStroke(Color.web("#6d4397", 0.54));
         gc.strokeRoundRect(x + 18, afterMeaningY + 14, w - 36, 74, 14, 14);
+        gc.setFill(Color.web("#cfa25d", 0.55));
+        gc.setFont(Font.font("Georgia", FontWeight.SEMI_BOLD, 9));
+        gc.fillText("GUIDANCE", x + 24, afterMeaningY + 20);
         gc.setFill(Color.web("#a47d32"));
         gc.setFont(Font.font("Microsoft YaHei UI", FontWeight.SEMI_BOLD, 12));
-        gc.fillText("行动建议", x + 24, afterMeaningY + 22);
+        gc.fillText("行动建议", x + 24, afterMeaningY + 28);
         gc.setFill(Color.web("#e7d2af"));
         gc.setFont(Font.font("Microsoft YaHei UI", 12));
-        drawWrappedText(gc, card.meaning.advice, x + 24, afterMeaningY + 42, w - 48, 18, 3, 12);
+        drawWrappedText(gc, card.meaning.advice, x + 24, afterMeaningY + 46, w - 48, 18, 3, 12);
     }
 
     private void drawFlowingGoldBackdrop(GraphicsContext gc) {
@@ -3342,10 +3367,10 @@ public class TarotGame implements GameInterface {
 
     private void drawBottomHint(GraphicsContext gc) {
         gc.setFill(Color.web("#f0ca79"));
-        gc.setFont(Font.font("Microsoft YaHei UI", 12));
+        gc.setFont(Font.font("Microsoft YaHei UI", 11));
         gc.setTextAlign(TextAlignment.CENTER);
-        gc.fillText("✌ 切换牌阵模式  ·  ✊ 握拳翻牌  ·  ✋ 当前牌阵全部揭示后张手洗牌",
-                canvasWidth / 2.0, canvasHeight - 26);
+        gc.fillText("✌ 单张 / 三张切换  ·  ✊ 握拳翻牌  ·  ✋ 当前牌阵全部揭示后张手洗牌",
+                canvasWidth / 2.0, canvasHeight - 22);
         gc.setTextAlign(TextAlignment.LEFT);
     }
 
@@ -3353,8 +3378,6 @@ public class TarotGame implements GameInterface {
         switch (currentSpreadMode) {
             case SINGLE_CARD:
                 return "抽一张牌，凝视当下唯一讯息";
-            case CELTIC_CROSS:
-                return "展开十字牌阵，读取命运全貌";
             case THREE_CARD:
             default:
                 return "三张牌流，映照过去现在未来";
@@ -3365,8 +3388,6 @@ public class TarotGame implements GameInterface {
         switch (currentSpreadMode) {
             case SINGLE_CARD:
                 return "用一张牌回应你此刻最核心的问题、能量与提醒。";
-            case CELTIC_CROSS:
-                return "十个位置共同揭示内在状态、外部影响、希望恐惧与命运走向。";
             case THREE_CARD:
             default:
                 return "以紧凑的三张牌，快速看清问题的来处、当下与后续趋势。";
@@ -3377,8 +3398,6 @@ public class TarotGame implements GameInterface {
         switch (currentSpreadMode) {
             case SINGLE_CARD:
                 return "单张启示 · 核心讯息";
-            case CELTIC_CROSS:
-                return "凯尔特十字 · 十位全景解读";
             case THREE_CARD:
             default:
                 return "三张流向 · 过去 · 现在 · 未来";
@@ -3480,8 +3499,7 @@ public class TarotGame implements GameInterface {
 
     private enum SpreadMode {
         SINGLE_CARD,
-        THREE_CARD,
-        CELTIC_CROSS
+        THREE_CARD
     }
 
     /**

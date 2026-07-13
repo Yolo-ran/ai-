@@ -144,10 +144,10 @@ public class GameRenderer {
         drawExitTarget(gc, gameCanvas.getWidth(), gameCanvas.getHeight());
         drawExitProgress(gesture, dualHands);
 
-        if (gameNameLabel != null) {
-            gameNameLabel.setText(game.getIcon() + "  " + game.getName());
-        }
         boolean tarotMode = "塔罗牌".equals(game.getName());
+        if (gameNameLabel != null) {
+            gameNameLabel.setText(tarotMode ? "" : game.getIcon() + "  " + game.getName());
+        }
         if (scoreLabel != null) {
             scoreLabel.setText(tarotMode ? "" : "分数: " + game.getScore());
         }
@@ -473,7 +473,7 @@ public class GameRenderer {
         g.setFill(Color.web("#d8c2e6"));
         g.setFont(javafx.scene.text.Font.font(16));
         g.fillText("塔罗牌不使用普通难度系统，将直接按你的自定义占读逻辑进入。", x + 28, y + 126);
-        g.fillText("当前保留：紫金界面、78张牌、三种牌阵、完整解读。", x + 28, y + 154);
+        g.fillText("当前保留：紫金界面、78张牌、两种牌阵、完整解读。", x + 28, y + 154);
 
         g.setFill(Color.web("#2e143f"));
         g.fillRoundRect(x + 28, y + 188, 168, 42, 22, 22);
