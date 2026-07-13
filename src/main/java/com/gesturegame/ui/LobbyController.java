@@ -78,7 +78,7 @@ public class LobbyController {
     private static final double MORPH_LERP = 0.12;
     private static final double HORIZONTAL_MOTION_VELOCITY = 0.004;
     private static final double HORIZONTAL_MOTION_DISTANCE = 0.018;
-    private static final long MORPH_STILL_HOLD_MS = 220L;
+    private static final long MORPH_STILL_HOLD_MS = 80L;
     private static final double ROT_SPEED = 0.004;
     private static final double TURBULENCE = 0.03;
     private static final double PARTICLE_DRAW_SIZE = 10.0;
@@ -114,6 +114,9 @@ public class LobbyController {
     private boolean morphHandTracked;
     private double morphMotionAnchorX;
     private long morphStillSince;
+    private double morphTarget;
+    private GestureType morphCandidate = GestureType.NONE;
+    private long morphCandidateSince;
 
     public void bindStateManager(AppStateManager appStateManager) {
         this.appStateManager = appStateManager;
@@ -158,7 +161,6 @@ public class LobbyController {
 
         // 聚散与导航互斥：横向移动立即视为滑动意图；停稳一小段时间后，
         // OPEN/FIST 才能驱动聚散。用累计位移兜住滑动中偶发的低速帧。
-        double morphTarget = 0.0;
         long now = System.currentTimeMillis();
         if (!hand) {
             morphHandTracked = false;
@@ -175,14 +177,28 @@ public class LobbyController {
 
         boolean settledForMorph = hand && morphHandTracked
                 && now - morphStillSince >= MORPH_STILL_HOLD_MS;
-        if (settledForMorph) {
-            GestureType g = gesture.getGesture();
+        GestureType g = hand ? gesture.getGesture() : GestureType.NONE;
+        if (g == GestureType.OPEN || g == GestureType.FIST) {
+            if (g != morphCandidate) {
+                morphCandidate = g;
+                morphCandidateSince = now;
+            }
+        } else {
+            morphCandidate = GestureType.NONE;
+            morphCandidateSince = 0L;
+        }
+        // 允许连续稳定识别兜底：轻微关键点抖动不应让“握拳聚/张手散”永远无法触发。
+        boolean gestureStable = morphCandidate != GestureType.NONE
+                && now - morphCandidateSince >= MORPH_STILL_HOLD_MS;
+        if (settledForMorph || gestureStable) {
             if (g == GestureType.OPEN) {
                 morphTarget = 1.0;
             } else if (g == GestureType.FIST) {
                 morphTarget = -1.0;
             }
         }
+        // 聚散状态采用锁存：短暂识别为 NONE、手部轻微移动或开始滑动时保持当前形态，
+        // 只有识别到另一个明确手势才反向。避免每次噪声帧都回到中性位置。
         morph += (morphTarget - morph) * MORPH_LERP;
         rotY += ROT_SPEED * (1.0 + Math.max(0.0, morph) * 2.0);
         double time = pulse;

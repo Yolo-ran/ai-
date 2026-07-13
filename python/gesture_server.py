@@ -111,6 +111,7 @@ class GestureState:
             prev_hand_y = hand_y
 
         raw_gesture, gesture, confidence = classify_gesture(hand_landmarks, handedness_label)
+        pointing_direction = classify_pointing_direction(hand_landmarks) if gesture == "pointing" else "none"
         self.last_raw_gesture = raw_gesture
 
         self.prev_hand_x = hand_x
@@ -125,6 +126,8 @@ class GestureState:
             "velocityX": round(velocity_x, 4),
             "velocityY": round(velocity_y, 4),
             "gesture": gesture,
+            # 可选兼容字段：Java 旧版本会忽略；新版仅用它确认“食指朝左上”退出。
+            "pointingDirection": pointing_direction,
             "confidence": round(confidence, 4),
             "handDetected": True,
         }
@@ -146,8 +149,24 @@ def calculate_hand_center(hand_landmarks):
     return center_x, center_y
 
 
+def joint_angle(point_a, vertex, point_c) -> float:
+    """Return the smaller angle ABC in degrees, independent of hand rotation."""
+    ab_x, ab_y = point_a.x - vertex.x, point_a.y - vertex.y
+    cb_x, cb_y = point_c.x - vertex.x, point_c.y - vertex.y
+    denominator = max(1e-9, (ab_x * ab_x + ab_y * ab_y) ** 0.5
+                      * (cb_x * cb_x + cb_y * cb_y) ** 0.5)
+    cosine = max(-1.0, min(1.0, (ab_x * cb_x + ab_y * cb_y) / denominator))
+    import math
+    return math.degrees(math.acos(cosine))
+
+
 def is_finger_extended(points, tip_index: int, pip_index: int) -> bool:
-    return points[tip_index].y < points[pip_index].y
+    """Rotation-independent extension test using PIP angle and wrist distance."""
+    mcp_index = pip_index - 1
+    straight = joint_angle(points[mcp_index], points[pip_index], points[tip_index]) >= 145.0
+    tip_from_wrist = landmark_distance(points[tip_index], points[0])
+    pip_from_wrist = landmark_distance(points[pip_index], points[0])
+    return straight and tip_from_wrist > pip_from_wrist * 1.04
 
 
 def is_thumb_extended(points, handedness_label: str) -> bool:
@@ -162,6 +181,19 @@ def landmark_distance(point_a, point_b) -> float:
     dx = point_a.x - point_b.x
     dy = point_a.y - point_b.y
     return (dx * dx + dy * dy) ** 0.5
+
+
+def classify_pointing_direction(points) -> str:
+    """Classify the actual index-finger direction, not the hand's screen position."""
+    dx = points[8].x - points[5].x
+    dy = points[8].y - points[5].y
+    length = max(1e-9, (dx * dx + dy * dy) ** 0.5)
+    nx, ny = dx / length, dy / length
+    # Image coordinates: x grows right and y grows down. A diagonal sector is
+    # intentionally used so ordinary upward/side pointing in a game cannot exit.
+    if nx < -0.35 and ny < -0.35:
+        return "up_left"
+    return "other"
 
 
 def is_thumbs_up(points, thumb_extended: bool, index_extended: bool, middle_extended: bool,
@@ -228,6 +260,19 @@ def classify_gesture(hand_landmarks, handedness_label: str):
     extended_count = sum(
         [thumb_extended, index_extended, middle_extended, ring_extended, pinky_extended]
     )
+
+    # A fist is defined by the four non-thumb fingers being curled. Do this before
+    # thumb variants: a side-on fist often makes the thumb look horizontally
+    # extended and used to be misclassified as another gesture.
+    curled_count = sum([not index_extended, not middle_extended,
+                        not ring_extended, not pinky_extended])
+    palm_span = landmark_distance(points[5], points[17])
+    fingertips_near_palm = sum(
+        landmark_distance(points[index], points[9]) < palm_span * 1.35
+        for index in (8, 12, 16, 20)
+    )
+    if curled_count >= 3 and fingertips_near_palm >= 3:
+        return "fist", "fist", 0.97
 
     if is_thumbs_up(
         points,

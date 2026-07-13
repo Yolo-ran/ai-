@@ -32,7 +32,7 @@
               AnchorPane.bottomAnchor="26.0" AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0">
             <children>
                 <Label fx:id="statusLabel" styleClass="lobby-status"
-                       text="左右挥手切换星球 · 握拳确认进入" wrapText="true" />
+                       text="左右挥手切换星球 · ✌️剪刀手开始" wrapText="true" />
                 <HBox alignment="CENTER" spacing="14.0">
                     <children>
                         <Label styleClass="hint-badge" text="挥手切换" />

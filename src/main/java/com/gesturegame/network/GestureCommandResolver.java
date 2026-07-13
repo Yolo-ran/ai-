@@ -42,6 +42,7 @@ public final class GestureCommandResolver {
             case "PICK_UP":
             case "FIST":
             case "PINCH":
+            case "PEACE":
                 return GestureCommand.CONFIRM;
             case "BACK":
             case "RETURN":
@@ -50,6 +51,7 @@ public final class GestureCommandResolver {
             case "OPEN":
             case "OPEN_PALM":
             case "PALM":
+            case "POINTING":
                 return GestureCommand.BACK;
             default:
                 return GestureCommand.NONE;

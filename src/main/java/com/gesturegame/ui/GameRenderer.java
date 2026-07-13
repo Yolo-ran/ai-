@@ -23,7 +23,7 @@ import java.util.logging.Logger;
  *   <li>管理全屏 {@link Canvas} 与 {@link GraphicsContext}</li>
  *   <li>{@link #tick(GestureData, GameInterface)} 每帧由 {@code AnimationTimer} 驱动：
  *       GAME 态调用 {@code game.update/render}；GAME_OVER 态冻结最后一帧并显示结算</li>
- *   <li>游戏结束（{@code isOver}）后切换至 GAME_OVER 态，等待握拳重玩或张手返回大厅</li>
+ *   <li>游戏结束后切换至 GAME_OVER 态，等待剪刀手重玩或指向左上角返回大厅</li>
  *   <li>窗口缩放时重开当前局，保证画面与画布尺寸一致</li>
  * </ul>
  */
@@ -108,7 +108,7 @@ public class GameRenderer {
             settling = false;
             initGame(game);
             if (statusLabel != null) {
-                statusLabel.setText("✋ 张手按住返回大厅");
+                statusLabel.setText("☝️ 指向左上角返回大厅");
             }
         }
 
@@ -126,7 +126,7 @@ public class GameRenderer {
             gameOverHandled = true;
             settling = true;
             if (statusLabel != null) {
-                statusLabel.setText("游戏结束！得分: " + game.getScore() + "  ✊握拳重玩 | ✋张手回大厅");
+                statusLabel.setText("游戏结束！得分: " + game.getScore() + "  ✌️重新开始 | ☝️指向左上角返回");
             }
             LOGGER.info(() -> "[GameRenderer] 游戏结束: " + game.getName() + " 得分=" + game.getScore());
             if (appStateManager != null) {
@@ -143,6 +143,15 @@ public class GameRenderer {
     public void handleAgentCommand(GestureCommand command, double confidence, String hand) {
         Platform.runLater(() -> {
             String state = AppStateManager.getInstance().getCurrentState();
+
+            if (AppStateManager.STATE_DIFFICULTY.equals(state)) {
+                if (command == GestureCommand.BACK) {
+                    compactHoldFrames = 0;
+                    openHoldFrames = 0;
+                    AppStateManager.getInstance().switchState(AppStateManager.STATE_LOBBY);
+                }
+                return;
+            }
 
             if (AppStateManager.STATE_GAME.equals(state)) {
                 if (command == GestureCommand.BACK) {
@@ -219,7 +228,7 @@ public class GameRenderer {
         LOGGER.info(() -> "[GameRenderer] 画布缩放，重开当前局: " + w + "x" + h);
     }
 
-    /** 难度选择界面：手移选难度，握拳确认 */
+    /** 难度选择界面：手移选难度，剪刀手确认，食指指向左上角返回。 */
     public void tickDifficultySelect(GestureData gesture) {
         if (gameCanvas == null) return;
         GraphicsContext g = gameCanvas.getGraphicsContext2D();
@@ -248,10 +257,10 @@ public class GameRenderer {
             }
 
             boolean isCompact = gesture.getGesture() != null
-                    && (gesture.getGesture().name().equals("FIST")
-                        || gesture.getGesture().name().equals("PEACE"));
-            boolean isOpen = gesture.getGesture() != null
-                    && gesture.getGesture().name().equals("OPEN");
+                    && gesture.getGesture().name().equals("PEACE");
+            // 返回由 GestureStreamServer 使用食指真实朝向（up_left）统一判定。
+            // 这里不再用手掌坐标冒充方向，避免“手在左上但食指朝别处”误退出。
+            boolean isOpen = false;
 
             if (isCompact) {
                 compactHoldFrames++;
@@ -268,7 +277,7 @@ public class GameRenderer {
             openHoldFrames = 0;
         }
 
-        // 握拳确认 → 进入游戏
+        // V 手势确认 → 进入游戏
         if (compactHoldFrames >= HOLD_FRAMES) {
             compactHoldFrames = 0;
             GameInterface game = AppStateManager.getInstance().getActiveGame();
@@ -281,7 +290,7 @@ public class GameRenderer {
             return;
         }
 
-        // 张开手 → 返回大厅
+        // 食指手势 → 返回大厅
         if (openHoldFrames >= HOLD_FRAMES) {
             openHoldFrames = 0;
             LOGGER.info("难度选择取消，返回大厅");
@@ -340,7 +349,7 @@ public class GameRenderer {
 
         g.setFill(Color.web("#deff9a"));
         g.setFont(javafx.scene.text.Font.font(16));
-        g.fillText("手移选难度 | 握拳确认 | 张开返回", w / 2 - 120, cardY + cardH + 50);
+        g.fillText("手移选难度 | ✌️确认开始 | ☝️指向左上角返回", w / 2 - 150, cardY + cardH + 50);
     }
 
     private void clearCanvas() {

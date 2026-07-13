@@ -43,7 +43,7 @@ public class LoginController {
     public void initialize() {
         confirmProgress.setProgress(0.0);
         confirmProgress.setVisible(false);
-        statusLabel.setText("正在等待握拳手势签入...");
+        statusLabel.setText("正在等待剪刀手势签入...");
     }
 
     public void handleAgentCommand(GestureCommand command, double confidence, String hand) {
@@ -100,12 +100,12 @@ public class LoginController {
                 confirmProgress.setProgress(0.0);
                 break;
             case BACK:
-                statusLabel.setText("检测到返回手势，请使用握拳手势进入大厅");
+                statusLabel.setText("检测到返回手势，请使用剪刀手势进入大厅");
                 confirmProgress.setVisible(false);
                 confirmProgress.setProgress(0.0);
                 break;
             default:
-                statusLabel.setText("正在等待握拳手势签入...");
+                statusLabel.setText("正在等待剪刀手势签入...");
                 confirmProgress.setVisible(false);
                 confirmProgress.setProgress(0.0);
                 break;

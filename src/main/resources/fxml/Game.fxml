@@ -21,6 +21,6 @@
         <Label fx:id="statusLabel" styleClass="game-hud-status"
                AnchorPane.bottomAnchor="24.0" AnchorPane.leftAnchor="0.0"
                AnchorPane.rightAnchor="0.0" alignment="CENTER"
-               text="✋ 张手按住返回大厅" />
+               text="☝️ 指向左上角返回大厅" />
     </children>
 </AnchorPane>
