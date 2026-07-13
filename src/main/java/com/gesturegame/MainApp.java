@@ -84,15 +84,16 @@ public class MainApp extends Application {
         gestureStreamServer.start();
         LOGGER.info(() -> "手势图像串流服务已启动，端口: " + SERVER_PORT);
 
-        // 延迟 1.5s 检查 bat 是否已启动过 Python，避免重复拉起
-        new Thread(() -> {
-            try { Thread.sleep(1500); } catch (InterruptedException ignored) {}
-            if (gestureStreamServer.getConnections().isEmpty()) {
-                launchPythonEngine();
-            } else {
-                LOGGER.info("检测到 WebSocket 已有连接，跳过 Python 启动");
-            }
-        }, "python-launcher").start();
+        // 一键启动器会提前预热 Python、模型和摄像头；此时 Java 只负责接收数据。
+        // 从 IDE 单独运行 MainApp 时仍立即自动启动视觉引擎，不再固定等待 1.5 秒。
+        boolean externalGestureEngine = "1".equals(System.getenv("GESTURE_ENGINE_EXTERNAL"));
+        if (externalGestureEngine) {
+            LOGGER.info("视觉引擎已由一键启动器提前启动");
+        } else {
+            Thread pythonLauncher = new Thread(this::launchPythonEngine, "python-launcher");
+            pythonLauncher.setDaemon(true);
+            pythonLauncher.start();
+        }
     }
 
     /**

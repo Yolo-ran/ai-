@@ -21,7 +21,7 @@ FRAME_WIDTH = 640
 FRAME_HEIGHT = 480
 SEND_FPS = 30
 IMAGE_STREAM_FPS = 20
-RECONNECT_DELAY_SECONDS = 1.5
+RECONNECT_DELAY_SECONDS = 0.25
 # 默认关闭 Python 本地预览窗，只保留 Java 主界面中的实时画面，避免双窗口混乱。
 # 如需单独调试 MediaPipe 识别窗，可在启动前设置:
 #   $env:GESTURE_SERVER_SHOW_PREVIEW = "1"
