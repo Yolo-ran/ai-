@@ -57,4 +57,10 @@ public interface GameInterface {
 
     /** 获取当前难度。 */
     Difficulty getDifficulty();
+
+    /** 是否支持指定难度。 */
+    default boolean supportsDifficulty(Difficulty d) { return true; }
+
+    /** 难度卡牌上的显示文字（不覆盖则用全局标签）。 */
+    default String getDifficultyLabel(Difficulty d) { return d.getLabel(); }
 }

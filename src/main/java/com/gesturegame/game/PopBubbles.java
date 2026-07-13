@@ -51,6 +51,10 @@ public class PopBubbles implements GameInterface {
     private int spawnMinFrames;
     private int spawnMaxFrames;
     private int autoPopPenalty;
+    private int lives;
+    private int baseLives;
+    private int targetScore;
+    private boolean won;
 
     @Override
     public String getName() {
@@ -73,6 +77,7 @@ public class PopBubbles implements GameInterface {
         this.canvasHeight = height;
         this.score = 0;
         this.over = false;
+        this.won = false;
         this.bubbles = new ArrayList<>();
         this.frameCount = 0;
         this.nextSpawnFrame = 0;
@@ -83,30 +88,31 @@ public class PopBubbles implements GameInterface {
     private void applyDifficulty() {
         switch (difficulty) {
             case EASY:
-                maxBubbles = 8;
-                bubbleLifetime = 480;   // 8秒
-                bubbleGrowthRate = 0.08;
-                minRadius = 20; maxRadius = 40;
-                spawnMinFrames = 90; spawnMaxFrames = 120;
-                autoPopPenalty = 3;
+                baseLives = 5; targetScore = 100;
+                maxBubbles = 8; bubbleLifetime = 480;
+                bubbleGrowthRate = 0.08; minRadius = 20; maxRadius = 40;
+                spawnMinFrames = 90; spawnMaxFrames = 120; autoPopPenalty = 3;
                 break;
             case NORMAL:
-                maxBubbles = 15;
-                bubbleLifetime = 300;   // 5秒
-                bubbleGrowthRate = 0.15;
-                minRadius = 30; maxRadius = 60;
-                spawnMinFrames = 60; spawnMaxFrames = 90;
-                autoPopPenalty = 5;
+                baseLives = 3; targetScore = 200;
+                maxBubbles = 15; bubbleLifetime = 300;
+                bubbleGrowthRate = 0.15; minRadius = 30; maxRadius = 60;
+                spawnMinFrames = 60; spawnMaxFrames = 90; autoPopPenalty = 5;
                 break;
             case HARD:
-                maxBubbles = 20;
-                bubbleLifetime = 180;   // 3秒
-                bubbleGrowthRate = 0.25;
-                minRadius = 40; maxRadius = 80;
-                spawnMinFrames = 35; spawnMaxFrames = 60;
-                autoPopPenalty = 10;
+                baseLives = 1; targetScore = 300;
+                maxBubbles = 20; bubbleLifetime = 180;
+                bubbleGrowthRate = 0.25; minRadius = 40; maxRadius = 80;
+                spawnMinFrames = 35; spawnMaxFrames = 60; autoPopPenalty = 10;
+                break;
+            case ENDLESS:
+                baseLives = 3; targetScore = -1;
+                maxBubbles = 15; bubbleLifetime = 300;
+                bubbleGrowthRate = 0.15; minRadius = 30; maxRadius = 60;
+                spawnMinFrames = 60; spawnMaxFrames = 90; autoPopPenalty = 5;
                 break;
         }
+        lives = baseLives;
     }
 
     @Override
@@ -162,10 +168,11 @@ public class PopBubbles implements GameInterface {
             b.radius += bubbleGrowthRate;
             b.age++;
 
-            // 超时自动消失
+            // 超时自动消失 → 扣命
             if (b.age >= bubbleLifetime) {
                 toRemove.add(b);
                 score = Math.max(0, score - autoPopPenalty);
+                lives--;
                 continue;
             }
 
@@ -189,6 +196,11 @@ public class PopBubbles implements GameInterface {
             }
         }
         bubbles.removeAll(toRemove);
+
+        // 通关检测
+        if (targetScore > 0 && score >= targetScore) { won = true; over = true; }
+        // 生命耗尽
+        if (lives <= 0) { lives = 0; over = true; }
 
         frameCount++;
     }
@@ -222,13 +234,39 @@ public class PopBubbles implements GameInterface {
             gc.strokeLine(handCanvasX, handCanvasY - 15, handCanvasX, handCanvasY + 15);
         }
 
-        // 3. HUD
-        gc.setFill(Color.WHITE);
-        gc.fillText("分数: " + score, 20, 30);
+        // 3. HUD（左上生命，游戏名/分数由 FXML 显示）
+        gc.setFill(Color.rgb(255, 255, 255, 0.8));
+        gc.setFont(javafx.scene.text.Font.font(15));
+        gc.fillText("❤ x " + lives, 28, 86);
+        if (targetScore > 0) {
+            gc.setFill(Color.rgb(255, 255, 255, 0.6));
+            gc.setFont(javafx.scene.text.Font.font(13));
+            gc.fillText("目标 " + targetScore, canvasWidth - 80, 88);
+        }
 
         if (over) {
+            gc.setFill(Color.rgb(0, 0, 0, 0.75));
+            gc.fillRect(0, 0, canvasWidth, canvasHeight);
+            if (won) {
+                gc.setFill(Color.GOLD);
+                gc.setFont(javafx.scene.text.Font.font(36));
+                gc.fillText("🎉 通关！", canvasWidth / 2.0 - 80, canvasHeight / 2.0 - 20);
+            } else {
+                gc.setFill(Color.RED);
+                gc.setFont(javafx.scene.text.Font.font(36));
+                gc.fillText("游戏结束", canvasWidth / 2.0 - 80, canvasHeight / 2.0 - 20);
+            }
             gc.setFill(Color.WHITE);
-            gc.fillText("游戏结束！得分: " + score, canvasWidth / 2.0 - 100, canvasHeight / 2.0);
+            gc.setFont(javafx.scene.text.Font.font(20));
+            gc.fillText("得分: " + score, canvasWidth / 2.0 - 40, canvasHeight / 2.0 + 25);
+            if (targetScore > 0 && !won) {
+                gc.setFill(Color.GRAY);
+                gc.setFont(javafx.scene.text.Font.font(14));
+                gc.fillText("目标: " + targetScore, canvasWidth / 2.0 - 25, canvasHeight / 2.0 + 50);
+            }
+            gc.setFill(Color.web("#deff9a"));
+            gc.setFont(javafx.scene.text.Font.font(14));
+            gc.fillText("✊重玩 | 👆返回", canvasWidth / 2.0 - 55, canvasHeight / 2.0 + 75);
         }
     }
 

@@ -274,7 +274,15 @@ public class GameRenderer {
         g.setFill(Color.web("#0f172a"));
         g.fillRect(0, 0, w, h);
 
-        Difficulty[] diffs = Difficulty.values();
+        GameInterface activeGame = AppStateManager.getInstance().getActiveGame();
+        Difficulty[] all = Difficulty.values();
+        java.util.List<Difficulty> supported = new java.util.ArrayList<>();
+        for (Difficulty d : all) {
+            if (activeGame == null || activeGame.supportsDifficulty(d)) {
+                supported.add(d);
+            }
+        }
+        Difficulty[] diffs = supported.toArray(new Difficulty[0]);
         int n = diffs.length;
         double cardW = 150, cardH = 180, gap = 20;
         double totalW = cardW * n + gap * (n - 1);
@@ -350,22 +358,25 @@ public class GameRenderer {
             g.setTextAlign(javafx.scene.text.TextAlignment.CENTER);
             double midX = cx + cardW / 2;
 
-            g.setFill(sel ? Color.WHITE : Color.web("#94a3b8"));
-            g.setFont(javafx.scene.text.Font.font(18));
-            g.fillText(diffs[i].getLabel(), midX, cardY + 40);
+            String label = activeGame != null
+                    ? activeGame.getDifficultyLabel(diffs[i])
+                    : diffs[i].getLabel();
+            boolean hasCustomLabel = activeGame != null
+                    && !activeGame.getDifficultyLabel(diffs[i]).equals(diffs[i].getLabel());
 
-            g.setFont(javafx.scene.text.Font.font(36));
-            g.fillText(diffs[i].getStars(), midX, cardY + 100);
-
-            String hint;
-            switch (diffs[i]) {
-                case EASY: hint = "5❤"; break;
-                case NORMAL: hint = "3❤"; break;
-                case HARD: hint = "1❤"; break;
-                default: hint = "3❤ ♾️"; break;
+            if (hasCustomLabel) {
+                // 仅显示自定义文字（如"三局两胜"），居中大字
+                g.setFill(sel ? Color.WHITE : Color.web("#94a3b8"));
+                g.setFont(javafx.scene.text.Font.font(20));
+                g.fillText(label, midX, cardY + cardH / 2 + 6);
+            } else {
+                // 标准显示：标题 + 星星
+                g.setFill(sel ? Color.WHITE : Color.web("#94a3b8"));
+                g.setFont(javafx.scene.text.Font.font(18));
+                g.fillText(label, midX, cardY + 40);
+                g.setFont(javafx.scene.text.Font.font(36));
+                g.fillText(diffs[i].getStars(), midX, cardY + 100);
             }
-            g.setFont(javafx.scene.text.Font.font(14));
-            g.fillText(hint, midX, cardY + cardH - 20);
             g.setTextAlign(javafx.scene.text.TextAlignment.LEFT);
         }
 

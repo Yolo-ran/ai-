@@ -98,24 +98,20 @@ public class RPSGame implements GameInterface {
     }
 
     private void applyDifficulty() {
+        // 倒计时 / 容错 / AI 统一，仅总局数不同
+        countdownFrames = 180;     // 3秒
+        toleranceFrames = 60;      // 1秒容错
+        cpuSmartLevel = 0;         // 纯随机
         switch (difficulty) {
             case EASY:
-                countdownFrames = 180; // 3秒
-                totalRounds = 5;
-                toleranceFrames = 90;
-                cpuSmartLevel = 0;
+                totalRounds = 3;    // 三局两胜
                 break;
             case NORMAL:
-                countdownFrames = 180; // 3秒
-                totalRounds = 5;
-                toleranceFrames = 48;  // 0.8秒容错
-                cpuSmartLevel = 1;     // 30%反制
+                totalRounds = 5;    // 五局三胜
                 break;
             case HARD:
-                countdownFrames = 120; // 2秒
-                totalRounds = 7;
-                toleranceFrames = 18;  // 0.3秒容错
-                cpuSmartLevel = 2;     // 50%反制+记忆
+            default:
+                totalRounds = 7;    // 七局四胜
                 break;
         }
     }
@@ -126,6 +122,21 @@ public class RPSGame implements GameInterface {
     @Override
     public Difficulty getDifficulty() {
         return difficulty;
+    }
+
+    @Override
+    public boolean supportsDifficulty(Difficulty d) {
+        return d != Difficulty.ENDLESS;
+    }
+
+    @Override
+    public String getDifficultyLabel(Difficulty d) {
+        switch (d) {
+            case EASY: return "三局两胜";
+            case NORMAL: return "五局三胜";
+            case HARD: return "七局四胜";
+            default: return d.getLabel();
+        }
     }
 
     @Override
@@ -159,27 +170,18 @@ public class RPSGame implements GameInterface {
                 state = RPSState.JUDGE;
             }
         } else if (state == RPSState.JUDGE) {
-            // 读取玩家手势并映射
+            // 持续读取手势直到有效（最多 60 帧 = 1 秒）
             GestureType g = gesture.getGesture();
             int playerChoice = -1;
-            if (g == GestureType.FIST) {
-                playerChoice = 0;      // 石头
-            } else if (g == GestureType.PEACE) {
-                playerChoice = 1;      // 剪刀
-            } else if (g == GestureType.OPEN) {
-                playerChoice = 2;      // 布
-            }
+            if (g == GestureType.FIST) playerChoice = 0;
+            else if (g == GestureType.PEACE) playerChoice = 1;
+            else if (g == GestureType.OPEN) playerChoice = 2;
 
-            if (playerChoice == -1) {
-                // NONE → 本轮无效，回到 WAITING
-                state = RPSState.WAITING;
-            } else {
+            if (playerChoice >= 0 && resultFrames <= 0) {
+                // 有效手势 → 首次判定
                 playerGesture = g;
-                // 如果电脑还没出拳（极端情况），补一个
-                if (computerChoice == -1) {
-                    computerChoice = RANDOM.nextInt(3);
-                }
-                // 判定胜负
+                playerGestureHistory[playerChoice]++;
+                if (computerChoice == -1) computerChoice = RANDOM.nextInt(3);
                 if (playerChoice == computerChoice) {
                     roundResult = "平局";
                 } else if ((playerChoice == 0 && computerChoice == 1)
@@ -192,13 +194,27 @@ public class RPSGame implements GameInterface {
                     computerScore++;
                 }
                 roundCount++;
-                // 记录日志（最多3条）
                 gameLog.add(roundResult);
-                if (gameLog.size() > 3) {
-                    gameLog.remove(0);
+                if (gameLog.size() > 3) gameLog.remove(0);
+                resultFrames = 120; // 展示 2 秒
+            } else if (playerChoice < 0) {
+                // 无效手势 → 累计等待帧数（最多 60 帧超时算 Miss）
+                if (resultFrames < 60) resultFrames++;
+                if (resultFrames >= 60) {
+                    roundResult = "无手势";
+                    computerScore++;
+                    roundCount++;
+                    gameLog.add(roundResult);
+                    if (gameLog.size() > 3) gameLog.remove(0);
+                    resultFrames = 120;
                 }
-                state = RPSState.RESULT;
-                resultFrames = 60;
+            } else {
+                // 有效手势已读，展示中
+                resultFrames--;
+                if (resultFrames <= 0) {
+                    state = RPSState.RESULT;
+                    resultFrames = 60;
+                }
             }
         } else if (state == RPSState.RESULT) {
             resultFrames--;
@@ -242,7 +258,8 @@ public class RPSGame implements GameInterface {
         gc.setFont(javafx.scene.text.Font.font(14));
         gc.fillText("你", canvasWidth / 2.0 - 120, barY - 10);
         gc.fillText("电脑", canvasWidth / 2.0 + 90, barY - 10);
-        for (int i = 0; i < 3; i++) {
+        int winThreshold = (totalRounds / 2) + 1;
+        for (int i = 0; i < winThreshold; i++) {
             double cxP = canvasWidth / 2.0 - 100 + i * 20;
             double cxC = canvasWidth / 2.0 + 80 + i * 20;
             if (i < playerScore) {
