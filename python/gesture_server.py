@@ -20,7 +20,7 @@ CAMERA_INDEX = 0
 FRAME_WIDTH = 640
 FRAME_HEIGHT = 480
 SEND_FPS = 30
-IMAGE_STREAM_FPS = 20
+IMAGE_STREAM_FPS = 12
 RECONNECT_DELAY_SECONDS = 0.25
 # 默认关闭 Python 本地预览窗，只保留 Java 主界面中的实时画面，避免双窗口混乱。
 # 如需单独调试 MediaPipe 识别窗，可在启动前设置:
@@ -78,7 +78,6 @@ class GestureState:
         self.previous_detected = False
         self.last_payload_log_time = 0.0
         self.last_image_send_time = 0.0
-        self.last_encoded_image = ""
         self.last_raw_gesture = "none"
 
     def build_payload(self, hands) -> dict:
@@ -592,9 +591,10 @@ async def stream_gestures():
 
                             if SEND_IMAGE_STREAM:
                                 if now - state.last_image_send_time >= 1.0 / IMAGE_STREAM_FPS:
-                                    state.last_encoded_image = encode_image_data(output_frame)
+                                    encoded_image = encode_image_data(output_frame)
+                                    if encoded_image:
+                                        payload["image_data"] = encoded_image
                                     state.last_image_send_time = now
-                                payload["image_data"] = state.last_encoded_image
 
                             if PRINT_PAYLOAD_SAMPLE and now - state.last_payload_log_time >= PAYLOAD_LOG_INTERVAL_SECONDS:
                                 payload_log = dict(payload)
