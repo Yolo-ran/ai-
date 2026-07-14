@@ -1,5 +1,6 @@
 package com.gesturegame.game;
 
+import com.gesturegame.audio.SystemSpeech;
 import com.gesturegame.common.Difficulty;
 import com.gesturegame.common.GameInterface;
 import com.gesturegame.common.GestureData;
@@ -62,9 +63,10 @@ public class RPSGame implements GameInterface {
     private String roundResult;
     private List<String> gameLog;
     private boolean beepFrame;
+    private boolean roundJudged;
+    private boolean finalSpeechAnnounced;
     private Difficulty difficulty = Difficulty.NORMAL;
     private int totalRounds;
-    private int toleranceFrames;
     private int cpuSmartLevel;
     private int[] playerGestureHistory = new int[3];
     private int initialCountdown; // 记录本轮倒计时初始值
@@ -104,6 +106,8 @@ public class RPSGame implements GameInterface {
         this.roundResult = "";
         this.gameLog = new ArrayList<>();
         this.beepFrame = false;
+        this.roundJudged = false;
+        this.finalSpeechAnnounced = false;
         this.playerGestureHistory = new int[3];
         this.matchSaveAttempted = false;
         this.matchSaved = false;
@@ -112,9 +116,8 @@ public class RPSGame implements GameInterface {
     }
 
     private void applyDifficulty() {
-        // 倒计时 / 容错 / AI 统一，仅总局数不同
+        // 倒计时 / AI 统一，仅总局数不同
         countdownFrames = 180;     // 3秒
-        toleranceFrames = 60;      // 1秒容错
         cpuSmartLevel = 0;         // 纯随机
         switch (difficulty) {
             case EASY:
@@ -165,6 +168,7 @@ public class RPSGame implements GameInterface {
                 initialCountdown = countdownFrames;
                 computerChoice = getComputerChoice();
                 playerGesture = GestureType.NONE; // 重置本局手势
+                roundJudged = false;
                 state = RPSState.COUNTDOWN;
                 beepFrame = true;
             }
@@ -186,7 +190,7 @@ public class RPSGame implements GameInterface {
             }
         } else if (state == RPSState.JUDGE) {
             // 已判定过 → 只做展示倒计时，不再重复判定
-            if (playerGesture != GestureType.NONE) {
+            if (roundJudged) {
                 resultFrames--;
                 if (resultFrames <= 0) {
                     state = RPSState.RESULT;
@@ -201,35 +205,9 @@ public class RPSGame implements GameInterface {
                 else if (g == GestureType.OPEN) playerChoice = 2;
 
                 if (playerChoice >= 0) {
-                    playerGesture = g;
-                    playerGestureHistory[playerChoice]++;
-                    if (computerChoice == -1) computerChoice = RANDOM.nextInt(3);
-                    if (playerChoice == computerChoice) {
-                        roundResult = "平局";
-                    } else if ((playerChoice == 0 && computerChoice == 1)
-                            || (playerChoice == 1 && computerChoice == 2)
-                            || (playerChoice == 2 && computerChoice == 0)) {
-                        roundResult = "你赢了";
-                        playerScore++;
-                    } else {
-                        roundResult = "你输了";
-                        computerScore++;
-                    }
-                    roundCount++;
-                    gameLog.add(roundResult);
-                    if (gameLog.size() > 3) gameLog.remove(0);
-                    resultFrames = 120;
+                    judgeRound(g, playerChoice);
                 } else {
-                    // 无效手势 → 累计超时
-                    if (resultFrames < 60) resultFrames++;
-                    if (resultFrames >= 60) {
-                        roundResult = "无手势";
-                        roundCount++;
-                        gameLog.add(roundResult);
-                        if (gameLog.size() > 3) gameLog.remove(0);
-                        playerGesture = GestureType.FIST; // 标记已判，防止重复
-                        resultFrames = 120;
-                    }
+                    timeoutRound();
                 }
             }
         } else if (state == RPSState.RESULT) {
@@ -240,6 +218,7 @@ public class RPSGame implements GameInterface {
                         || roundCount >= totalRounds) {
                     over = true;
                     persistCompletedMatch();
+                    announceFinalResult();
                 } else {
                     state = RPSState.WAITING;
                 }
@@ -423,6 +402,56 @@ public class RPSGame implements GameInterface {
             LOGGER.log(Level.WARNING,
                     "写入猜拳对局 CSV 失败: " + statsStore.getCsvPath(), ex);
         }
+    }
+
+    private void judgeRound(GestureType gesture, int playerChoice) {
+        playerGesture = gesture;
+        playerGestureHistory[playerChoice]++;
+        if (computerChoice == -1) computerChoice = RANDOM.nextInt(3);
+        if (playerChoice == computerChoice) {
+            roundResult = "平局";
+        } else if ((playerChoice == 0 && computerChoice == 1)
+                || (playerChoice == 1 && computerChoice == 2)
+                || (playerChoice == 2 && computerChoice == 0)) {
+            roundResult = "你赢了";
+            playerScore++;
+        } else {
+            roundResult = "你输了";
+            computerScore++;
+        }
+        finishRound(roundResult);
+    }
+
+    private void timeoutRound() {
+        playerGesture = GestureType.NONE;
+        computerScore++;
+        finishRound("超时判负");
+    }
+
+    private void finishRound(String result) {
+        roundResult = result;
+        roundCount++;
+        gameLog.add(roundResult);
+        if (gameLog.size() > 3) gameLog.remove(0);
+        roundJudged = true;
+        resultFrames = 120;
+        SystemSpeech.speak("本回合" + result + "。比分 " + playerScore + " 比 " + computerScore);
+    }
+
+    private void announceFinalResult() {
+        if (finalSpeechAnnounced) {
+            return;
+        }
+        finalSpeechAnnounced = true;
+        String result;
+        if (playerScore > computerScore) {
+            result = "本场比赛你赢了";
+        } else if (playerScore < computerScore) {
+            result = "本场比赛电脑获胜";
+        } else {
+            result = "本场比赛平局";
+        }
+        SystemSpeech.speak(result + "。最终比分 " + playerScore + " 比 " + computerScore);
     }
 
     private int getComputerChoice() {
