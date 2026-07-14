@@ -686,54 +686,74 @@ public class TarotGame implements GameInterface {
     }
 
     private void drawBackground(GraphicsContext gc) {
+        // Deep purple to midnight blue gradient
         gc.setFill(new LinearGradient(0, 0, 1, 1, true, CycleMethod.NO_CYCLE,
-                new Stop(0, Color.web("#14100d")),
-                new Stop(0.36, Color.web("#241913")),
-                new Stop(0.68, Color.web("#120d12")),
-                new Stop(1, Color.web("#070608"))));
+                new Stop(0, Color.web("#1A0B2E")),
+                new Stop(0.36, Color.web("#2D1B4E")),
+                new Stop(0.68, Color.web("#0A0A1A")),
+                new Stop(1, Color.web("#05050A"))));
         gc.fillRect(0, 0, canvasWidth, canvasHeight);
 
+        // Altar light: magical purple and gold aura
         Paint altarLight = new RadialGradient(
                 0, 0, canvasWidth * 0.50, canvasHeight * 0.42, canvasWidth * 0.55, false, CycleMethod.NO_CYCLE,
-                new Stop(0, Color.web("#b47a3c", 0.22)),
-                new Stop(0.36, Color.web("#5a3522", 0.16)),
+                new Stop(0, Color.web("#7A329F", 0.15)),
+                new Stop(0.36, Color.web("#D4AF37", 0.08)),
                 new Stop(1, Color.TRANSPARENT)
         );
         gc.setFill(altarLight);
         gc.fillOval(canvasWidth * 0.12, canvasHeight * 0.04, canvasWidth * 0.76, canvasHeight * 0.82);
 
-        gc.setFill(new LinearGradient(0, 0, 0, 1, true, CycleMethod.NO_CYCLE,
-                new Stop(0, Color.web("#261b25", 0.00)),
-                new Stop(0.25, Color.web("#341b4a", 0.10)),
-                new Stop(0.55, Color.web("#201129", 0.20)),
-                new Stop(1, Color.web("#09070c", 0.04))
-        ));
-        gc.fillRoundRect(canvasWidth * 0.10, canvasHeight * 0.18, canvasWidth * 0.80, canvasHeight * 0.64, 26, 26);
+        // Candles (left and right corners)
+        drawCandle(gc, canvasWidth * 0.1, canvasHeight * 0.85);
+        drawCandle(gc, canvasWidth * 0.15, canvasHeight * 0.9);
+        drawCandle(gc, canvasWidth * 0.85, canvasHeight * 0.85);
+        drawCandle(gc, canvasWidth * 0.9, canvasHeight * 0.92);
 
-        gc.setStroke(Color.web("#5b4436", 0.22));
-        gc.setLineWidth(1);
-        for (int i = 0; i < 6; i++) {
-            double ringY = canvasHeight * 0.52 + Math.sin(i * 0.8) * 18;
-            gc.strokeOval(canvasWidth * 0.22 + i * 26, ringY, canvasWidth * 0.34, 24 + i * 8);
+        // Magic Circle base
+        gc.setStroke(Color.web("#D4AF37", 0.15));
+        gc.setLineWidth(2);
+        for (int i = 0; i < 3; i++) {
+            gc.strokeOval(canvasWidth * 0.5 - 200 - i*20, canvasHeight * 0.5 - 200 - i*20, 400 + i*40, 400 + i*40);
         }
 
-        gc.setFill(Color.web("#d9bc88", 0.18));
+        // Floating particles (Sparkles)
+        gc.setFill(Color.web("#D4AF37", 0.6));
+        for (int i = 0; i < 40; i++) {
+            double px = 80 + (i * 67 + ambientPulse * 10 * (i%3+1)) % Math.max(canvasWidth - 160, 1);
+            double py = 70 + (i * 113 - ambientPulse * 15 * (i%2+1)) % Math.max(canvasHeight - 140, 1);
+            double r = 1 + (i % 3) + Math.sin(ambientPulse + i) * 1.5;
+            if (r > 0) gc.fillOval(px, py, r, r);
+        }
+
+        // Runes on the magic circle
+        gc.setFill(Color.web("#D4AF37", 0.3));
         gc.setFont(Font.font("Georgia", FontWeight.SEMI_BOLD, 18));
         String[] runes = {"ᚠ", "ᚱ", "ᚹ", "ᛟ", "ᛞ", "ᚲ", "ᛉ", "ᛒ"};
-        for (int i = 0; i < 18; i++) {
-            double px = 64 + (i * 97 % Math.max(canvasWidth - 128, 1));
-            double py = 74 + (i * 141 % Math.max(canvasHeight - 148, 1));
+        for (int i = 0; i < 12; i++) {
+            double angle = Math.toRadians(i * 30 + ambientPulse * 10);
+            double px = canvasWidth * 0.5 + Math.cos(angle) * 230 - 9;
+            double py = canvasHeight * 0.5 + Math.sin(angle) * 230 + 6;
             gc.fillText(runes[i % runes.length], px, py);
         }
 
-        gc.setFill(Color.web("#f1d2a0", 0.12));
-        for (int i = 0; i < 34; i++) {
-            double px = 80 + (i * 67 % Math.max(canvasWidth - 160, 1));
-            double py = 70 + (i * 113 % Math.max(canvasHeight - 140, 1));
-            double r = 1 + (i % 3);
-            gc.fillOval(px, py, r, r);
-        }
         drawFlowingGoldBackdrop(gc);
+    }
+
+    private void drawCandle(GraphicsContext gc, double x, double y) {
+        // Wax
+        gc.setFill(new LinearGradient(0, 0, 1, 0, true, CycleMethod.NO_CYCLE,
+                new Stop(0, Color.web("#D1C4A5")),
+                new Stop(0.5, Color.web("#F1E9D2")),
+                new Stop(1, Color.web("#A39678"))));
+        gc.fillRoundRect(x - 10, y, 20, 60, 4, 4);
+        // Flame
+        double flameH = 15 + Math.sin(ambientPulse * 15 + x) * 3;
+        gc.setFill(new RadialGradient(0, 0, x, y - 5, 20, false, CycleMethod.NO_CYCLE,
+                new Stop(0, Color.web("#FFFFFF", 0.9)),
+                new Stop(0.3, Color.web("#FFD700", 0.7)),
+                new Stop(1, Color.TRANSPARENT)));
+        gc.fillOval(x - 15, y - 5 - flameH/2, 30, flameH * 2);
     }
 
     private void drawTopBar(GraphicsContext gc) {
@@ -742,23 +762,23 @@ public class TarotGame implements GameInterface {
         double inset = 10;
 
         gc.setFill(new LinearGradient(0, 0, 1, 0, true, CycleMethod.NO_CYCLE,
-                new Stop(0, Color.web("#4e3b2a", 0.98)),
-                new Stop(0.18, Color.web("#2e241d", 0.98)),
-                new Stop(0.5, Color.web("#5b4731", 0.98)),
-                new Stop(0.82, Color.web("#2e241d", 0.98)),
-                new Stop(1, Color.web("#4e3b2a", 0.98))));
+                new Stop(0, Color.web("#1A0B2E", 0.95)),
+                new Stop(0.18, Color.web("#0A0A1A", 0.95)),
+                new Stop(0.5, Color.web("#2D1B4E", 0.95)),
+                new Stop(0.82, Color.web("#0A0A1A", 0.95)),
+                new Stop(1, Color.web("#1A0B2E", 0.95))));
         gc.fillRoundRect(inset, barY, canvasWidth - inset * 2, barH, 12, 12);
-        gc.setStroke(Color.web("#8f7149", 0.86));
+        gc.setStroke(Color.web("#D4AF37", 0.86));
         gc.setLineWidth(1.4);
         gc.strokeRoundRect(inset, barY, canvasWidth - inset * 2, barH, 12, 12);
-        gc.setStroke(Color.web("#b89462", 0.34));
+        gc.setStroke(Color.web("#B8860B", 0.34));
         gc.strokeLine(inset + 18, barY + 14, canvasWidth - inset - 18, barY + 14);
         gc.strokeLine(inset + 18, barY + barH - 14, canvasWidth - inset - 18, barY + barH - 14);
 
         drawMetalPlate(gc, 18, barY + 10, 112, 36, "BACK", false);
         drawMetalPlate(gc, canvasWidth - 122, barY + 10, 104, 36, "RE-DEAL", false);
 
-        gc.setFill(Color.web("#b99766", 0.58));
+        gc.setFill(Color.web("#D4AF37", 0.8));
         gc.setFont(Font.font("Georgia", FontWeight.SEMI_BOLD, 16));
         gc.fillText("ᚨᚱᚲᚨᚾᚨ", 150, barY + 17);
         gc.fillText("ᚾᛁᛋᚲᛟᛞᛁᛗ", canvasWidth - 286, barY + 17);
@@ -766,14 +786,14 @@ public class TarotGame implements GameInterface {
         double centerW = 340;
         double centerX = canvasWidth / 2.0 - centerW / 2.0;
         gc.setFill(new LinearGradient(0, 0, 1, 1, true, CycleMethod.NO_CYCLE,
-                new Stop(0, Color.web("#6d5539")),
-                new Stop(0.5, Color.web("#32261c")),
-                new Stop(1, Color.web("#6d5539"))));
+                new Stop(0, Color.web("#2D1B4E")),
+                new Stop(0.5, Color.web("#0A0A1A")),
+                new Stop(1, Color.web("#2D1B4E"))));
         gc.fillRoundRect(centerX, barY + 2, centerW, 46, 16, 16);
-        gc.setStroke(Color.web("#d3b07c", 0.88));
+        gc.setStroke(Color.web("#D4AF37", 0.88));
         gc.setLineWidth(1.2);
         gc.strokeRoundRect(centerX, barY + 2, centerW, 46, 16, 16);
-        gc.setFill(Color.web("#e8d7b7"));
+        gc.setFill(Color.web("#F3E5AB"));
         gc.setFont(Font.font("Georgia", FontWeight.NORMAL, 18));
         gc.setTextAlign(TextAlignment.CENTER);
         gc.fillText(currentSpreadMode == SpreadMode.SINGLE_CARD ? "Single Card Enlightenment" : "Three-Card Spread",
@@ -793,42 +813,42 @@ public class TarotGame implements GameInterface {
         double h = 34;
         if (active) {
             gc.setFill(new LinearGradient(0, 0, 1, 1, true, CycleMethod.NO_CYCLE,
-                    new Stop(0, Color.web("#6f573b")),
-                    new Stop(1, Color.web("#34261c"))));
+                    new Stop(0, Color.web("#3A1F62")),
+                    new Stop(1, Color.web("#1A0B2E"))));
             gc.fillRoundRect(x, y, w, h, 10, 10);
-            gc.setStroke(Color.web("#cba36a", 0.95));
+            gc.setStroke(Color.web("#D4AF37", 0.95));
             gc.strokeRoundRect(x, y, w, h, 10, 10);
             gc.setFill(new RadialGradient(0, 0, x + 18, y + 17, 8, false, CycleMethod.NO_CYCLE,
-                    new Stop(0, Color.web("#f3e7c9")),
-                    new Stop(1, Color.web("#c39a5f"))));
+                    new Stop(0, Color.web("#FFF8DC")),
+                    new Stop(1, Color.web("#DAA520"))));
             gc.fillOval(x + 10, y + 9, 16, 16);
         } else {
             gc.setFill(new LinearGradient(0, 0, 1, 1, true, CycleMethod.NO_CYCLE,
-                    new Stop(0, Color.web("#4a3828")),
-                    new Stop(1, Color.web("#221915"))));
+                    new Stop(0, Color.web("#1A0B2E")),
+                    new Stop(1, Color.web("#05050A"))));
             gc.fillRoundRect(x, y, w, h, 10, 10);
-            gc.setStroke(Color.web("#71593c", 0.82));
+            gc.setStroke(Color.web("#8B6508", 0.82));
             gc.strokeRoundRect(x, y, w, h, 10, 10);
-            gc.setFill(Color.web("#8c6f4e"));
+            gc.setFill(Color.web("#5C4033"));
             gc.fillOval(x + 12, y + 11, 10, 10);
         }
         gc.setFont(Font.font("KaiTi", FontWeight.BOLD, 14));
-        gc.setFill(active ? Color.web("#f0dfbe") : Color.web("#ceb38a"));
+        gc.setFill(active ? Color.web("#FFF8DC") : Color.web("#B8860B"));
         gc.fillText(text, x + 34, y + 8);
     }
 
     private void drawMetalPlate(GraphicsContext gc, double x, double y, double w, double h,
                                 String label, boolean active) {
         gc.setFill(new LinearGradient(0, 0, 1, 1, true, CycleMethod.NO_CYCLE,
-                new Stop(0, Color.web(active ? "#6f573b" : "#5a4530")),
-                new Stop(1, Color.web(active ? "#34261c" : "#2a211a"))));
+                new Stop(0, Color.web(active ? "#3A1F62" : "#1A0B2E")),
+                new Stop(1, Color.web(active ? "#1A0B2E" : "#05050A"))));
         gc.fillRoundRect(x, y, w, h, 10, 10);
-        gc.setStroke(Color.web(active ? "#c9a46c" : "#8c704b", 0.92));
+        gc.setStroke(Color.web(active ? "#D4AF37" : "#8B6508", 0.92));
         gc.setLineWidth(1.1);
         gc.strokeRoundRect(x, y, w, h, 10, 10);
-        gc.setStroke(Color.web("#c19a63", 0.30));
+        gc.setStroke(Color.web("#DAA520", 0.30));
         gc.strokeLine(x + 12, y + h - 10, x + w - 12, y + h - 10);
-        gc.setFill(Color.web(active ? "#f1dfbd" : "#d8c29c"));
+        gc.setFill(Color.web(active ? "#FFF8DC" : "#DAA520"));
         gc.setFont(Font.font("Georgia", FontWeight.SEMI_BOLD, 12));
         gc.setTextAlign(TextAlignment.CENTER);
         gc.fillText(label, x + w / 2.0, y + h / 2.0 + 4);
@@ -916,33 +936,33 @@ public class TarotGame implements GameInterface {
         double w = canvasWidth * 0.42;
         double h = canvasHeight * 0.42;
         gc.setTextAlign(TextAlignment.CENTER);
-        gc.setFill(Color.web("#e0c99d", 0.90));
+        gc.setFill(Color.web("#D4AF37", 0.90));
         gc.setFont(Font.font("Georgia", FontWeight.NORMAL, 18));
         gc.fillText(currentSpreadMode == SpreadMode.SINGLE_CARD ? "Single-Card Revelation..." : "Three-Card Spread...",
                 x + w / 2.0, y + 2);
         gc.setTextAlign(TextAlignment.LEFT);
 
         gc.setFill(new LinearGradient(0, 0, 1, 1, true, CycleMethod.NO_CYCLE,
-                new Stop(0, Color.web("#5e4935", 0.96)),
-                new Stop(0.25, Color.web("#2f241a", 0.98)),
-                new Stop(0.75, Color.web("#2f241a", 0.98)),
-                new Stop(1, Color.web("#5e4935", 0.96))));
+                new Stop(0, Color.web("#1A0B2E", 0.96)),
+                new Stop(0.25, Color.web("#05050A", 0.98)),
+                new Stop(0.75, Color.web("#05050A", 0.98)),
+                new Stop(1, Color.web("#1A0B2E", 0.96))));
         gc.fillRoundRect(x + 8, y + 26, w - 16, h - 12, 16, 16);
-        gc.setStroke(Color.web("#90724a", 0.82));
+        gc.setStroke(Color.web("#B8860B", 0.82));
         gc.setLineWidth(1.4);
         gc.strokeRoundRect(x + 8, y + 26, w - 16, h - 12, 16, 16);
-        gc.setStroke(Color.web("#bc9860", 0.32));
+        gc.setStroke(Color.web("#D4AF37", 0.32));
         gc.strokeRoundRect(x + 20, y + 38, w - 40, h - 36, 12, 12);
 
         double plaqueW = 168;
         double plaqueX = x + w / 2.0 - plaqueW / 2.0;
         gc.setFill(new LinearGradient(0, 0, 1, 1, true, CycleMethod.NO_CYCLE,
-                new Stop(0, Color.web("#706045")),
-                new Stop(1, Color.web("#2f251d"))));
+                new Stop(0, Color.web("#3A1F62")),
+                new Stop(1, Color.web("#1A0B2E"))));
         gc.fillRoundRect(plaqueX, y + 30, plaqueW, 30, 10, 10);
-        gc.setStroke(Color.web("#c5a36b", 0.82));
+        gc.setStroke(Color.web("#D4AF37", 0.82));
         gc.strokeRoundRect(plaqueX, y + 30, plaqueW, 30, 10, 10);
-        gc.setFill(Color.web("#edd8b2"));
+        gc.setFill(Color.web("#FFF8DC"));
         gc.setFont(Font.font("Georgia", FontWeight.SEMI_BOLD, 12));
         gc.setTextAlign(TextAlignment.CENTER);
         gc.fillText("CURRENT SPREAD", x + w / 2.0, y + 49);
@@ -952,13 +972,13 @@ public class TarotGame implements GameInterface {
 
         for (int i = 0; i < cards.size(); i++) {
             Card card = cards.get(i);
-            gc.setFill(Color.web("#d6bc8e"));
+            gc.setFill(Color.web("#D4AF37"));
             gc.setFont(Font.font("Georgia", FontWeight.SEMI_BOLD, 11));
             gc.setTextAlign(TextAlignment.CENTER);
             gc.fillText(card.slotLabel, card.x + card.width / 2.0, card.y - 18);
 
             if (!card.revealed) {
-                gc.setStroke(Color.web("#8c7351", 0.38));
+                gc.setStroke(Color.web("#B8860B", 0.38));
                 gc.setLineDashes(6);
                 gc.strokeRoundRect(card.x - 4, card.y - 4, card.width + 8, card.height + 8, 18, 18);
                 gc.setLineDashes(null);
@@ -966,7 +986,7 @@ public class TarotGame implements GameInterface {
 
             drawSpreadCard(gc, card, i == flippingIndex ? flipProgress : 1.0, i);
 
-            gc.setFill(Color.web("#cdaa74", 0.78));
+            gc.setFill(Color.web("#DAA520", 0.78));
             gc.setFont(Font.font("Georgia", FontWeight.NORMAL, 11));
             gc.fillText(card.slotNote.toUpperCase(), card.x + card.width / 2.0, card.y + card.height + 20);
         }
@@ -1105,23 +1125,23 @@ public class TarotGame implements GameInterface {
 
     private void drawCardBack(GraphicsContext gc, double x, double y, double w, double h, double emphasis, boolean deckCard) {
         Paint backFill = new LinearGradient(0, 0, 1, 1, true, CycleMethod.NO_CYCLE,
-                new Stop(0, Color.web("#4b3729")),
-                new Stop(0.5, Color.web("#2e2219")),
-                new Stop(1, Color.web("#1a1411")));
+                new Stop(0, Color.web("#2D1B4E")),
+                new Stop(0.5, Color.web("#1A0B2E")),
+                new Stop(1, Color.web("#0A0A1A")));
         gc.setFill(backFill);
         gc.fillRoundRect(x, y, w, h, 18, 18);
 
         if (deckCard) {
-            gc.setStroke(Color.web("#f0ca79", 0.16 + emphasis * 0.18));
+            gc.setStroke(Color.web("#D4AF37", 0.16 + emphasis * 0.18));
             gc.setLineWidth(5.0 + emphasis * 2.0);
             gc.strokeRoundRect(x - 4, y - 4, w + 8, h + 8, 22, 22);
         }
 
-        gc.setStroke(Color.web(deckCard ? "#d7b376" : "#a88456", 0.95));
+        gc.setStroke(Color.web(deckCard ? "#D4AF37" : "#B8860B", 0.95));
         gc.setLineWidth(deckCard ? 1.8 + emphasis * 0.5 : 1.4 + emphasis);
         gc.strokeRoundRect(x, y, w, h, 18, 18);
 
-        gc.setStroke(Color.web("#725339", 0.70));
+        gc.setStroke(Color.web("#3A1F62", 0.70));
         gc.setLineWidth(1);
         gc.strokeRoundRect(x + 8, y + 8, w - 16, h - 16, 14, 14);
 
@@ -1133,11 +1153,11 @@ public class TarotGame implements GameInterface {
         double r = Math.min(w, h) * 0.19;
         drawHexagram(gc, cx, cy, r);
 
-        gc.setStroke(Color.web("#d8a24b", 0.56));
+        gc.setStroke(Color.web("#D4AF37", 0.56));
         gc.strokeOval(cx - r * 1.32, cy - r * 1.32, r * 2.64, r * 2.64);
         gc.strokeOval(cx - r * 0.45, cy - r * 0.45, r * 0.9, r * 0.9);
 
-        gc.setFill(Color.web("#e7c98b", 0.82));
+        gc.setFill(Color.web("#D4AF37", 0.82));
         gc.setFont(Font.font("Georgia", FontWeight.SEMI_BOLD, Math.max(10, w * 0.08)));
         gc.setTextAlign(TextAlignment.CENTER);
         gc.fillText("ARCANA", cx, y + h - 28);
@@ -1166,38 +1186,38 @@ public class TarotGame implements GameInterface {
 
     private void drawCardFront(GraphicsContext gc, double x, double y, double w, double h, Card card, boolean active) {
         Paint frontFill = new LinearGradient(0, 0, 1, 1, true, CycleMethod.NO_CYCLE,
-                new Stop(0, Color.web("#4b392c")),
-                new Stop(0.38, Color.web("#251b16")),
-                new Stop(1, Color.web("#17110f")));
+                new Stop(0, Color.web("#2D1B4E")),
+                new Stop(0.38, Color.web("#1A0B2E")),
+                new Stop(1, Color.web("#0A0A1A")));
         gc.setFill(frontFill);
         gc.fillRoundRect(x, y, w, h, 18, 18);
 
-        gc.setStroke(active ? Color.web("#ffd58c") : Color.web("#8e6a45"));
+        gc.setStroke(active ? Color.web("#FFF8DC") : Color.web("#D4AF37"));
         gc.setLineWidth(active ? 2.2 : 1.4);
         gc.strokeRoundRect(x, y, w, h, 18, 18);
 
-        gc.setStroke(Color.web("#684d39"));
+        gc.setStroke(Color.web("#B8860B"));
         gc.setLineWidth(1);
         gc.strokeRoundRect(x + 8, y + 8, w - 16, h - 16, 14, 14);
 
-        gc.setStroke(Color.web("#d8a24b", 0.30));
+        gc.setStroke(Color.web("#D4AF37", 0.30));
         gc.setLineWidth(0.9);
         gc.strokeLine(x + 22, y + 24, x + w - 22, y + 24);
         gc.strokeLine(x + 22, y + h - 24, x + w - 22, y + h - 24);
 
-        gc.setStroke(Color.web("#8e6a45", 0.42));
+        gc.setStroke(Color.web("#B8860B", 0.42));
         gc.strokeRoundRect(x + 14, y + 36, w - 28, h - 72, 12, 12);
 
-        gc.setFill(Color.web("#2c211b", 0.92));
+        gc.setFill(Color.web("#05050A", 0.92));
         gc.fillRoundRect(x + 18, y + 10, w - 36, 20, 8, 8);
-        gc.setStroke(Color.web("#d2aa60", 0.36));
+        gc.setStroke(Color.web("#D4AF37", 0.36));
         gc.setLineWidth(0.8);
         gc.strokeRoundRect(x + 18, y + 10, w - 36, 20, 8, 8);
 
         drawCenterFiligree(gc, x + w / 2.0, y + 34, 9, false);
         drawCenterFiligree(gc, x + w / 2.0, y + h - 34, 9, true);
 
-        gc.setFill(Color.web("#17120f"));
+        gc.setFill(Color.web("#0A0A1A"));
         gc.fillRoundRect(x + 16, y + 40, w - 32, h - 112, 10, 10);
 
         gc.setFill(GOLD_SOFT);
@@ -1208,7 +1228,7 @@ public class TarotGame implements GameInterface {
         gc.setFont(Font.font("KaiTi", FontWeight.BOLD, Math.max(13, w * 0.12)));
         gc.fillText(card.meaning.title, x + w / 2.0, y + 38.5);
 
-        gc.setFill(Color.web("#cab48a", 0.86));
+        gc.setFill(Color.web("#D4AF37", 0.86));
         gc.setFont(Font.font("Georgia", FontWeight.SEMI_BOLD, Math.max(9, w * 0.07)));
         String cornerRank = getCornerRank(card);
         gc.fillText(cornerRank, x + 20, y + 28);
@@ -1216,27 +1236,27 @@ public class TarotGame implements GameInterface {
 
         String minorLabel = getMinorFamilyLabel(card);
         if (!minorLabel.isEmpty()) {
-            gc.setFill(Color.web("#b99766", 0.82));
+            gc.setFill(Color.web("#B8860B", 0.82));
             gc.setFont(Font.font("Georgia", FontWeight.NORMAL, Math.max(8, w * 0.06)));
             gc.fillText(minorLabel, x + w / 2.0, y + 52);
         }
 
-        gc.setFill(card.reversed ? Color.web("#f0b56c") : Color.web("#d7bf86"));
+        gc.setFill(card.reversed ? Color.web("#FF4500") : Color.web("#DAA520"));
         gc.setFont(Font.font("Georgia", FontWeight.SEMI_BOLD, Math.max(9, w * 0.078)));
         gc.fillText(card.reversed ? "REVERSED" : "UPRIGHT", x + w / 2.0, y + 64);
 
         drawCardIllustration(gc, x + 16, y + 40, w - 32, h - 112, card);
 
-        gc.setFill(Color.web("#2a2019"));
+        gc.setFill(Color.web("#1A0B2E"));
         gc.fillRoundRect(x + 18, y + h - 64, w - 36, 30, 10, 10);
-        gc.setStroke(Color.web("#8e6a45", 0.48));
+        gc.setStroke(Color.web("#D4AF37", 0.48));
         gc.strokeRoundRect(x + 18, y + h - 64, w - 36, 30, 10, 10);
 
-        gc.setFill(Color.web("#e5d3b0"));
+        gc.setFill(Color.web("#FFF8DC"));
         gc.setFont(Font.font("KaiTi", FontWeight.NORMAL, Math.max(9, w * 0.076)));
         drawWrappedTextCentered(gc, String.join(" · ", card.meaning.keywords), x + w / 2.0, y + h - 57, w - 42, 13, 2);
 
-        gc.setFill(Color.web("#aea29a"));
+        gc.setFill(Color.web("#DAA520"));
         gc.setFont(Font.font("Georgia", FontWeight.NORMAL, 10));
         drawWrappedTextCentered(gc, card.slotNote, x + w / 2.0, y + h - 24, w - 22, 15, 2);
         gc.setTextAlign(TextAlignment.LEFT);
@@ -3248,19 +3268,19 @@ public class TarotGame implements GameInterface {
         double w = canvasWidth * 0.24;
         double h = canvasHeight * 0.46;
 
-        gc.setFill(Color.web("#d5bc91"));
+        gc.setFill(Color.web("#D4AF37"));
         gc.setFont(Font.font("Georgia", FontWeight.SEMI_BOLD, 10));
         gc.fillText("详细解读", x, y - 20);
 
         gc.setFill(new LinearGradient(0, 0, 1, 1, true, CycleMethod.NO_CYCLE,
-                new Stop(0, Color.web("#4a3426", 0.98)),
-                new Stop(0.20, Color.web("#2f2118", 0.98)),
-                new Stop(1, Color.web("#17110f", 0.98))));
+                new Stop(0, Color.web("#2D1B4E", 0.98)),
+                new Stop(0.20, Color.web("#1A0B2E", 0.98)),
+                new Stop(1, Color.web("#05050A", 0.98))));
         gc.fillRoundRect(x, y, w, h, 18, 18);
-        gc.setStroke(Color.web("#8d704a", 0.78));
+        gc.setStroke(Color.web("#B8860B", 0.78));
         gc.setLineWidth(1.2);
         gc.strokeRoundRect(x, y, w, h, 18, 18);
-        gc.setStroke(Color.web("#d1a85c", 0.32));
+        gc.setStroke(Color.web("#D4AF37", 0.32));
         gc.setLineWidth(0.8);
         gc.strokeRoundRect(x + 10, y + 10, w - 20, h - 20, 14, 14);
         drawGoldSweepBand(gc, x + 8, y + 8, w - 16, h - 16, 0.54, 0.16);
@@ -3268,15 +3288,15 @@ public class TarotGame implements GameInterface {
 
         Card card = getActiveDetailCard();
         if (card == null || !card.revealed) {
-            gc.setFill(Color.web("#a88c65"));
+            gc.setFill(Color.web("#8B6508"));
             gc.setFont(Font.font("Georgia", FontWeight.NORMAL, 28));
             gc.setTextAlign(TextAlignment.CENTER);
             gc.fillText("✧", x + w / 2.0, y + h * 0.42);
-            gc.setFill(Color.web("#eddac0"));
+            gc.setFill(Color.web("#FFF8DC"));
             gc.setFont(Font.font("KaiTi", FontWeight.BOLD, 14));
             drawWrappedTextCentered(gc, "请先翻开一张牌", x + w / 2.0, y + h * 0.50, w - 56, 18, 2);
             gc.setFont(Font.font("Georgia", FontWeight.NORMAL, 12));
-            gc.setFill(Color.web("#cbb48a"));
+            gc.setFill(Color.web("#DAA520"));
             drawWrappedTextCentered(gc, "右侧将显现这张牌的深层讯息。", x + w / 2.0, y + h * 0.57, w - 56, 16, 2);
             gc.setTextAlign(TextAlignment.LEFT);
             return;
@@ -3355,10 +3375,10 @@ public class TarotGame implements GameInterface {
             Paint ribbon = new LinearGradient(
                     0, 0, 1, 0, true, CycleMethod.NO_CYCLE,
                     new Stop(0, Color.TRANSPARENT),
-                    new Stop(clamp(0.18 + Math.sin(phase + i) * 0.05, 0.10, 0.26), Color.web("#f1c76a", 0.00)),
-                    new Stop(clamp(0.34 + Math.sin(phase + i * 1.2) * 0.06, 0.24, 0.46), Color.web("#f1c76a", 0.12)),
-                    new Stop(clamp(0.50 + Math.cos(phase * 0.8 + i) * 0.05, 0.42, 0.58), Color.web("#fff0b2", 0.20)),
-                    new Stop(clamp(0.66 + Math.sin(phase * 0.6 + i) * 0.06, 0.56, 0.78), Color.web("#dfe6f2", 0.11)),
+                    new Stop(clamp(0.18 + Math.sin(phase + i) * 0.05, 0.10, 0.26), Color.web("#D4AF37", 0.00)),
+                    new Stop(clamp(0.34 + Math.sin(phase + i * 1.2) * 0.06, 0.24, 0.46), Color.web("#D4AF37", 0.12)),
+                    new Stop(clamp(0.50 + Math.cos(phase * 0.8 + i) * 0.05, 0.42, 0.58), Color.web("#9B5DE5", 0.20)),
+                    new Stop(clamp(0.66 + Math.sin(phase * 0.6 + i) * 0.06, 0.56, 0.78), Color.web("#D4AF37", 0.11)),
                     new Stop(1, Color.TRANSPARENT)
             );
             gc.setFill(ribbon);
