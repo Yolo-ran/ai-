@@ -147,9 +147,10 @@ public class RPSGame implements GameInterface {
 
         if (state == RPSState.WAITING) {
             if (gesture.isHandDetected()) {
-                applyDifficulty(); // 重置倒计时
+                applyDifficulty();
                 initialCountdown = countdownFrames;
                 computerChoice = getComputerChoice();
+                playerGesture = GestureType.NONE; // 重置本局手势
                 state = RPSState.COUNTDOWN;
                 beepFrame = true;
             }
@@ -170,58 +171,59 @@ public class RPSGame implements GameInterface {
                 state = RPSState.JUDGE;
             }
         } else if (state == RPSState.JUDGE) {
-            // 持续读取手势直到有效（最多 60 帧 = 1 秒）
-            GestureType g = gesture.getGesture();
-            int playerChoice = -1;
-            if (g == GestureType.FIST) playerChoice = 0;
-            else if (g == GestureType.PEACE) playerChoice = 1;
-            else if (g == GestureType.OPEN) playerChoice = 2;
-
-            if (playerChoice >= 0 && resultFrames <= 0) {
-                // 有效手势 → 首次判定
-                playerGesture = g;
-                playerGestureHistory[playerChoice]++;
-                if (computerChoice == -1) computerChoice = RANDOM.nextInt(3);
-                if (playerChoice == computerChoice) {
-                    roundResult = "平局";
-                } else if ((playerChoice == 0 && computerChoice == 1)
-                        || (playerChoice == 1 && computerChoice == 2)
-                        || (playerChoice == 2 && computerChoice == 0)) {
-                    roundResult = "你赢了";
-                    playerScore++;
-                } else {
-                    roundResult = "你输了";
-                    computerScore++;
-                }
-                roundCount++;
-                gameLog.add(roundResult);
-                if (gameLog.size() > 3) gameLog.remove(0);
-                resultFrames = 120; // 展示 2 秒
-            } else if (playerChoice < 0) {
-                // 无效手势 → 累计等待帧数（最多 60 帧超时算 Miss）
-                if (resultFrames < 60) resultFrames++;
-                if (resultFrames >= 60) {
-                    roundResult = "无手势";
-                    computerScore++;
-                    roundCount++;
-                    gameLog.add(roundResult);
-                    if (gameLog.size() > 3) gameLog.remove(0);
-                    resultFrames = 120;
-                }
-            } else {
-                // 有效手势已读，展示中
+            // 已判定过 → 只做展示倒计时，不再重复判定
+            if (playerGesture != GestureType.NONE) {
                 resultFrames--;
                 if (resultFrames <= 0) {
                     state = RPSState.RESULT;
                     resultFrames = 60;
+                }
+            } else {
+                // 首次判定：读取手势
+                GestureType g = gesture.getGesture();
+                int playerChoice = -1;
+                if (g == GestureType.FIST) playerChoice = 0;
+                else if (g == GestureType.PEACE) playerChoice = 1;
+                else if (g == GestureType.OPEN) playerChoice = 2;
+
+                if (playerChoice >= 0) {
+                    playerGesture = g;
+                    playerGestureHistory[playerChoice]++;
+                    if (computerChoice == -1) computerChoice = RANDOM.nextInt(3);
+                    if (playerChoice == computerChoice) {
+                        roundResult = "平局";
+                    } else if ((playerChoice == 0 && computerChoice == 1)
+                            || (playerChoice == 1 && computerChoice == 2)
+                            || (playerChoice == 2 && computerChoice == 0)) {
+                        roundResult = "你赢了";
+                        playerScore++;
+                    } else {
+                        roundResult = "你输了";
+                        computerScore++;
+                    }
+                    roundCount++;
+                    gameLog.add(roundResult);
+                    if (gameLog.size() > 3) gameLog.remove(0);
+                    resultFrames = 120;
+                } else {
+                    // 无效手势 → 累计超时
+                    if (resultFrames < 60) resultFrames++;
+                    if (resultFrames >= 60) {
+                        roundResult = "无手势";
+                        roundCount++;
+                        gameLog.add(roundResult);
+                        if (gameLog.size() > 3) gameLog.remove(0);
+                        playerGesture = GestureType.FIST; // 标记已判，防止重复
+                        resultFrames = 120;
+                    }
                 }
             }
         } else if (state == RPSState.RESULT) {
             resultFrames--;
             if (resultFrames <= 0) {
                 int winThreshold = (totalRounds / 2) + 1;
-                if (roundCount >= totalRounds || playerScore >= winThreshold
-                        || computerScore >= winThreshold) {
+                if (playerScore >= winThreshold || computerScore >= winThreshold
+                        || roundCount >= totalRounds) {
                     over = true;
                 } else {
                     state = RPSState.WAITING;
