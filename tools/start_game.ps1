@@ -8,7 +8,12 @@ $gestureProcess = $null
 function Find-PythonCommand {
     $packagedExe = Join-Path $pythonDir "dist\gesture_server\gesture_server.exe"
     if (Test-Path $packagedExe) {
-        return @{ File = $packagedExe; Arguments = @() }
+        $packageTime = (Get-Item $packagedExe).LastWriteTimeUtc
+        $sourceTime = (Get-Item $gestureScript).LastWriteTimeUtc
+        if ($packageTime -ge $sourceTime) {
+            return @{ File = $packagedExe; Arguments = @() }
+        }
+        Write-Host "[engine] Ignoring outdated packaged engine; using current source." -ForegroundColor Yellow
     }
 
     $venvPython = Join-Path $root ".venv\Scripts\pythonw.exe"

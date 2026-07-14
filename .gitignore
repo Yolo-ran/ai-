@@ -10,7 +10,8 @@ Thumbs.db
 /.venv/
 **/__pycache__/
 *.log
-/python/models/
+/python/models/*
+!/python/models/hand_landmarker.task
 /python/build/
 /python/dist/
 /python/*.spec
