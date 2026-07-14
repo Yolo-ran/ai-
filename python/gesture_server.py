@@ -22,6 +22,7 @@ FRAME_HEIGHT = 480
 SEND_FPS = 30
 IMAGE_STREAM_FPS = 12
 RECONNECT_DELAY_SECONDS = 0.25
+LOCAL_COMPAT_MODE = True
 # 默认关闭 Python 本地预览窗，只保留 Java 主界面中的实时画面，避免双窗口混乱。
 # 如需单独调试 MediaPipe 识别窗，可在启动前设置:
 #   $env:GESTURE_SERVER_SHOW_PREVIEW = "1"
@@ -187,16 +188,25 @@ def joint_angle(point_a, vertex, point_c) -> float:
 def is_finger_extended(points, tip_index: int, pip_index: int) -> bool:
     """Rotation-independent extension test using PIP angle and wrist distance."""
     mcp_index = pip_index - 1
-    straight = joint_angle(points[mcp_index], points[pip_index], points[tip_index]) >= 138.0
+    angle_threshold = 118.0 if LOCAL_COMPAT_MODE else 138.0
+    distance_ratio = 1.005 if LOCAL_COMPAT_MODE else 1.02
+    straight = joint_angle(points[mcp_index], points[pip_index], points[tip_index]) >= angle_threshold
     tip_from_wrist = landmark_distance(points[tip_index], points[0])
     pip_from_wrist = landmark_distance(points[pip_index], points[0])
-    return straight and tip_from_wrist > pip_from_wrist * 1.02
+    return straight and tip_from_wrist > pip_from_wrist * distance_ratio
 
 
 def is_navigation_palm(points) -> bool:
     """Loose open-palm test used only for lobby navigation."""
     extended = sum(is_finger_extended(points, tip, pip)
                    for tip, pip in ((8, 6), (12, 10), (16, 14), (20, 18)))
+    if LOCAL_COMPAT_MODE and extended < 3:
+        # 笔记本内置摄像头下，用更宽松的“指尖高于第二关节”兜底大厅导航张手。
+        loose_extended = sum(
+            1 for tip, pip in ((8, 6), (12, 10), (16, 14), (20, 18))
+            if points[tip].y < points[pip].y
+        )
+        extended = max(extended, loose_extended)
     return extended >= 3
 
 
@@ -489,9 +499,9 @@ def create_landmarker():
         base_options=BASE_OPTIONS(model_asset_path=str(model_path)),
         running_mode=RUNNING_MODE.VIDEO,
         num_hands=2,
-        min_hand_detection_confidence=0.42,
-        min_hand_presence_confidence=0.42,
-        min_tracking_confidence=0.45,
+        min_hand_detection_confidence=0.28 if LOCAL_COMPAT_MODE else 0.42,
+        min_hand_presence_confidence=0.24 if LOCAL_COMPAT_MODE else 0.42,
+        min_tracking_confidence=0.30 if LOCAL_COMPAT_MODE else 0.45,
     )
     return HAND_LANDMARKER.create_from_options(options)
 

@@ -25,16 +25,17 @@ import java.util.logging.Logger;
 public class GestureStreamServer extends WebSocketServer {
 
     private static final Logger LOGGER = Logger.getLogger(GestureStreamServer.class.getName());
+    private static final boolean LOCAL_COMPAT_MODE = true;
     // 滑动判定：位移触发（静止跟踪基准点，移动累计位移提交）+ 方向感知锁定（防回弹误触）
-    private static final double SWIPE_STILL_VELOCITY = 0.008;
-    private static final double SWIPE_DEADZONE = 0.015;
-    private static final double SWIPE_COMMIT_DISTANCE = 0.04;
-    private static final double SWIPE_ABORT_REVERSE = -0.03;
-    private static final long SWIPE_ARM_TIMEOUT_MS = 900L;
+    private static final double SWIPE_STILL_VELOCITY = LOCAL_COMPAT_MODE ? 0.018 : 0.008;
+    private static final double SWIPE_DEADZONE = LOCAL_COMPAT_MODE ? 0.006 : 0.015;
+    private static final double SWIPE_COMMIT_DISTANCE = LOCAL_COMPAT_MODE ? 0.018 : 0.04;
+    private static final double SWIPE_ABORT_REVERSE = LOCAL_COMPAT_MODE ? -0.015 : -0.03;
+    private static final long SWIPE_ARM_TIMEOUT_MS = LOCAL_COMPAT_MODE ? 1500L : 900L;
     private static final long NAVIGATION_PALM_GRACE_MS = 300L;
-    private static final double SWIPE_REST_VELOCITY = 0.008;
-    private static final long SWIPE_REST_MS = 280L;
-    private static final double SWIPE_NEUTRAL_RADIUS = 0.05;
+    private static final double SWIPE_REST_VELOCITY = LOCAL_COMPAT_MODE ? 0.018 : 0.008;
+    private static final long SWIPE_REST_MS = LOCAL_COMPAT_MODE ? 100L : 280L;
+    private static final double SWIPE_NEUTRAL_RADIUS = LOCAL_COMPAT_MODE ? 0.14 : 0.05;
     private static final long LOGIN_CONFIRM_HOLD_MS = 800L;
     private static final long LOBBY_CONFIRM_HOLD_MS = 1200L;
     private static final long GAME_OVER_ENTRY_GUARD_MS = 400L;
@@ -60,8 +61,8 @@ public class GestureStreamServer extends WebSocketServer {
     private long lastTwoHandsSeen;
     private boolean navigationPalmNow;
     private long lastNavigationPalmTime;
-    private static final long DUAL_HAND_ENTER_MS = 120L;
-    private static final long DUAL_HAND_EXIT_GRACE_MS = 200L;
+    private static final long DUAL_HAND_ENTER_MS = LOCAL_COMPAT_MODE ? 40L : 120L;
+    private static final long DUAL_HAND_EXIT_GRACE_MS = LOCAL_COMPAT_MODE ? 420L : 200L;
     private GestureType lastHoldGesture = GestureType.NONE;
     private long holdStartTime;
     private int handLostFrames;
@@ -292,6 +293,10 @@ public class GestureStreamServer extends WebSocketServer {
         GestureType gestureType = gestureData.getGesture();
         boolean navigationPalm = navigationPalmNow
                 || now - lastNavigationPalmTime <= NAVIGATION_PALM_GRACE_MS;
+        if (LOCAL_COMPAT_MODE && AppStateManager.STATE_LOBBY.equals(state)
+                && gestureType == GestureType.OPEN && gestureData.isHandDetected()) {
+            navigationPalm = true;
+        }
         if (gestureType == GestureType.FIST) {
             navigationPalm = false;
         }

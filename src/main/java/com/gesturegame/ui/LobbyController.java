@@ -160,8 +160,14 @@ public class LobbyController {
         GestureType gestureType = hand ? gesture.getGesture() : GestureType.NONE;
         updateConfirmHold(dualHands.captured() ? GestureType.NONE : gestureType);
         if (dualHands.active()) {
-            // 双手靠近时聚拢、分开时散开；单手模式不再改变聚散状态。
+            // 双手靠近时聚拢、分开时散开。
             morphTarget = 2.0 * dualHands.spread() - 1.0;
+        } else if (gestureType == GestureType.OPEN) {
+            // 本机兼容：单手张开时也允许看到外放效果，便于内置摄像头测试。
+            morphTarget = 0.8;
+        } else if (gestureType == GestureType.FIST) {
+            // 本机兼容：单手握拳时回到聚拢态。
+            morphTarget = -0.8;
         }
         morph += (morphTarget - morph) * MORPH_LERP;
         rotY += ROT_SPEED * (1.0 + Math.max(0.0, morph) * 2.0);
