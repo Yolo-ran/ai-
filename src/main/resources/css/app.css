@@ -2,6 +2,19 @@
     -fx-font-family: "Microsoft YaHei UI";
 }
 
+.splash-root {
+    -fx-background-color: #000000;
+}
+
+.splash-enter {
+    -fx-text-fill: #ffffff;
+    -fx-font-family: "Arial";
+    -fx-font-size: 24px;
+    -fx-font-weight: normal;
+    -fx-background-color: transparent;
+    -fx-padding: 0;
+}
+
 .login-root,
 .lobby-root {
     -fx-background-color: linear-gradient(to bottom right, #0f172a 0%, #0b1220 50%, #06111e 100%);

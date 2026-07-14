@@ -29,6 +29,7 @@ public class AppStateManager {
     private Stage primaryStage;
     private volatile String currentState = STATE_LOGIN;
     private volatile GameInterface activeGame;
+    private volatile boolean authenticated;
 
     private AppStateManager() {
     }
@@ -50,14 +51,20 @@ public class AppStateManager {
     }
 
     public void switchState(String newState) {
-        currentState = newState;
+        String targetState = STATE_LOGIN.equals(newState) && authenticated
+                ? STATE_LOBBY : newState;
+        currentState = targetState;
         Platform.runLater(() -> {
-            Scene targetScene = scenes.get(newState);
+            Scene targetScene = scenes.get(targetState);
             if (primaryStage != null && targetScene != null) {
                 primaryStage.setScene(targetScene);
-                LOGGER.info(() -> "[Agent 状态机] 切换至状态: " + newState);
+                LOGGER.info(() -> "[Agent 状态机] 切换至状态: " + targetState);
             }
         });
+    }
+
+    public void markAuthenticated() {
+        authenticated = true;
     }
 
     public String getCurrentState() {

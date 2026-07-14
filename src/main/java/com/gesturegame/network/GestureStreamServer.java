@@ -36,7 +36,6 @@ public class GestureStreamServer extends WebSocketServer {
     private static final double SWIPE_REST_VELOCITY = LOCAL_COMPAT_MODE ? 0.018 : 0.008;
     private static final long SWIPE_REST_MS = LOCAL_COMPAT_MODE ? 100L : 280L;
     private static final double SWIPE_NEUTRAL_RADIUS = LOCAL_COMPAT_MODE ? 0.14 : 0.05;
-    private static final long LOGIN_CONFIRM_HOLD_MS = 800L;
     private static final long LOBBY_CONFIRM_HOLD_MS = 1200L;
     private static final long GAME_OVER_ENTRY_GUARD_MS = 400L;
     private static final long GAME_OVER_CONFIRM_HOLD_MS = 1000L;
@@ -176,9 +175,7 @@ public class GestureStreamServer extends WebSocketServer {
         }
         lastCameraFrameTime = now;
 
-        if (AppStateManager.STATE_LOGIN.equals(state) && loginController != null) {
-            loginController.updateCameraStream(base64Image);
-        } else if (AppStateManager.STATE_LOBBY.equals(state) && lobbyController != null) {
+        if (AppStateManager.STATE_LOBBY.equals(state) && lobbyController != null) {
             lobbyController.updateCameraStream(base64Image);
         }
         // GAME 状态：游戏全屏渲染，不分发摄像头画面
@@ -452,7 +449,7 @@ public class GestureStreamServer extends WebSocketServer {
      */
     private boolean isActionGesture(String state, GestureType g) {
         if (AppStateManager.STATE_LOGIN.equals(state)) {
-            return g == GestureType.FIST || g == GestureType.POINTING;
+            return g == GestureType.FIST;
         }
         if (AppStateManager.STATE_LOBBY.equals(state)) {
             return g == GestureType.FIST;
@@ -468,7 +465,7 @@ public class GestureStreamServer extends WebSocketServer {
 
     private GestureCommand commandFor(String state, GestureType g) {
         if (AppStateManager.STATE_LOGIN.equals(state)) {
-            if (g == GestureType.FIST || g == GestureType.POINTING) return GestureCommand.CONFIRM;
+            if (g == GestureType.FIST) return GestureCommand.CONFIRM;
         }
         if (AppStateManager.STATE_LOBBY.equals(state)) {
             if (g == GestureType.FIST) return GestureCommand.CONFIRM;
@@ -481,9 +478,7 @@ public class GestureStreamServer extends WebSocketServer {
 
     private long resolveRequiredHoldMs(String state, GestureType gestureType) {
         if (AppStateManager.STATE_LOGIN.equals(state)) {
-            if (gestureType == GestureType.FIST || gestureType == GestureType.POINTING) {
-                return LOGIN_CONFIRM_HOLD_MS;
-            }
+            if (gestureType == GestureType.FIST) return 0L;
         }
         if (AppStateManager.STATE_LOBBY.equals(state)) {
             if (gestureType == GestureType.FIST) return LOBBY_CONFIRM_HOLD_MS;

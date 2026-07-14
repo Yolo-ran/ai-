@@ -4,12 +4,18 @@ import com.gesturegame.common.Difficulty;
 import com.gesturegame.common.GameInterface;
 import com.gesturegame.common.GestureData;
 import com.gesturegame.common.GestureType;
+import com.gesturegame.persistence.RpsCsvStatsStore;
+import com.gesturegame.persistence.RpsCsvStatsStore.Outcome;
+import com.gesturegame.persistence.RpsCsvStatsStore.Summary;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.paint.Color;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * ✂️ 剪刀石头布游戏（中等 ⭐⭐）
@@ -30,6 +36,7 @@ import java.util.Random;
  */
 public class RPSGame implements GameInterface {
 
+    private static final Logger LOGGER = Logger.getLogger(RPSGame.class.getName());
     private static final Random RANDOM = new Random();
 
     // 游戏状态枚举
@@ -61,6 +68,10 @@ public class RPSGame implements GameInterface {
     private int cpuSmartLevel;
     private int[] playerGestureHistory = new int[3];
     private int initialCountdown; // 记录本轮倒计时初始值
+    private final RpsCsvStatsStore statsStore = new RpsCsvStatsStore();
+    private Summary historySummary = Summary.empty();
+    private boolean matchSaveAttempted;
+    private boolean matchSaved;
 
     @Override
     public String getName() {
@@ -94,6 +105,9 @@ public class RPSGame implements GameInterface {
         this.gameLog = new ArrayList<>();
         this.beepFrame = false;
         this.playerGestureHistory = new int[3];
+        this.matchSaveAttempted = false;
+        this.matchSaved = false;
+        loadHistorySummary();
         applyDifficulty();
     }
 
@@ -225,6 +239,7 @@ public class RPSGame implements GameInterface {
                 if (playerScore >= winThreshold || computerScore >= winThreshold
                         || roundCount >= totalRounds) {
                     over = true;
+                    persistCompletedMatch();
                 } else {
                     state = RPSState.WAITING;
                 }
@@ -253,6 +268,15 @@ public class RPSGame implements GameInterface {
         gc.setFill(Color.WHITE);
         gc.setFont(javafx.scene.text.Font.font(20));
         gc.fillText("石头剪刀布 ✂️", canvasWidth / 2.0 - 80, 40);
+
+        gc.setFill(Color.web("#94a3b8"));
+        gc.setFont(javafx.scene.text.Font.font(13));
+        String historyText = String.format(java.util.Locale.ROOT,
+                "历史 %d 场  胜 %d  负 %d  平 %d  胜率 %.1f%%",
+                historySummary.totalMatches(), historySummary.wins(),
+                historySummary.losses(), historySummary.draws(),
+                historySummary.winRatePercent());
+        gc.fillText(historyText, canvasWidth / 2.0 - 145, 64);
 
         // 底部比分（五局三胜进度条）
         double barY = canvasHeight - 70;
@@ -330,8 +354,19 @@ public class RPSGame implements GameInterface {
         if (over) {
             gc.setFill(Color.rgb(0, 0, 0, 0.7));
             gc.fillRect(0, 0, canvasWidth, canvasHeight);
-            String finalResult = playerScore > computerScore ? "🏆 你赢了！" : "🤖 电脑赢了";
-            gc.setFill(playerScore > computerScore ? Color.GOLD : Color.RED);
+            String finalResult;
+            Color finalColor;
+            if (playerScore > computerScore) {
+                finalResult = "🏆 你赢了！";
+                finalColor = Color.GOLD;
+            } else if (playerScore < computerScore) {
+                finalResult = "🤖 电脑赢了";
+                finalColor = Color.RED;
+            } else {
+                finalResult = "🤝 本场平局";
+                finalColor = Color.YELLOW;
+            }
+            gc.setFill(finalColor);
             gc.setFont(javafx.scene.text.Font.font(40));
             gc.fillText(finalResult, canvasWidth / 2.0 - 100, canvasHeight / 2.0 - 20);
             gc.setFill(Color.WHITE);
@@ -342,6 +377,10 @@ public class RPSGame implements GameInterface {
             gc.setFont(javafx.scene.text.Font.font(16));
             gc.fillText("握拳重新开始 | 张开返回大厅",
                     canvasWidth / 2.0 - 95, canvasHeight / 2.0 + 60);
+            gc.setFill(matchSaved ? Color.web("#86efac") : Color.web("#fca5a5"));
+            gc.setFont(javafx.scene.text.Font.font(13));
+            gc.fillText(matchSaved ? "对局记录已保存到 CSV" : "CSV 保存失败，请检查日志",
+                    canvasWidth / 2.0 - 85, canvasHeight / 2.0 + 88);
         }
     }
 
@@ -353,6 +392,37 @@ public class RPSGame implements GameInterface {
     @Override
     public int getScore() {
         return playerScore * 100;  // 每赢一局100分
+    }
+
+    private void loadHistorySummary() {
+        try {
+            historySummary = statsStore.loadSummary();
+        } catch (IOException ex) {
+            historySummary = Summary.empty();
+            LOGGER.log(Level.WARNING,
+                    "读取猜拳历史记录失败: " + statsStore.getCsvPath(), ex);
+        }
+    }
+
+    private void persistCompletedMatch() {
+        if (matchSaveAttempted) {
+            return;
+        }
+        matchSaveAttempted = true;
+        Outcome outcome = playerScore > computerScore
+                ? Outcome.WIN
+                : playerScore < computerScore ? Outcome.LOSS : Outcome.DRAW;
+        try {
+            historySummary = statsStore.appendMatch(
+                    difficulty.name(), totalRounds, roundCount,
+                    playerScore, computerScore, outcome);
+            matchSaved = true;
+            LOGGER.info(() -> "猜拳对局已写入 CSV: " + statsStore.getCsvPath());
+        } catch (IOException ex) {
+            matchSaved = false;
+            LOGGER.log(Level.WARNING,
+                    "写入猜拳对局 CSV 失败: " + statsStore.getCsvPath(), ex);
+        }
     }
 
     private int getComputerChoice() {

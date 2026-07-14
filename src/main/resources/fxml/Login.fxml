@@ -1,53 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<?import javafx.geometry.Insets?>
-<?import javafx.scene.control.ProgressIndicator?>
+<?import javafx.scene.canvas.Canvas?>
 <?import javafx.scene.control.Label?>
-<?import javafx.scene.image.ImageView?>
-<?import javafx.scene.layout.HBox?>
 <?import javafx.scene.layout.StackPane?>
-<?import javafx.scene.layout.VBox?>
-<?import javafx.scene.shape.Rectangle?>
 
-<StackPane prefHeight="720.0" prefWidth="1280.0" stylesheets="@../css/app.css"
+<StackPane fx:id="rootPane" prefHeight="720.0" prefWidth="1280.0"
+           stylesheets="@../css/app.css"
            xmlns="http://javafx.com/javafx/17"
            xmlns:fx="http://javafx.com/fxml/1"
            fx:controller="com.gesturegame.ui.LoginController"
-           styleClass="login-root">
+           styleClass="splash-root">
     <children>
-        <Rectangle arcHeight="48.0" arcWidth="48.0" fill="#08101f" opacity="0.48"
-                   width="1160.0" height="640.0" />
-        <VBox alignment="CENTER" maxWidth="860.0" spacing="22.0" styleClass="login-panel">
-            <padding>
-                <Insets bottom="34.0" left="34.0" right="34.0" top="34.0" />
-            </padding>
-            <children>
-                <Label styleClass="title-label" text="Gesture Sign In Portal" />
-                <Label styleClass="panel-subtitle" text="请将手放入监控框，等待识别稳定后执行握拳手势" wrapText="true" />
-                <StackPane maxHeight="360.0" maxWidth="520.0" minHeight="360.0" minWidth="520.0"
-                           prefHeight="360.0" prefWidth="520.0" styleClass="camera-frame">
-                    <children>
-                        <ImageView fx:id="cameraView" fitHeight="332.0" fitWidth="492.0" pickOnBounds="true"
-                                   preserveRatio="true" styleClass="camera-image" />
-                        <Rectangle arcHeight="28.0" arcWidth="28.0" fill="TRANSPARENT"
-                                   height="332.0" mouseTransparent="true" stroke="#deff9a"
-                                   strokeLineCap="ROUND" strokeLineJoin="ROUND" strokeType="INSIDE"
-                                   strokeWidth="1.8" width="492.0" />
-                        <HBox alignment="TOP_LEFT" mouseTransparent="true" prefHeight="332.0" prefWidth="492.0">
-                            <children>
-                                <Label styleClass="camera-badge" text="LIVE HAND TRACKING" />
-                            </children>
-                            <padding>
-                                <Insets left="16.0" top="16.0" />
-                            </padding>
-                        </HBox>
-                    </children>
-                </StackPane>
-                <Label fx:id="statusLabel" styleClass="status-label" text="正在等待握拳手势签入..." wrapText="true" />
-                <ProgressIndicator fx:id="confirmProgress" maxHeight="88.0" maxWidth="88.0"
-                                   prefHeight="88.0" prefWidth="88.0" progress="-1.0"
-                                   styleClass="confirm-progress" />
-            </children>
-        </VBox>
+        <Canvas fx:id="starCanvas" width="1280.0" height="720.0" />
+        <Label fx:id="enterLabel" text="ENTER" mouseTransparent="true"
+               styleClass="splash-enter" />
     </children>
 </StackPane>
