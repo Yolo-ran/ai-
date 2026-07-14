@@ -65,9 +65,15 @@ print("OpenCV", cv2.__version__)
 print("websockets", websockets.__version__)
 print("Dual-hand model", model.name, model.stat().st_size, "bytes")
 '@
-& $venvPython -c $verifyCode $model
-if ($LASTEXITCODE -ne 0) {
-    throw "The dual-hand gesture engine verification failed."
+$verifyScript = Join-Path $env:TEMP "verify_gesture_engine.py"
+Set-Content -Path $verifyScript -Value $verifyCode -Encoding UTF8
+try {
+    & $venvPython $verifyScript $model
+    if ($LASTEXITCODE -ne 0) {
+        throw "The dual-hand gesture engine verification failed."
+    }
+} finally {
+    Remove-Item $verifyScript -Force -ErrorAction SilentlyContinue
 }
 
 Write-Host "Installation complete. Run startup.bat next." -ForegroundColor Green
