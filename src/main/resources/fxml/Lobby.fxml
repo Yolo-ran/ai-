@@ -3,6 +3,7 @@
 <?import javafx.geometry.Insets?>
 <?import javafx.scene.canvas.Canvas?>
 <?import javafx.scene.control.Label?>
+<?import javafx.scene.control.Button?>
 <?import javafx.scene.image.ImageView?>
 <?import javafx.scene.layout.AnchorPane?>
 <?import javafx.scene.layout.StackPane?>
@@ -22,6 +23,9 @@
                styleClass="lobby-status"
                text="张开手掌左右挥动选择 · 轨道自动巡航 · ✊握拳查看 / 进入"
                AnchorPane.bottomAnchor="22.0" AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0" />
+
+        <Button text="API  ⚙" onAction="#openApiSettings" styleClass="lobby-api-button"
+                AnchorPane.leftAnchor="22.0" AnchorPane.topAnchor="22.0" />
 
         <StackPane AnchorPane.rightAnchor="22.0" AnchorPane.topAnchor="22.0"
                    maxHeight="154.0" maxWidth="210.0" minHeight="154.0" minWidth="210.0"

@@ -29,6 +29,7 @@ import javafx.scene.paint.Color;
 import javafx.scene.paint.CycleMethod;
 import javafx.scene.paint.RadialGradient;
 import javafx.scene.paint.Stop;
+import javafx.stage.Window;
 
 import java.util.Arrays;
 import java.util.List;
@@ -277,6 +278,12 @@ public class LobbyController {
 
     public void updateCameraStream(String base64Image) {
         CameraStreamHelper.push(cameraView, base64Image);
+    }
+
+    @FXML
+    private void openApiSettings() {
+        Window owner = lobbyCanvas.getScene() == null ? null : lobbyCanvas.getScene().getWindow();
+        ApiSettingsController.show(owner);
     }
 
     public void updateCameraImage(Image image) {

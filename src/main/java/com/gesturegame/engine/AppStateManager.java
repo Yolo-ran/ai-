@@ -12,11 +12,12 @@ import java.util.logging.Logger;
 /**
  * 应用状态机代理，统一负责场景注册与界面切换。
  *
- * <p>状态流：{@code LOGIN} → {@code LOBBY} → {@code DIFFICULTY} → {@code GAME} → {@code LOBBY}。
+ * <p>状态流：{@code AUTH} → {@code LOGIN} → {@code LOBBY} → {@code DIFFICULTY} → {@code GAME} → {@code LOBBY}。
  * 进入 GAME 状态前需通过 {@link #setActiveGame(GameInterface)} 注入当前游戏实例。
  */
 public class AppStateManager {
 
+    public static final String STATE_AUTH = "AUTH";
     public static final String STATE_LOGIN = "LOGIN";
     public static final String STATE_LOBBY = "LOBBY";
     public static final String STATE_DIFFICULTY = "DIFFICULTY";
@@ -27,9 +28,11 @@ public class AppStateManager {
 
     private final Map<String, Scene> scenes = new HashMap<>();
     private Stage primaryStage;
-    private volatile String currentState = STATE_LOGIN;
+    private volatile String currentState = STATE_AUTH;
     private volatile GameInterface activeGame;
     private volatile boolean authenticated;
+    private volatile boolean accountAuthenticated;
+    private volatile String signedInUser;
 
     private AppStateManager() {
     }
@@ -65,6 +68,19 @@ public class AppStateManager {
 
     public void markAuthenticated() {
         authenticated = true;
+    }
+
+    public void markAccountAuthenticated(String username) {
+        accountAuthenticated = true;
+        signedInUser = username;
+    }
+
+    public boolean isAccountAuthenticated() {
+        return accountAuthenticated;
+    }
+
+    public String getSignedInUser() {
+        return signedInUser;
     }
 
     public String getCurrentState() {

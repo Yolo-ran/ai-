@@ -73,6 +73,10 @@ public class GameRenderer {
     private int exitHoldFrames;
     private int exitDropoutFrames;
     private int diffDropoutFrames; // 难度选择手势闪断容错
+    private int difficultyHoldIndex = -1;
+    private double difficultyCursorX = Double.NaN;
+    private double difficultyCursorY = Double.NaN;
+    private double difficultyCursorOpacity;
     private final double[] difficultyLift = new double[Difficulty.values().length];
     private long lastDifficultyFrameNanos;
     private double difficultyFade;
@@ -87,6 +91,8 @@ public class GameRenderer {
     private long cssRainLastFrameNanos;
     private static final int HOLD_FRAMES = 72; // 1.2秒@60fps
     private static final int DROPOUT_MAX = 3;  // 最多容忍3帧闪断
+    private static final int DIFFICULTY_HOLD_FRAMES = 48; // 难度确认0.8秒，反馈更直接
+    private static final int DIFFICULTY_DROPOUT_MAX = 12; // 允许短暂识别抖动，不让进度频繁归零
 
     @FXML
     public void initialize() {
@@ -485,6 +491,7 @@ public class GameRenderer {
             java.util.Arrays.fill(difficultyLift, 0);
             compactHoldFrames = 0;
             diffDropoutFrames = 0;
+            difficultyHoldIndex = -1;
         }
         difficultyFade += (1.0 - difficultyFade) * 0.12;
 
@@ -524,45 +531,50 @@ public class GameRenderer {
 
         int hoveredIndex = -1;
         updateExitHold(dualHands);
-        if (gesture != null && gesture.isHandDetected()) {
+        updateDifficultyCursor(gesture, dualHands, w, h);
+        if (gesture != null && gesture.isHandDetected() && !dualHands.captured()) {
             double hx = gesture.getHandX() * w;
             double hy = gesture.getHandY() * h;
-            double skewPadding = cardW * 0.08;
-            if (hx >= cardX[selectedIndex] && hx <= cardX[selectedIndex] + cardW
-                    && hy >= cardY[selectedIndex] - skewPadding
-                    && hy <= cardY[selectedIndex] + cardH + skewPadding) {
-                hoveredIndex = selectedIndex;
-            }
-            for (int i = n - 1; hoveredIndex < 0 && i >= 0; i--) {
-                if (hx >= cardX[i] && hx <= cardX[i] + cardW
-                        && hy >= cardY[i] - skewPadding
-                        && hy <= cardY[i] + cardH + skewPadding) {
-                    hoveredIndex = i;
-                    break;
-                }
-            }
-            if (hoveredIndex >= 0) {
+            hoveredIndex = resolveDifficultyHover(
+                    hx, hy, baseX, baseY, stackW, stackH,
+                    cardW, cardH, offsetX, offsetY, n);
+
+            boolean isFist = gesture.getGesture() == GestureType.FIST;
+            if (hoveredIndex >= 0 && !isFist) {
                 selectedDifficulty = diffs[hoveredIndex];
                 selectedIndex = hoveredIndex;
             }
 
-            boolean isFist = !dualHands.captured() && gesture.getGesture() == GestureType.FIST;
             if (isFist && hoveredIndex >= 0) {
+                // 握拳时锁定开始确认的卡片，避免手型变化导致坐标轻微偏移后跳到相邻难度。
+                if (difficultyHoldIndex < 0) {
+                    difficultyHoldIndex = hoveredIndex;
+                    compactHoldFrames = 0;
+                }
+                selectedIndex = difficultyHoldIndex;
+                selectedDifficulty = diffs[difficultyHoldIndex];
                 compactHoldFrames++;
                 diffDropoutFrames = 0;
-            } else if (compactHoldFrames > 0 && diffDropoutFrames < DROPOUT_MAX) {
+            } else if (compactHoldFrames > 0 && diffDropoutFrames < DIFFICULTY_DROPOUT_MAX) {
                 diffDropoutFrames++;
             } else {
                 compactHoldFrames = 0;
                 diffDropoutFrames = 0;
+                difficultyHoldIndex = -1;
             }
         } else {
-            compactHoldFrames = 0;
-            diffDropoutFrames = 0;
+            if (compactHoldFrames > 0 && diffDropoutFrames < DIFFICULTY_DROPOUT_MAX) {
+                diffDropoutFrames++;
+            } else {
+                compactHoldFrames = 0;
+                diffDropoutFrames = 0;
+                difficultyHoldIndex = -1;
+            }
         }
 
-        if (compactHoldFrames >= HOLD_FRAMES) {
+        if (compactHoldFrames >= DIFFICULTY_HOLD_FRAMES) {
             compactHoldFrames = 0;
+            difficultyHoldIndex = -1;
             if (activeGame != null) {
                 activeGame.setDifficulty(selectedDifficulty);
                 LOGGER.info("难度选择确认: " + selectedDifficulty.getLabel() + " → " + activeGame.getName());
@@ -589,13 +601,76 @@ public class GameRenderer {
         g.setGlobalAlpha(difficultyFade);
         for (int i = 0; i < n; i++) {
             double progress = i == selectedIndex
-                    ? compactHoldFrames / (double) HOLD_FRAMES : 0;
+                    ? compactHoldFrames / (double) DIFFICULTY_HOLD_FRAMES : 0;
             drawDifficultyGlassCard(g, diffs[i], activeGame, cardX[i], cardY[i],
                     cardW, cardH, i == selectedIndex, progress);
         }
         g.setGlobalAlpha(1.0);
 
+        if (difficultyCursorOpacity > 0.015 && !Double.isNaN(difficultyCursorX)) {
+            g.save();
+            g.setGlobalAlpha(difficultyCursorOpacity);
+            drawDifficultyCursor(g, difficultyCursorX, difficultyCursorY,
+                    compactHoldFrames / (double) DIFFICULTY_HOLD_FRAMES);
+            g.restore();
+        }
+
         return true;
+    }
+
+    /**
+     * 叠卡大量重合，不能再用“当前卡优先”的矩形命中，否则选中后会把其他卡全部挡住。
+     * 在整个卡堆的扩展范围内选择距离各卡左上可见标签最近的一张，卡片抬升动画不影响命中区。
+     */
+    private int resolveDifficultyHover(double handX, double handY,
+                                       double baseX, double baseY, double stackW, double stackH,
+                                       double cardW, double cardH, double offsetX, double offsetY,
+                                       int count) {
+        double paddingX = Math.max(48.0, cardW * 0.16);
+        double paddingY = Math.max(54.0, cardH * 0.45);
+        if (handX < baseX - paddingX || handX > baseX + stackW + paddingX
+                || handY < baseY - paddingY || handY > baseY + stackH + paddingY) {
+            return -1;
+        }
+
+        int nearest = 0;
+        double nearestDistance = Double.MAX_VALUE;
+        for (int i = 0; i < count; i++) {
+            // 叠卡真正可点击的是每张卡露出的图标/标题区域；后方卡片的中央会被前方卡覆盖。
+            double anchorX = baseX + i * offsetX + cardW * 0.16;
+            double anchorY = baseY + i * offsetY + cardH * 0.24;
+            double dx = handX - anchorX;
+            double dy = handY - anchorY;
+            double distance = dx * dx + dy * dy * 1.15;
+            if (distance < nearestDistance) {
+                nearestDistance = distance;
+                nearest = i;
+            }
+        }
+        return nearest;
+    }
+
+    /** 实时手势光标：大位移快速追随，小抖动平滑过滤。 */
+    private void updateDifficultyCursor(GestureData gesture, DualHandState dualHands,
+                                        double width, double height) {
+        boolean visible = gesture != null && gesture.isHandDetected() && !dualHands.captured();
+        if (!visible) {
+            difficultyCursorOpacity *= 0.74;
+            return;
+        }
+
+        double targetX = clampDifficulty(gesture.getHandX(), 0.0, 1.0) * width;
+        double targetY = clampDifficulty(gesture.getHandY(), 0.0, 1.0) * height;
+        if (Double.isNaN(difficultyCursorX) || difficultyCursorOpacity < 0.02) {
+            difficultyCursorX = targetX;
+            difficultyCursorY = targetY;
+        } else {
+            double distance = Math.hypot(targetX - difficultyCursorX, targetY - difficultyCursorY);
+            double follow = distance > 110.0 ? 0.78 : 0.46;
+            difficultyCursorX += (targetX - difficultyCursorX) * follow;
+            difficultyCursorY += (targetY - difficultyCursorY) * follow;
+        }
+        difficultyCursorOpacity += (1.0 - difficultyCursorOpacity) * 0.42;
     }
 
     private void drawDifficultyGlassBackground(GraphicsContext g, double w, double h,

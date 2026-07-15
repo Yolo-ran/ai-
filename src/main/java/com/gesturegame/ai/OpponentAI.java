@@ -2,6 +2,7 @@ package com.gesturegame.ai;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
+import com.gesturegame.persistence.LlmSettingsStore;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -24,15 +25,7 @@ public final class OpponentAI {
     private static final Logger LOGGER = Logger.getLogger(OpponentAI.class.getName());
     private static final Random RANDOM = new Random();
 
-    private static final String DEFAULT_URL = "https://api.deepseek.com/chat/completions";
-    private static final String DEFAULT_MODEL = "deepseek-chat";
-    private static final String API_KEY = firstNonBlank(
-            System.getenv("DEEPSEEK_API_KEY"),
-            System.getenv("LLM_API_KEY"));
-
-    private static final HttpClient HTTP = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(4))
-            .build();
+    private static final HttpClient HTTP = LlmHttpClientFactory.create(Duration.ofSeconds(4));
 
     private static final String[] LOCAL_TAUNT = {
         "嘿，我闭着眼睛都能赢你！",
@@ -77,7 +70,8 @@ public final class OpponentAI {
         if (callback != null) callback.accept(local);
 
         // 异步调 LLM，结果到了覆盖
-        if (API_KEY == null) return;
+        LlmConfiguration configuration = LlmSettingsStore.getInstance().getEffective();
+        if (!configuration.isConfigured()) return;
 
         String prompt = String.format(
             "玩家出了%s，电脑出了%s，结果：玩家%s。当前比分 %d:%d。",
@@ -87,7 +81,7 @@ public final class OpponentAI {
         CompletableFuture.supplyAsync(() -> {
             try {
                 JSONObject body = new JSONObject();
-                body.put("model", DEFAULT_MODEL);
+                body.put("model", configuration.model());
                 body.put("temperature", 0.9);
                 body.put("max_tokens", 80);
 
@@ -98,9 +92,9 @@ public final class OpponentAI {
                 body.put("messages", msgs);
 
                 HttpRequest req = HttpRequest.newBuilder()
-                        .uri(URI.create(DEFAULT_URL))
+                        .uri(URI.create(configuration.apiUrl()))
                         .header("Content-Type", "application/json")
-                        .header("Authorization", "Bearer " + API_KEY)
+                        .header("Authorization", "Bearer " + configuration.apiKey())
                         .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
                         .timeout(Duration.ofSeconds(6))
                         .build();
@@ -127,8 +121,4 @@ public final class OpponentAI {
         return LOCAL_TAUNT[RANDOM.nextInt(LOCAL_TAUNT.length)];
     }
 
-    private static String firstNonBlank(String... values) {
-        for (String v : values) if (v != null && !v.isBlank()) return v;
-        return null;
-    }
 }

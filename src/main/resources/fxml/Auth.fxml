@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.PasswordField?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Pane?>
+<?import javafx.scene.layout.Region?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.VBox?>
+<?import javafx.scene.media.MediaView?>
+<?import javafx.scene.text.Text?>
+
+<StackPane fx:id="rootPane" prefHeight="720.0" prefWidth="1280.0"
+           stylesheets="@../css/app.css"
+           xmlns="http://javafx.com/javafx/17"
+           xmlns:fx="http://javafx.com/fxml/1"
+           fx:controller="com.gesturegame.ui.AuthController"
+           styleClass="auth-root">
+    <children>
+        <MediaView fx:id="mediaView" smooth="true" mouseTransparent="true" opacity="0.0" />
+        <Pane mouseTransparent="true" styleClass="auth-video-overlay" />
+
+        <BorderPane pickOnBounds="false">
+            <top>
+                <HBox alignment="CENTER_LEFT" spacing="28.0" styleClass="auth-navbar">
+                    <children>
+                        <HBox alignment="CENTER_LEFT" minWidth="187.0" prefWidth="187.0" spacing="10.0">
+                            <Label text="◉" styleClass="auth-logo-mark" />
+                            <Label text="GESTURE/OS" styleClass="auth-logo" />
+                        </HBox>
+                        <HBox fx:id="navigationLinks" alignment="CENTER_LEFT" spacing="30.0">
+                            <children>
+                                <Button text="Get Started  ⌄" styleClass="auth-nav-link" />
+                                <Button text="API Settings  ⌄" onAction="#openApiSettings" styleClass="auth-nav-link" />
+                                <Button text="Features  ⌄" styleClass="auth-nav-link" />
+                                <Button text="Resources  ⌄" styleClass="auth-nav-link" />
+                            </children>
+                        </HBox>
+                        <Region HBox.hgrow="ALWAYS" />
+                        <Button text="Sign In" onAction="#showAuthModal" styleClass="auth-nav-cta" />
+                    </children>
+                </HBox>
+            </top>
+
+            <center>
+                <VBox alignment="CENTER" spacing="38.0" translateY="42.0" maxWidth="760.0">
+                    <children>
+                        <HBox alignment="CENTER" spacing="8.0" styleClass="auth-badge">
+                            <children>
+                                <Label text="●" styleClass="auth-badge-dot" />
+                                <Label text="Gesture access available from" styleClass="auth-badge-muted" />
+                                <Label text=" July 2026" styleClass="auth-badge-strong" />
+                            </children>
+                        </HBox>
+
+                        <VBox alignment="CENTER" spacing="24.0">
+                            <children>
+                                <Text fx:id="heroHeading" text="Play at the Speed of Experience"
+                                      wrappingWidth="720.0" textAlignment="CENTER"
+                                      styleClass="auth-hero-heading" />
+                                <Label text="Powering seamless gesture experiences and real-time play, GESTURE/OS connects motion, intelligence, and interaction in one immersive desktop world."
+                                       wrapText="true" maxWidth="680.0" alignment="CENTER"
+                                       textAlignment="CENTER" styleClass="auth-hero-subtitle" />
+                            </children>
+                        </VBox>
+
+                        <Button text="Enter Experience  →" onAction="#showAuthModal"
+                                styleClass="auth-hero-cta" />
+                    </children>
+                </VBox>
+            </center>
+            <bottom>
+                <Region prefHeight="58.0" />
+            </bottom>
+        </BorderPane>
+
+        <StackPane fx:id="authModal" styleClass="auth-modal-layer">
+            <children>
+                <Pane styleClass="auth-modal-scrim" />
+                <VBox fx:id="authCard" alignment="TOP_LEFT" spacing="18.0"
+                      minWidth="430.0" maxWidth="430.0" styleClass="auth-card">
+                    <children>
+                        <HBox alignment="CENTER_LEFT">
+                            <children>
+                                <Label fx:id="authEyebrow" text="WELCOME BACK" styleClass="auth-form-eyebrow" />
+                                <Region HBox.hgrow="ALWAYS" />
+                                <Button text="×" onAction="#hideAuthModal" styleClass="auth-close-button" />
+                            </children>
+                        </HBox>
+                        <Label fx:id="authTitle" text="Sign in to continue" styleClass="auth-form-title" />
+                        <Label fx:id="authSubtitle" wrapText="true" maxWidth="350.0"
+                               text="Continue to the ENTER gesture verification experience."
+                               styleClass="auth-form-subtitle" />
+
+                        <VBox spacing="8.0">
+                            <children>
+                                <Label text="USERNAME" styleClass="auth-field-label" />
+                                <TextField fx:id="usernameField" promptText="Your local username"
+                                           onAction="#submit" styleClass="auth-field" />
+                            </children>
+                        </VBox>
+                        <VBox spacing="8.0">
+                            <children>
+                                <Label text="PASSWORD" styleClass="auth-field-label" />
+                                <PasswordField fx:id="passwordField" promptText="8–72 characters"
+                                               onAction="#submit" styleClass="auth-field" />
+                            </children>
+                        </VBox>
+                        <VBox fx:id="confirmPasswordWrap" spacing="8.0">
+                            <children>
+                                <Label text="CONFIRM PASSWORD" styleClass="auth-field-label" />
+                                <PasswordField fx:id="confirmPasswordField" promptText="Repeat your password"
+                                               onAction="#submit" styleClass="auth-field" />
+                            </children>
+                        </VBox>
+
+                        <Label fx:id="statusLabel" minHeight="20.0" wrapText="true"
+                               styleClass="auth-status" />
+                        <Button fx:id="submitButton" text="Sign in  →" onAction="#submit"
+                                maxWidth="Infinity" styleClass="auth-submit-button" />
+                        <Button fx:id="switchButton" text="New here?  Create an account"
+                                onAction="#toggleFormMode" maxWidth="Infinity"
+                                styleClass="auth-switch-button" />
+                        <Label fx:id="databaseLabel" text="Encrypted local profile"
+                               styleClass="auth-database-note" />
+                    </children>
+                    <padding>
+                        <Insets top="28.0" right="32.0" bottom="28.0" left="32.0" />
+                    </padding>
+                </VBox>
+            </children>
+        </StackPane>
+    </children>
+</StackPane>

@@ -2,6 +2,430 @@
     -fx-font-family: "Microsoft YaHei UI";
 }
 
+/* Full-screen account gateway, faithfully ported from the supplied Web3 hero. */
+.auth-root {
+    -fx-background-color: #000000;
+    -fx-font-family: "General Sans";
+}
+
+.auth-video-overlay {
+    -fx-background-color: rgba(0, 0, 0, 0.50);
+}
+
+.auth-navbar {
+    -fx-padding: 20 120 20 120;
+}
+
+.auth-logo-mark {
+    -fx-text-fill: #ffffff;
+    -fx-font-size: 22px;
+    -fx-font-weight: 600;
+}
+
+.auth-logo {
+    -fx-text-fill: #ffffff;
+    -fx-font-size: 16px;
+    -fx-font-weight: 600;
+}
+
+.auth-nav-link {
+    -fx-background-color: transparent;
+    -fx-text-fill: #ffffff;
+    -fx-font-family: "General Sans";
+    -fx-font-size: 14px;
+    -fx-font-weight: 500;
+    -fx-padding: 8 0 8 0;
+    -fx-cursor: hand;
+}
+
+.auth-nav-link:hover {
+    -fx-text-fill: rgba(255, 255, 255, 0.70);
+}
+
+.auth-nav-cta {
+    -fx-background-color: rgba(255, 255, 255, 0.72), #050505;
+    -fx-background-insets: 0, 1;
+    -fx-background-radius: 999, 999;
+    -fx-text-fill: #ffffff;
+    -fx-font-family: "General Sans";
+    -fx-font-size: 14px;
+    -fx-font-weight: 500;
+    -fx-padding: 11 29 11 29;
+    -fx-effect: dropshadow(gaussian, rgba(255, 255, 255, 0.18), 14, 0.18, 0, -3);
+    -fx-cursor: hand;
+}
+
+.auth-nav-cta:hover {
+    -fx-background-color: #ffffff, #0e0e0e;
+}
+
+.auth-badge {
+    -fx-background-color: rgba(255, 255, 255, 0.10);
+    -fx-background-radius: 20;
+    -fx-border-color: rgba(255, 255, 255, 0.20);
+    -fx-border-width: 1;
+    -fx-border-radius: 20;
+    -fx-padding: 7 13 7 13;
+}
+
+.auth-badge-dot {
+    -fx-text-fill: #ffffff;
+    -fx-font-size: 6px;
+}
+
+.auth-badge-muted,
+.auth-badge-strong {
+    -fx-font-family: "General Sans";
+    -fx-font-size: 13px;
+    -fx-font-weight: 500;
+}
+
+.auth-badge-muted {
+    -fx-text-fill: rgba(255, 255, 255, 0.60);
+}
+
+.auth-badge-strong {
+    -fx-text-fill: #ffffff;
+}
+
+.auth-hero-heading {
+    -fx-font-family: "General Sans";
+    -fx-font-size: 56px;
+    -fx-font-weight: 500;
+}
+
+.auth-hero-subtitle {
+    -fx-font-family: "General Sans";
+    -fx-font-size: 15px;
+    -fx-font-weight: 400;
+    -fx-text-fill: rgba(255, 255, 255, 0.70);
+    -fx-line-spacing: 4px;
+}
+
+.auth-hero-cta {
+    -fx-background-color: rgba(255, 255, 255, 0.66), #ffffff;
+    -fx-background-insets: 0, 1;
+    -fx-background-radius: 999, 999;
+    -fx-text-fill: #050505;
+    -fx-font-family: "General Sans";
+    -fx-font-size: 14px;
+    -fx-font-weight: 500;
+    -fx-padding: 12 29 12 29;
+    -fx-effect: dropshadow(gaussian, rgba(255, 255, 255, 0.28), 18, 0.18, 0, -4);
+    -fx-cursor: hand;
+}
+
+.auth-hero-cta:hover {
+    -fx-background-color: #ffffff;
+    -fx-effect: dropshadow(gaussian, rgba(255, 255, 255, 0.42), 22, 0.22, 0, 0);
+}
+
+.auth-modal-layer {
+    -fx-alignment: center;
+}
+
+.auth-modal-scrim {
+    -fx-background-color: rgba(0, 0, 0, 0.68);
+}
+
+.auth-card {
+    -fx-background-color: rgba(7, 7, 7, 0.93);
+    -fx-background-radius: 24;
+    -fx-border-color: rgba(255, 255, 255, 0.20);
+    -fx-border-width: 1;
+    -fx-border-radius: 24;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.78), 52, 0.30, 0, 18);
+}
+
+.auth-form-eyebrow {
+    -fx-text-fill: rgba(255, 255, 255, 0.52);
+    -fx-font-family: "General Sans";
+    -fx-font-size: 10px;
+    -fx-font-weight: 600;
+}
+
+.auth-close-button {
+    -fx-background-color: rgba(255, 255, 255, 0.08);
+    -fx-background-radius: 999;
+    -fx-text-fill: rgba(255, 255, 255, 0.75);
+    -fx-font-size: 18px;
+    -fx-min-width: 32px;
+    -fx-min-height: 32px;
+    -fx-max-width: 32px;
+    -fx-max-height: 32px;
+    -fx-padding: 0;
+    -fx-cursor: hand;
+}
+
+.auth-close-button:hover {
+    -fx-background-color: rgba(255, 255, 255, 0.16);
+    -fx-text-fill: #ffffff;
+}
+
+.auth-form-title {
+    -fx-text-fill: #ffffff;
+    -fx-font-family: "General Sans";
+    -fx-font-size: 30px;
+    -fx-font-weight: 500;
+}
+
+.auth-form-subtitle {
+    -fx-text-fill: rgba(255, 255, 255, 0.58);
+    -fx-font-family: "General Sans";
+    -fx-font-size: 13px;
+    -fx-line-spacing: 3px;
+}
+
+.auth-field-label {
+    -fx-text-fill: rgba(255, 255, 255, 0.48);
+    -fx-font-family: "General Sans";
+    -fx-font-size: 10px;
+    -fx-font-weight: 600;
+}
+
+.auth-field {
+    -fx-background-color: rgba(255, 255, 255, 0.06);
+    -fx-background-radius: 12;
+    -fx-border-color: rgba(255, 255, 255, 0.14);
+    -fx-border-width: 1;
+    -fx-border-radius: 12;
+    -fx-text-fill: #ffffff;
+    -fx-prompt-text-fill: rgba(255, 255, 255, 0.30);
+    -fx-highlight-fill: rgba(255, 255, 255, 0.22);
+    -fx-highlight-text-fill: #ffffff;
+    -fx-font-family: "General Sans";
+    -fx-font-size: 14px;
+    -fx-padding: 13 15 13 15;
+}
+
+.auth-field:focused {
+    -fx-background-color: rgba(255, 255, 255, 0.09);
+    -fx-border-color: rgba(255, 255, 255, 0.48);
+}
+
+.auth-status {
+    -fx-text-fill: rgba(255, 255, 255, 0.52);
+    -fx-font-family: "General Sans";
+    -fx-font-size: 12px;
+}
+
+.auth-status-error {
+    -fx-text-fill: #ff9d9d;
+}
+
+.auth-status-success {
+    -fx-text-fill: #bfffc8;
+}
+
+.auth-submit-button {
+    -fx-background-color: #ffffff;
+    -fx-background-radius: 999;
+    -fx-text-fill: #050505;
+    -fx-font-family: "General Sans";
+    -fx-font-size: 14px;
+    -fx-font-weight: 600;
+    -fx-padding: 13 24 13 24;
+    -fx-cursor: hand;
+}
+
+.auth-submit-button:hover {
+    -fx-background-color: #e9e9e9;
+}
+
+.auth-submit-button:disabled {
+    -fx-opacity: 0.48;
+}
+
+.auth-switch-button {
+    -fx-background-color: transparent;
+    -fx-text-fill: rgba(255, 255, 255, 0.62);
+    -fx-font-family: "General Sans";
+    -fx-font-size: 12px;
+    -fx-padding: 5;
+    -fx-cursor: hand;
+}
+
+.auth-switch-button:hover {
+    -fx-text-fill: #ffffff;
+}
+
+.auth-database-note {
+    -fx-text-fill: rgba(255, 255, 255, 0.28);
+    -fx-font-family: "General Sans";
+    -fx-font-size: 10px;
+}
+
+.lobby-api-button {
+    -fx-background-color: rgba(0, 0, 0, 0.76);
+    -fx-background-radius: 999;
+    -fx-border-color: rgba(255, 255, 255, 0.20);
+    -fx-border-radius: 999;
+    -fx-border-width: 1;
+    -fx-text-fill: rgba(255, 255, 255, 0.72);
+    -fx-font-family: "General Sans", "Microsoft YaHei UI";
+    -fx-font-size: 12px;
+    -fx-padding: 9 16 9 16;
+    -fx-cursor: hand;
+}
+
+.lobby-api-button:hover {
+    -fx-background-color: rgba(255, 255, 255, 0.12);
+    -fx-text-fill: #ffffff;
+}
+
+.api-dialog-root {
+    -fx-background-color: rgba(0, 0, 0, 0.01);
+    -fx-padding: 30;
+    -fx-font-family: "General Sans", "Microsoft YaHei UI";
+}
+
+.api-settings-card {
+    -fx-background-color: rgba(9, 9, 11, 0.985);
+    -fx-background-radius: 24;
+    -fx-border-color: rgba(255, 255, 255, 0.18);
+    -fx-border-width: 1;
+    -fx-border-radius: 24;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.86), 56, 0.35, 0, 18);
+}
+
+.api-eyebrow {
+    -fx-text-fill: #60a5fa;
+    -fx-font-size: 10px;
+    -fx-font-weight: 600;
+}
+
+.api-title {
+    -fx-text-fill: #ffffff;
+    -fx-font-size: 30px;
+    -fx-font-weight: 500;
+}
+
+.api-description {
+    -fx-text-fill: rgba(255, 255, 255, 0.58);
+    -fx-font-size: 13px;
+    -fx-line-spacing: 3px;
+}
+
+.api-source {
+    -fx-background-color: rgba(96, 165, 250, 0.10);
+    -fx-background-radius: 999;
+    -fx-border-color: rgba(96, 165, 250, 0.22);
+    -fx-border-radius: 999;
+    -fx-text-fill: #bfdbfe;
+    -fx-font-size: 11px;
+    -fx-padding: 7 12 7 12;
+}
+
+.api-field-label {
+    -fx-text-fill: rgba(255, 255, 255, 0.45);
+    -fx-font-size: 10px;
+    -fx-font-weight: 600;
+}
+
+.api-field,
+.api-combo {
+    -fx-background-color: rgba(255, 255, 255, 0.06);
+    -fx-background-radius: 11;
+    -fx-border-color: rgba(255, 255, 255, 0.14);
+    -fx-border-width: 1;
+    -fx-border-radius: 11;
+    -fx-text-fill: #ffffff;
+    -fx-prompt-text-fill: rgba(255, 255, 255, 0.28);
+    -fx-font-size: 13px;
+    -fx-padding: 11 13 11 13;
+}
+
+.api-field:focused,
+.api-combo:focused {
+    -fx-border-color: rgba(96, 165, 250, 0.70);
+}
+
+.api-combo .list-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: #ffffff;
+}
+
+.api-combo .arrow {
+    -fx-background-color: rgba(255, 255, 255, 0.72);
+}
+
+.combo-box-popup .list-view {
+    -fx-background-color: #18181b;
+    -fx-border-color: rgba(255, 255, 255, 0.16);
+}
+
+.combo-box-popup .list-cell {
+    -fx-background-color: #18181b;
+    -fx-text-fill: #f4f4f5;
+}
+
+.combo-box-popup .list-cell:hover,
+.combo-box-popup .list-cell:selected {
+    -fx-background-color: #2563eb;
+}
+
+.api-close {
+    -fx-background-color: rgba(255, 255, 255, 0.07);
+    -fx-background-radius: 999;
+    -fx-text-fill: rgba(255, 255, 255, 0.75);
+    -fx-font-size: 18px;
+    -fx-min-width: 32px;
+    -fx-min-height: 32px;
+    -fx-max-width: 32px;
+    -fx-max-height: 32px;
+    -fx-padding: 0;
+    -fx-cursor: hand;
+}
+
+.api-primary-button,
+.api-secondary-button,
+.api-danger-button {
+    -fx-background-radius: 999;
+    -fx-font-size: 12px;
+    -fx-font-weight: 600;
+    -fx-padding: 10 18 10 18;
+    -fx-cursor: hand;
+}
+
+.api-primary-button {
+    -fx-background-color: #ffffff;
+    -fx-text-fill: #09090b;
+}
+
+.api-secondary-button {
+    -fx-background-color: rgba(96, 165, 250, 0.14);
+    -fx-border-color: rgba(96, 165, 250, 0.34);
+    -fx-border-radius: 999;
+    -fx-text-fill: #bfdbfe;
+}
+
+.api-danger-button {
+    -fx-background-color: transparent;
+    -fx-text-fill: rgba(255, 255, 255, 0.38);
+}
+
+.api-danger-button:hover {
+    -fx-text-fill: #fca5a5;
+}
+
+.api-status {
+    -fx-text-fill: rgba(255, 255, 255, 0.50);
+    -fx-font-size: 12px;
+}
+
+.api-status-success {
+    -fx-text-fill: #86efac;
+}
+
+.api-status-error {
+    -fx-text-fill: #fca5a5;
+}
+
+.api-footnote {
+    -fx-text-fill: rgba(255, 255, 255, 0.28);
+    -fx-font-size: 10px;
+}
+
 .splash-root {
     -fx-background-color: #000000;
 }

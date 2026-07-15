@@ -1,6 +1,7 @@
 package com.gesturegame.ai;
 
 import com.gesturegame.common.Difficulty;
+import com.gesturegame.persistence.LlmSettingsStore;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -17,13 +18,8 @@ import java.util.logging.Logger;
 public final class AdaptiveShooterLevelService {
 
     private static final Logger LOGGER = Logger.getLogger(AdaptiveShooterLevelService.class.getName());
-    private static final String DEFAULT_URL = "https://api.deepseek.com/chat/completions";
-    private static final String DEFAULT_MODEL = "deepseek-v4-pro";
-
     private final LocalShooterLevelGenerator fallback = new LocalShooterLevelGenerator();
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(4))
-            .build();
+    private final HttpClient httpClient = LlmHttpClientFactory.create(Duration.ofSeconds(4));
 
     public ShooterLevelConfig firstLevel(Difficulty difficulty) {
         return fallback.generate(1, difficulty, null);
@@ -36,23 +32,21 @@ public final class AdaptiveShooterLevelService {
     public CompletableFuture<ShooterLevelConfig> generateNext(
             int level, Difficulty difficulty, PlayerPerformance performance) {
         ShooterLevelConfig local = fallback.generate(level, difficulty, performance);
-        String apiKey = firstNonBlank(System.getenv("LLM_API_KEY"), System.getenv("DEEPSEEK_API_KEY"));
-        if (apiKey == null) {
+        LlmConfiguration configuration = LlmSettingsStore.getInstance().getEffective();
+        if (!configuration.isConfigured()) {
             return CompletableFuture.completedFuture(local);
         }
 
-        String url = firstNonBlank(System.getenv("LLM_API_URL"), System.getenv("DEEPSEEK_API_URL"), DEFAULT_URL);
-        String model = firstNonBlank(System.getenv("LLM_MODEL"), System.getenv("DEEPSEEK_MODEL"), DEFAULT_MODEL);
         try {
-            JSONObject body = buildRequest(model, level, difficulty, performance);
-            HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+            JSONObject body = buildRequest(configuration.model(), level, difficulty, performance);
+            HttpRequest request = HttpRequest.newBuilder(URI.create(configuration.apiUrl()))
                     .timeout(Duration.ofSeconds(12))
                     .header("Content-Type", "application/json")
-                    .header("Authorization", "Bearer " + apiKey)
+                    .header("Authorization", "Bearer " + configuration.apiKey())
                     .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
                     .build();
             return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-                    .thenApply(response -> parseResponse(response, level, model))
+                    .thenApply(response -> parseResponse(response, level, configuration.model()))
                     .exceptionally(error -> {
                         LOGGER.log(Level.WARNING, "[AI关卡] 接口不可用，已切换本地生成: " + error.getMessage());
                         return local;
@@ -104,10 +98,4 @@ public final class AdaptiveShooterLevelService {
         return ShooterLevelConfig.fromJson(new JSONObject(content), level, "AI · " + model);
     }
 
-    private static String firstNonBlank(String... values) {
-        for (String value : values) {
-            if (value != null && !value.isBlank()) return value.strip();
-        }
-        return null;
-    }
 }

@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.ComboBox?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.PasswordField?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Region?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.VBox?>
+
+<StackPane prefHeight="650.0" prefWidth="620.0" stylesheets="@../css/app.css"
+           xmlns="http://javafx.com/javafx/17" xmlns:fx="http://javafx.com/fxml/1"
+           fx:controller="com.gesturegame.ui.ApiSettingsController"
+           styleClass="api-dialog-root">
+    <children>
+        <VBox alignment="TOP_LEFT" spacing="18.0" maxWidth="540.0" styleClass="api-settings-card">
+            <children>
+                <HBox alignment="CENTER_LEFT">
+                    <children>
+                        <VBox spacing="4.0">
+                            <children>
+                                <Label text="LLM CONNECTION" styleClass="api-eyebrow" />
+                                <Label text="API 设置" styleClass="api-title" />
+                            </children>
+                        </VBox>
+                        <Region HBox.hgrow="ALWAYS" />
+                        <Button text="×" onAction="#close" styleClass="api-close" />
+                    </children>
+                </HBox>
+
+                <Label text="配置后，星际突击会动态生成下一关 JSON，猜拳对手会实时生成台词。接口不可用时仍会自动使用离线内容。"
+                       wrapText="true" maxWidth="460.0" styleClass="api-description" />
+                <Label fx:id="sourceLabel" text="当前来源：未设置" styleClass="api-source" />
+
+                <VBox spacing="8.0">
+                    <children>
+                        <Label text="服务商" styleClass="api-field-label" />
+                        <ComboBox fx:id="providerCombo" onAction="#providerChanged"
+                                  maxWidth="Infinity" styleClass="api-combo" />
+                    </children>
+                </VBox>
+                <VBox spacing="8.0">
+                    <children>
+                        <Label text="接口地址" styleClass="api-field-label" />
+                        <TextField fx:id="apiUrlField" promptText="https://.../chat/completions"
+                                   styleClass="api-field" />
+                    </children>
+                </VBox>
+                <VBox spacing="8.0">
+                    <children>
+                        <Label text="模型名称" styleClass="api-field-label" />
+                        <TextField fx:id="modelField" promptText="deepseek-chat"
+                                   styleClass="api-field" />
+                    </children>
+                </VBox>
+                <VBox spacing="8.0">
+                    <children>
+                        <Label text="API KEY" styleClass="api-field-label" />
+                        <PasswordField fx:id="apiKeyField" promptText="sk-..."
+                                       styleClass="api-field" />
+                    </children>
+                </VBox>
+
+                <Label fx:id="statusLabel" minHeight="22.0" wrapText="true" styleClass="api-status" />
+                <HBox alignment="CENTER_LEFT" spacing="10.0">
+                    <children>
+                        <Button fx:id="testButton" text="测试连接" onAction="#testConnection"
+                                styleClass="api-secondary-button" />
+                        <Button fx:id="saveButton" text="保存设置" onAction="#save"
+                                styleClass="api-primary-button" />
+                        <Region HBox.hgrow="ALWAYS" />
+                        <Button text="删除 Key" onAction="#clearSaved" styleClass="api-danger-button" />
+                    </children>
+                </HBox>
+                <Label text="Key 仅加密保存在本机，不会写入项目或上传到仓库。"
+                       styleClass="api-footnote" />
+            </children>
+            <padding>
+                <Insets top="30.0" right="34.0" bottom="30.0" left="34.0" />
+            </padding>
+        </VBox>
+    </children>
+</StackPane>

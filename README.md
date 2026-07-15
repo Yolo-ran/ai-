@@ -1,5 +1,13 @@
 # ai-
 
+## 本地账户与手势签入
+
+程序启动后首先显示全屏视频账户页。首次使用请选择创建账户；以后使用用户名和密码登录，
+验证通过后才会进入原有的 `ENTER` 握拳签入页。
+
+账户默认保存在 Windows 的 `%LOCALAPPDATA%\AIGestureGame\data\users.db`。密码不会明文保存，
+数据库仅记录随机盐和 PBKDF2-SHA256 摘要；也可通过系统属性 `gesturegame.data.dir` 覆盖数据目录。
+
 ## 团队首次安装手势引擎
 
 1. 拉取仓库最新 `main`。
@@ -25,11 +33,17 @@
 Boss 阶段后，Java 会在后台根据命中率、受伤次数、分数和通关情况生成下一关 JSON；
 接口无密钥、超时或返回异常时会自动切换到本地动态生成，不影响游戏运行。
 
-DeepSeek 配置（PowerShell）：
+推荐直接在程序登录页顶部或大厅左上角点击 `API 设置`，填写服务商、接口地址、模型和
+API Key，并使用“测试连接”验证。设置会加密保存在本机，动态关卡和猜拳 AI 台词共用。
+
+DeepSeek 默认配置为 `https://api.deepseek.com/chat/completions` 与 `deepseek-chat`。
+其他提供 OpenAI Chat Completions 兼容接口的国内服务可选择“其他兼容接口”自行填写。
+
+命令行环境变量仍作为开发调试兜底（PowerShell）：
 
 ```powershell
 $env:DEEPSEEK_API_KEY="你的 API Key"
-$env:DEEPSEEK_MODEL="deepseek-v4-pro"
+$env:DEEPSEEK_MODEL="deepseek-chat"
 ./启动.bat
 ```
 

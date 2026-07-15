@@ -6,6 +6,7 @@ import com.gesturegame.engine.AppStateManager;
 import com.gesturegame.network.GestureStreamServer;
 import com.gesturegame.network.GestureStreamServer.DualHandState;
 import com.gesturegame.ui.GameRenderer;
+import com.gesturegame.ui.AuthController;
 import com.gesturegame.ui.LobbyController;
 import com.gesturegame.ui.LoginController;
 import javafx.animation.AnimationTimer;
@@ -41,6 +42,11 @@ public class MainApp extends Application {
 
     @Override
     public void start(Stage primaryStage) throws IOException {
+        FXMLLoader authLoader = new FXMLLoader(Objects.requireNonNull(
+                getClass().getResource("/fxml/Auth.fxml")));
+        Parent authRoot = authLoader.load();
+        AuthController authController = authLoader.getController();
+
         FXMLLoader loginLoader = new FXMLLoader(Objects.requireNonNull(
                 getClass().getResource("/fxml/Login.fxml")));
         Parent loginRoot = loginLoader.load();
@@ -56,17 +62,20 @@ public class MainApp extends Application {
         Parent gameRoot = gameLoader.load();
         gameRenderer = gameLoader.getController();
 
+        Scene authScene = new Scene(authRoot, 1280, 720);
         Scene loginScene = new Scene(loginRoot, 1280, 720);
         Scene lobbyScene = new Scene(lobbyRoot, 1280, 720);
         Scene gameScene = new Scene(gameRoot, 1280, 720);
 
         AppStateManager appStateManager = AppStateManager.getInstance();
         appStateManager.init(primaryStage);
+        appStateManager.registerScene(AppStateManager.STATE_AUTH, authScene);
         appStateManager.registerScene(AppStateManager.STATE_LOGIN, loginScene);
         appStateManager.registerScene(AppStateManager.STATE_LOBBY, lobbyScene);
         appStateManager.registerScene(AppStateManager.STATE_GAME, gameScene);
         appStateManager.registerScene(AppStateManager.STATE_DIFFICULTY, gameScene);
 
+        authController.bindStateManager(appStateManager);
         loginController.bindStateManager(appStateManager);
         lobbyController.bindStateManager(appStateManager);
         gameRenderer.bindStateManager(appStateManager);
@@ -74,7 +83,9 @@ public class MainApp extends Application {
         primaryStage.setTitle("AI 手势交互游戏大厅");
         primaryStage.setMinWidth(1100);
         primaryStage.setMinHeight(700);
-        appStateManager.switchState(AppStateManager.STATE_LOGIN);
+        primaryStage.setFullScreenExitHint("");
+        primaryStage.setFullScreen(true);
+        appStateManager.switchState(AppStateManager.STATE_AUTH);
         primaryStage.show();
 
         startGameLoop();
