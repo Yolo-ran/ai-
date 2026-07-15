@@ -9,9 +9,14 @@ import com.gesturegame.network.GestureCommand;
 import com.gesturegame.network.GestureStreamServer.DualHandState;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
+import javafx.scene.SnapshotParameters;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.Label;
+import javafx.scene.image.PixelReader;
+import javafx.scene.image.PixelFormat;
+import javafx.scene.image.PixelWriter;
+import javafx.scene.image.WritableImage;
 import javafx.scene.layout.Pane;
 import javafx.scene.paint.Color;
 import javafx.scene.paint.CycleMethod;
@@ -21,6 +26,10 @@ import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.scene.text.TextAlignment;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Random;
 import java.util.logging.Logger;
 
 /**
@@ -68,6 +77,14 @@ public class GameRenderer {
     private long lastDifficultyFrameNanos;
     private double difficultyFade;
     private long settlementStartedNanos;
+    private final List<SettlementParticle> settlementParticles = new ArrayList<>();
+    private double settlementParticleWidth = -1;
+    private double settlementParticleHeight = -1;
+    private WritableImage cssRainImage;
+    private int[] cssRainPixels;
+    private int cssRainImageWidth;
+    private int cssRainImageHeight;
+    private long cssRainLastFrameNanos;
     private static final int HOLD_FRAMES = 72; // 1.2秒@60fps
     private static final int DROPOUT_MAX = 3;  // 最多容忍3帧闪断
 
@@ -773,10 +790,7 @@ public class GameRenderer {
         drawExitProgress(gesture, dualHands);
     }
 
-    /**
-     * Unified end screen based on the supplied Background Paths reference.
-     * It intentionally contains no visual button or gesture instruction.
-     */
+    /** Circuit-board settlement screen with a particle-built GAME OVER title. */
     private void drawSettlementScreen(GraphicsContext g, GameInterface game, double w, double h) {
         if (settlementStartedNanos == 0) {
             settlementStartedNanos = System.nanoTime();
@@ -784,82 +798,222 @@ public class GameRenderer {
         double elapsed = (System.nanoTime() - settlementStartedNanos) / 1_000_000_000.0;
 
         g.setGlobalAlpha(1.0);
-        g.setFill(Color.web("#0A0A0A"));
+        g.setFill(Color.BLACK);
         g.fillRect(0, 0, w, h);
+        drawCssRainBackground(g, w, h, elapsed);
 
-        double backgroundFade = clampDifficulty(elapsed / 1.2, 0, 1);
-        g.setGlobalAlpha(backgroundFade);
-        drawSettlementPaths(g, w, h, elapsed, 1);
-        drawSettlementPaths(g, w, h, elapsed, -1);
-        g.setGlobalAlpha(1.0);
-
-        double reveal = clampDifficulty((elapsed - 0.08) / 1.15, 0, 1);
-        double eased = 1.0 - Math.pow(1.0 - reveal, 3);
-        double titleY = h * 0.50 + (1.0 - eased) * 70.0;
-        double titleSize = clampDifficulty(w * 0.082, 64, 118);
-
-        g.setGlobalAlpha(reveal);
+        double titleSize = clampDifficulty(w * 0.095, 72, 130);
+        double titleY = h * 0.52;
         g.setTextAlign(TextAlignment.CENTER);
         g.setFont(Font.font("Segoe UI", FontWeight.BOLD, titleSize));
-        g.setFill(new LinearGradient(0, 0, 1, 0, true, CycleMethod.NO_CYCLE,
-                new Stop(0, Color.rgb(255, 255, 255, 0.98)),
-                new Stop(1, Color.rgb(229, 229, 229, 0.82))));
-        g.fillText("GAME OVER", w * 0.5, titleY);
+        double hue = (204 + elapsed * 36.0) % 360.0;
+        g.setStroke(Color.hsb(hue, 0.88, 1.0, 0.065));
+        g.setLineWidth(1.0);
+        g.strokeText("GAME OVER", w * 0.5, titleY);
+
+        ensureSettlementParticles(w, h, titleSize, titleY);
+        drawSettlementTextParticles(g, elapsed, h, hue);
 
         String gameName = game == null ? "GAME" : game.getName();
         int score = game == null ? 0 : game.getScore();
         String result = gameName + "   /   FINAL SCORE  " + String.format("%06d", Math.max(0, score));
-        g.setGlobalAlpha(clampDifficulty((elapsed - 0.52) / 0.9, 0, 1));
+        g.setGlobalAlpha(clampDifficulty((elapsed - 1.3) / 1.0, 0, 1));
         g.setFont(Font.font("Consolas", FontWeight.NORMAL, clampDifficulty(w * 0.014, 14, 20)));
-        g.setFill(Color.rgb(161, 161, 170, 0.78));
-        g.fillText(result, w * 0.5, titleY + titleSize * 0.62);
+        g.setFill(Color.hsb(hue, 0.62, 0.92, 0.62));
+        g.fillText(result, w * 0.5, titleY + titleSize * 0.60);
 
         g.setGlobalAlpha(1.0);
         g.setTextAlign(TextAlignment.LEFT);
     }
 
-    /** Recreates both 36-path SVG layers from the supplied Framer Motion component. */
-    private void drawSettlementPaths(GraphicsContext g, double w, double h,
-                                     double elapsed, int position) {
-        double scale = w / 696.0;
-        double offsetY = (h - 316.0 * scale) * 0.5;
+    /**
+     * Recreates the browser's final CSS composition: a moving blurred field sampled
+     * through the 8px circular mask. Rendering the mask directly is both closer to
+     * the original and cheaper than drawing thousands of translucent shapes.
+     */
+    private void drawCssRainBackground(GraphicsContext g, double w, double h, double elapsed) {
+        int imageW = Math.max(1, (int) Math.ceil(w * 0.5));
+        int imageH = Math.max(1, (int) Math.ceil(h * 0.5));
+        if (cssRainImage == null || imageW != cssRainImageWidth || imageH != cssRainImageHeight) {
+            cssRainImageWidth = imageW;
+            cssRainImageHeight = imageH;
+            cssRainImage = new WritableImage(imageW, imageH);
+            cssRainPixels = new int[imageW * imageH];
+            cssRainLastFrameNanos = 0;
+        }
+
+        long now = System.nanoTime();
+        if (cssRainLastFrameNanos == 0 || now - cssRainLastFrameNanos >= 33_000_000L) {
+            updateCssRainPixels(elapsed);
+            PixelWriter writer = cssRainImage.getPixelWriter();
+            writer.setPixels(0, 0, imageW, imageH,
+                    PixelFormat.getIntArgbPreInstance(), cssRainPixels, 0, imageW);
+            cssRainLastFrameNanos = now;
+        }
 
         g.save();
-        for (int i = 0; i < 36; i++) {
-            double drift = i * 5.0 * position;
-            double x0 = -(380.0 - drift);
-            double y0 = -(189.0 + i * 6.0);
-            double x2 = -(312.0 - drift);
-            double y2 = 216.0 - i * 6.0;
-            double x3 = 152.0 - drift;
-            double y3 = 343.0 - i * 6.0;
-            double x4 = 616.0 - drift;
-            double y4 = 470.0 - i * 6.0;
-            double x5 = 684.0 - drift;
-            double y5 = 875.0 - i * 6.0;
+        g.setGlobalAlpha(clampDifficulty(elapsed / 0.8, 0, 1));
+        g.setImageSmoothing(true);
+        g.drawImage(cssRainImage, 0, 0, w, h);
+        g.restore();
+    }
 
-            double duration = 20.0 + ((i * 17 + (position > 0 ? 7 : 19)) % 101) / 10.0;
-            double phase = (elapsed / duration + i * 0.037) % 1.0;
-            double pulse = 0.30 + 0.30 * (0.5 + 0.5 * Math.sin(phase * Math.PI * 2.0));
-            double opacity = Math.min(0.48, (0.10 + i * 0.03) * pulse);
+    private void updateCssRainPixels(double elapsed) {
+        int[] periods = {235, 252, 150, 253, 204, 134, 179, 299, 215, 281, 158, 210};
+        double[] startY = {220, 24, 16, 224, 19, 120, 31, 235, 121, 224, 26, 75};
+        double[] speeds = {
+                43.8667, 90.72, 36.0, 113.0067, 34.0, 55.3867,
+                65.6333, 87.7067, 97.4667, 123.64, 33.7067, 42.0
+        };
+        Arrays.fill(cssRainPixels, 0xff090909);
+        double hue = (204 + elapsed * 36.0) % 360.0;
+        Color signal = Color.hsb(hue, 0.98, 1.0);
+        double signalR = signal.getRed() * 255.0;
+        double signalG = signal.getGreen() * 255.0;
+        double signalB = signal.getBlue() * 255.0;
 
-            g.beginPath();
-            g.moveTo(x0 * scale, offsetY + y0 * scale);
-            g.bezierCurveTo(x0 * scale, offsetY + y0 * scale,
-                    x2 * scale, offsetY + y2 * scale,
-                    x3 * scale, offsetY + y3 * scale);
-            g.bezierCurveTo(x4 * scale, offsetY + y4 * scale,
-                    x5 * scale, offsetY + y5 * scale,
-                    x5 * scale, offsetY + y5 * scale);
-            g.setStroke(Color.rgb(255, 255, 255, opacity));
-            g.setLineWidth(Math.max(0.65, (0.5 + i * 0.03) * scale * 0.72));
-            g.setLineDashes((145.0 + i * 4.2) * scale, (82.0 + i * 1.5) * scale);
-            g.setLineDashOffset((position > 0 ? -1 : 1)
-                    * phase * (240.0 + i * 4.0) * scale);
-            g.stroke();
+        // One cached pixel becomes a softly sampled 2-3px dot on an 8px grid.
+        for (int py = 1; py < cssRainImageHeight - 1; py += 4) {
+            double screenY = py * 2.0;
+            for (int px = 1; px < cssRainImageWidth - 1; px += 4) {
+                double screenX = px * 2.0;
+                double energy = 0.0;
+                for (int lane = 0; lane < periods.length; lane++) {
+                    double period = periods[lane];
+                    double shiftY = startY[lane] + elapsed * speeds[lane];
+
+                    // The two 4x100 gradients are 3px apart. blur(1em) expands
+                    // their effective horizontal footprint to roughly 18px.
+                    double dx = periodicDistance(screenX - (lane * 25.0 + 1.5), 300.0);
+                    double dy = periodicDistance(screenY - shiftY, period);
+                    double radial = Math.sqrt((dx * dx) / (18.0 * 18.0)
+                            + (dy * dy) / (116.0 * 116.0));
+                    if (radial < 1.0) {
+                        energy += Math.pow(1.0 - radial, 1.30) * 0.44;
+                    }
+
+                    // The third 1.5px radial layer sits halfway across/down each tile.
+                    double nodeDx = periodicDistance(screenX - (lane * 25.0 + 151.5), 300.0);
+                    double nodeDy = periodicDistance(screenY - (shiftY + period * 0.5), period);
+                    double nodeDistance = Math.sqrt(nodeDx * nodeDx + nodeDy * nodeDy);
+                    if (nodeDistance < 18.0) {
+                        energy += (1.0 - nodeDistance / 18.0) * 0.34;
+                    }
+                }
+
+                // Match the browser mask: fewer visible dots, but stronger bright regions.
+                double level = Math.min(0.90, (1.0 - Math.exp(-energy * 2.50)) * 0.98);
+                if (level < 0.10) continue;
+                int red = (int) clampDifficulty(9 + signalR * level, 0, 255);
+                int green = (int) clampDifficulty(9 + signalG * level, 0, 255);
+                int blue = (int) clampDifficulty(9 + signalB * level, 0, 255);
+                int color = 0xff000000 | (red << 16) | (green << 8) | blue;
+                int row = py * cssRainImageWidth;
+                cssRainPixels[row + px] = color;
+            }
         }
-        g.setLineDashes();
-        g.setLineDashOffset(0);
+    }
+
+    private static double periodicDistance(double value, double period) {
+        double wrapped = value % period;
+        if (wrapped < 0) wrapped += period;
+        return Math.min(wrapped, period - wrapped);
+    }
+
+    /** Generates a text mask once per resolution, then turns its sampled pixels into particles. */
+    private void ensureSettlementParticles(double w, double h, double fontSize, double baselineY) {
+        if (!settlementParticles.isEmpty()
+                && Math.abs(settlementParticleWidth - w) < 1
+                && Math.abs(settlementParticleHeight - h) < 1) {
+            return;
+        }
+
+        settlementParticles.clear();
+        settlementParticleWidth = w;
+        settlementParticleHeight = h;
+        int imageW = Math.max(1, (int) Math.ceil(w));
+        int imageH = Math.max(1, (int) Math.ceil(h));
+        Canvas maskCanvas = new Canvas(imageW, imageH);
+        GraphicsContext mask = maskCanvas.getGraphicsContext2D();
+        mask.setTextAlign(TextAlignment.CENTER);
+        mask.setFont(Font.font("Segoe UI", FontWeight.BOLD, fontSize));
+        mask.setFill(Color.WHITE);
+        mask.fillText("GAME OVER", w * 0.5, baselineY);
+
+        WritableImage image = new WritableImage(imageW, imageH);
+        SnapshotParameters snapshotParameters = new SnapshotParameters();
+        snapshotParameters.setFill(Color.TRANSPARENT);
+        maskCanvas.snapshot(snapshotParameters, image);
+        PixelReader pixels = image.getPixelReader();
+        Random random = new Random(0x47414D454F564552L ^ imageW * 31L ^ imageH);
+        int step = (int) clampDifficulty(w / 230.0, 5, 8);
+        int minY = Math.max(0, (int) (baselineY - fontSize * 1.05));
+        int maxY = Math.min(imageH - 1, (int) (baselineY + fontSize * 0.10));
+        for (int y = minY; y <= maxY; y += step) {
+            double row = (y - minY) / Math.max(1.0, maxY - minY);
+            for (int x = step; x < imageW - step; x += step) {
+                if (((pixels.getArgb(x, y) >>> 24) & 0xff) < 72) continue;
+                SettlementParticle particle = new SettlementParticle();
+                particle.targetX = x + (random.nextDouble() - 0.5) * 1.8;
+                particle.targetY = y + (random.nextDouble() - 0.5) * 1.8;
+                boolean fallsFromTop = random.nextDouble() < 0.32;
+                if (fallsFromTop) {
+                    particle.startX = particle.targetX + (random.nextDouble() - 0.5) * w * 0.18;
+                    particle.startY = -20.0 - random.nextDouble() * h * 0.55;
+                    particle.delay = row * 0.72 + random.nextDouble() * 0.16;
+                    particle.duration = 1.05 + row * 1.10 + random.nextDouble() * 0.62;
+                } else {
+                    particle.startX = particle.targetX + (random.nextDouble() - 0.5) * 22.0;
+                    particle.startY = particle.targetY - 18.0 - random.nextDouble() * 34.0;
+                    particle.delay = row * 0.30 + random.nextDouble() * 0.24;
+                    particle.duration = 0.48 + random.nextDouble() * 0.42;
+                }
+                particle.size = 1.15 + random.nextDouble() * 1.65;
+                particle.phase = random.nextDouble() * Math.PI * 2.0;
+                particle.hueOffset = (random.nextDouble() - 0.5) * 22.0;
+                settlementParticles.add(particle);
+            }
+        }
+    }
+
+    private void drawSettlementTextParticles(GraphicsContext g, double elapsed, double h, double hue) {
+        double scanTop = h * 0.34;
+        double scanRange = h * 0.30;
+        double scanY = scanTop + ((elapsed * 0.20) % 1.0) * scanRange;
+        g.save();
+        for (SettlementParticle particle : settlementParticles) {
+            double progress = (elapsed - particle.delay) / particle.duration;
+            if (progress <= 0) continue;
+
+            double x;
+            double y;
+            double alpha;
+            double glow;
+            if (progress < 1.0) {
+                double eased = 1.0 - Math.pow(1.0 - progress, 3.0);
+                x = particle.startX + (particle.targetX - particle.startX) * eased
+                        + Math.sin(elapsed * 6.0 + particle.phase) * (1.0 - eased) * 10.0;
+                y = particle.startY + (particle.targetY - particle.startY) * eased;
+                alpha = 0.22 + eased * 0.72;
+                glow = 1.0 - eased;
+            } else {
+                double scan = Math.exp(-Math.abs(particle.targetY - scanY) / 18.0);
+                x = particle.targetX + Math.sin(elapsed * 1.7 + particle.phase) * 0.42;
+                y = particle.targetY + Math.cos(elapsed * 1.3 + particle.phase) * 0.34;
+                alpha = 0.46 + scan * 0.54;
+                glow = scan;
+            }
+
+            double particleHue = (hue + particle.hueOffset + 360.0) % 360.0;
+            if (glow > 0.12) {
+                double halo = particle.size * (2.8 + glow * 2.2);
+                g.setFill(Color.hsb(particleHue, 0.92, 1.0, 0.055 + glow * 0.10));
+                g.fillOval(x - halo * 0.5, y - halo * 0.5, halo, halo);
+            }
+            g.setFill(Color.hsb(particleHue, 0.76, 1.0, alpha));
+            g.fillOval(x - particle.size * 0.5, y - particle.size * 0.5,
+                    particle.size, particle.size);
+        }
         g.restore();
     }
 
@@ -906,5 +1060,17 @@ public class GameRenderer {
                 90, -360 * progress, javafx.scene.shape.ArcType.OPEN);
         gc.setFill(Color.web("#deff9a"));
         gc.fillOval(cx - 3, cy - 3, 6, 6);
+    }
+
+    private static final class SettlementParticle {
+        double targetX;
+        double targetY;
+        double startX;
+        double startY;
+        double delay;
+        double duration;
+        double size;
+        double phase;
+        double hueOffset;
     }
 }
