@@ -615,15 +615,15 @@ public final class SideScrollingShooter implements GameInterface {
                     }
                     gc.setEffect(rimLight);
 
-                    // 开启 SCREEN 过滤黑底
+                    // 开启 SCREEN 过滤黑底，同时利用负宽/高来水平翻转图像
                     gc.setGlobalBlendMode(BlendMode.SCREEN);
-                    gc.drawImage(bossImage, -w / 2, -h / 2, w, h);
+                    gc.drawImage(bossImage, w / 2, -h / 2, -w, h);
 
                     // 2. 能量脉冲呼吸灯 (ADD 叠加)
                     double pulseAlpha = 0.15 + Math.sin(frame * 0.1) * 0.15;
                     gc.setGlobalAlpha(pulseAlpha);
                     gc.setGlobalBlendMode(BlendMode.ADD);
-                    gc.drawImage(bossImage, -w / 2, -h / 2, w, h);
+                    gc.drawImage(bossImage, w / 2, -h / 2, -w, h);
                     gc.setGlobalAlpha(1.0);
 
                     // 3. 核心环境点光源
@@ -724,13 +724,13 @@ public final class SideScrollingShooter implements GameInterface {
                     gc.setEffect(rimLight);
 
                     gc.setGlobalBlendMode(BlendMode.SCREEN);
-                    gc.drawImage(minionImage, -w / 2, -h / 2, w, h);
+                    gc.drawImage(minionImage, w / 2, -h / 2, -w, h);
 
                     // 2. 能量脉冲
                     double pulseAlpha = 0.2 + Math.sin(frame * 0.2) * 0.2;
                     gc.setGlobalAlpha(pulseAlpha);
                     gc.setGlobalBlendMode(BlendMode.ADD);
-                    gc.drawImage(minionImage, -w / 2, -h / 2, w, h);
+                    gc.drawImage(minionImage, w / 2, -h / 2, -w, h);
                     gc.setGlobalAlpha(1.0);
 
                     // 恢复
