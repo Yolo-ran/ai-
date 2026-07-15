@@ -104,12 +104,17 @@ public final class SideScrollingShooter implements GameInterface {
         over = false;
         cleared = false;
         nextLevelFuture = null;
+        hasShield = false;
+        multiShotTimer = 0;
+        speedBoostTimer = 0;
+        powerUpSpawnDelay = 480;
         playerBullets.clear();
         enemyBullets.clear();
         enemies.clear();
         flashes.clear();
         particles.clear();
         nebulas.clear();
+        powerUps.clear();
         createBackgroundElements();
 
         // 尝试加载玩家战机贴图
@@ -278,7 +283,7 @@ public final class SideScrollingShooter implements GameInterface {
 
     private void spawnBoss() {
         bossSpawned = true;
-        Enemy boss = new Enemy(width + 120, height * 0.5, 1.35, level.bossHp(), true, true);
+        Enemy boss = new Enemy(width + 120, height * 0.5, 0.6, level.bossHp(), true, true);
         boss.maxHp = level.bossHp();
         boss.fireCooldown = 25;
         enemies.add(boss);
@@ -878,28 +883,33 @@ public final class SideScrollingShooter implements GameInterface {
     private void renderPowerUps(GraphicsContext gc) {
         for (PowerUp p : powerUps) {
             double px = p.x, py = p.y;
-            // 外发光
-            gc.setFill(Color.rgb(255, 255, 255, 0.15));
-            gc.fillOval(px - 18, py - 18, 36, 36);
-            // 主体
+            double pulse = 1.0 + 0.15 * Math.sin(frame * 0.12 + p.type);
+            double r = 16 * pulse;
+            // 外发光脉冲
+            gc.setFill(Color.rgb(255, 255, 255, 0.08 * pulse));
+            gc.fillOval(px - r - 8, py - r - 8, (r + 8) * 2, (r + 8) * 2);
+            // 主体大圆
             Color c = switch (p.type) {
-                case 0 -> Color.CYAN;     // 护盾
-                case 1 -> Color.GOLD;     // 多弹道
-                case 2 -> Color.LIME;     // 回血
-                default -> Color.ORANGE;  // 射速
+                case 0 -> Color.CYAN;
+                case 1 -> Color.GOLD;
+                case 2 -> Color.LIME;
+                default -> Color.ORANGE;
             };
-            gc.setFill(c);
-            gc.fillOval(px - 10, py - 10, 20, 20);
-            gc.setStroke(Color.WHITE);
-            gc.setLineWidth(1.5);
-            gc.strokeOval(px - 10, py - 10, 20, 20);
-            // 图标
-            gc.setFill(Color.BLACK);
-            gc.setFont(Font.font(12));
+            gc.setFill(c.deriveColor(0, 1, 1, 0.85));
+            gc.fillOval(px - r, py - r, r * 2, r * 2);
+            // 描边
+            gc.setStroke(Color.WHITE.deriveColor(0, 1, 1, 0.9));
+            gc.setLineWidth(2.5);
+            gc.strokeOval(px - r, py - r, r * 2, r * 2);
+            // 图标（大号emoji）
+            gc.setFont(Font.font("Segoe UI Emoji", 20));
             String icon = switch (p.type) {
-                case 0 -> "S"; case 1 -> "M"; case 2 -> "+"; default -> "⚡";
+                case 0 -> "🛡";  // 🛡️
+                case 1 -> "🔫";  // 🔫
+                case 2 -> "❤";         // ❤
+                default -> "⚡";        // ⚡
             };
-            gc.fillText(icon, px - 4, py + 4);
+            gc.fillText(icon, px - 12, py + 8);
         }
     }
 
