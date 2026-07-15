@@ -337,10 +337,10 @@ public final class SideScrollingShooter implements GameInterface {
             Bullet bullet = playerIterator.next();
             Enemy hit = null;
             for (Enemy enemy : enemies) {
-                double radius = enemy.boss ? 62 : 26;
-                if (distanceSquared(bullet.x, bullet.y, enemy.x, enemy.y) < radius * radius) {
-                    hit = enemy;
-                    break;
+                double radius = enemy.boss ? 140 : 26;
+            if (distanceSquared(bullet.x, bullet.y, enemy.x, enemy.y) < radius * radius) {
+                hit = enemy;
+                break;
                 }
             }
             if (hit != null) {
@@ -372,7 +372,7 @@ public final class SideScrollingShooter implements GameInterface {
         }
 
         for (Enemy enemy : enemies) {
-            double radius = enemy.boss ? 68 : 30;
+            double radius = enemy.boss ? 150 : 30;
             if (distanceSquared(enemy.x, enemy.y, playerX, playerY) < (radius + 22) * (radius + 22)) {
                 int dmg = enemy.boss ? 2 : 1;
                 if (hasShield) { hasShield = false; damageTaken += (dmg - 1); }
@@ -598,7 +598,7 @@ public final class SideScrollingShooter implements GameInterface {
 
             if (enemy.boss) {
                 if (bossImage != null) {
-                    double w = 380; // BOSS尺寸
+                    double w = 600; // 放大 BOSS尺寸，增加压迫感
                     double h = bossImage.getHeight() * (w / bossImage.getWidth());
 
                     // 1. 动态边缘光 (Rim Light) 照亮星云
@@ -640,12 +640,14 @@ public final class SideScrollingShooter implements GameInterface {
 
                     // 4. 动态炮塔指示 (虽然有了整图，但在顶部叠加一个旋转的光束瞄准线增加压迫感)
                     gc.save();
-                    double aimAngle = Math.toDegrees(Math.atan2(playerY - enemy.y, playerX - enemy.x)) - Math.sin(enemy.phase) * 5;
+                    // 将瞄准激光的发射点向前（向左）偏移，使其从炮口位置发出，而不是从BOSS中心
+                    gc.translate(-150, 0); 
+                    double aimAngle = Math.toDegrees(Math.atan2(playerY - enemy.y, playerX - (enemy.x - 150))) - Math.sin(enemy.phase) * 5;
                     gc.rotate(aimAngle);
                     gc.setGlobalBlendMode(BlendMode.ADD);
                     gc.setFill(new LinearGradient(0, 0, 1, 0, true, CycleMethod.NO_CYCLE,
-                            new Stop(0, Color.rgb(0, 255, 102, 0.4)), new Stop(1, Color.TRANSPARENT)));
-                    gc.fillRect(0, -2, 300, 4); // 极长的微弱瞄准激光
+                            new Stop(0, Color.rgb(0, 255, 102, 0.6)), new Stop(1, Color.TRANSPARENT)));
+                    gc.fillRect(0, -3, 500, 6); // 加粗加长瞄准激光
                     gc.restore();
 
                     // BOSS血条
