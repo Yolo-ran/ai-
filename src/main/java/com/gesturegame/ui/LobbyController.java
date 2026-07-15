@@ -9,6 +9,7 @@ import com.gesturegame.game.FruitNinja;
 import com.gesturegame.game.PopBubbles;
 import com.gesturegame.game.RPSGame;
 import com.gesturegame.game.RhythmMaster;
+import com.gesturegame.game.SideScrollingShooter;
 import com.gesturegame.game.TarotGame;
 import com.gesturegame.network.GestureCommand;
 import com.gesturegame.network.GestureCommandResolver;
@@ -35,7 +36,7 @@ import java.util.function.Supplier;
 import java.util.logging.Logger;
 
 /**
- * 星河大厅控制器：单团 3D 粒子云在 6 种游戏形态间形变（仿 GEM 粒子幻境）。
+ * 星河大厅控制器：单团 3D 粒子云在多种游戏形态间形变（仿 GEM 粒子幻境）。
  *
  * <p>渲染要点：
  * <ul>
@@ -59,7 +60,8 @@ public class LobbyController {
             PopBubbles::new,
             TarotGame::new,
             FruitNinja::new,
-            RhythmMaster::new);
+            RhythmMaster::new,
+            SideScrollingShooter::new);
     private static final int MAX_GAMES = GAME_REGISTRY.size();
 
     private record GameInfo(String name, String desc, String icon, String color, String shape) {}
@@ -69,7 +71,8 @@ public class LobbyController {
             new GameInfo("戳泡泡", "手势瞄准戳破泡泡连击", "🫧", "#84cc16", "lotus"),
             new GameInfo("塔罗牌", "选牌翻牌探索命运", "🔮", "#f59e0b", "heart"),
             new GameInfo("切水果", "手滑动切水果躲炸弹", "🔪", "#f97316", "saturn"),
-            new GameInfo("节奏大师", "按时摆出正确手势", "🥁", "#a78bfa", "star"));
+            new GameInfo("节奏大师", "按时摆出正确手势", "🥁", "#a78bfa", "star"),
+            new GameInfo("星际突击", "AI 动态生成横版射击关卡", "🚀", "#38bdf8", "galaxy"));
 
     private static final int PARTICLE_COUNT = 3000;
     private static final int SPRITE_SIZE = 64;
