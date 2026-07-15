@@ -273,9 +273,11 @@ public final class SideScrollingShooter implements GameInterface {
             enemy.y += Math.sin(enemy.phase) * (enemy.boss ? 1.2 : 0.75);
             enemy.y = clamp(enemy.y, 65, height - 65);
             
-            // 敌机尾迹 (毒绿)
+            if (enemy.hitFlashFrames > 0) enemy.hitFlashFrames--; // 递减闪白计时
+            
+            // 敌方侦察机尾迹 (电光粉，还原概念图设计)
             if (frame % 2 == 0 && !enemy.boss) {
-                particles.add(new Particle(enemy.x + 20, enemy.y, 2, 0, 10, 4, Color.web("#00FF66"), Color.web("#00FF66")));
+                particles.add(new Particle(enemy.x + 20, enemy.y, 2 + RANDOM.nextDouble()*2, RANDOM.nextDouble()*2-1, 10, 5, Color.web("#FF007F"), Color.web("#FF007F")));
             }
 
             if (enemy.shooter && enemy.x < width - 40) {
@@ -309,6 +311,7 @@ public final class SideScrollingShooter implements GameInterface {
                 playerIterator.remove();
                 shotsHit++;
                 hit.hp--;
+                hit.hitFlashFrames = 3; // 触发 3 帧 (约 0.05 秒) 受击闪白特效
                 flashes.add(new Flash(hit.x, hit.y, Color.web("#FF007F"))); // 击中特效霓虹品红
                 if (hit.hp <= 0) {
                     score += hit.boss ? 1800 : 100;
@@ -552,16 +555,35 @@ public final class SideScrollingShooter implements GameInterface {
             gc.translate(enemy.x, enemy.y);
             gc.rotate(Math.sin(enemy.phase) * 5);
 
+            boolean flash = enemy.hitFlashFrames > 0;
+
             if (enemy.boss) {
-                // 科幻机械 BOSS
-                gc.setFill(Color.web("#09090B")); // 纯黑装甲
-                gc.fillOval(-70, -70, 140, 140);
-                gc.setFill(new LinearGradient(0, 0, 0, 1, true, CycleMethod.NO_CYCLE, 
+                // 科幻机械 BOSS (半生物半机械分块渲染设计)
+                
+                // 1. 动力翼
+                gc.setFill(flash ? Color.WHITE : new LinearGradient(0, 0, 0, 1, true, CycleMethod.NO_CYCLE, 
                     new Stop(0, Color.web("#27272A")), new Stop(1, Color.web("#18181B"))));
                 gc.fillPolygon(new double[]{-40, -60, -40, 20}, new double[]{-50, 0, 50, 0}, 4);
                 
-                // 毒绿核心
-                gc.setFill(Color.web("#00FF66"));
+                // 2. 主装甲躯干
+                gc.setFill(flash ? Color.WHITE : Color.web("#09090B")); // 纯黑装甲
+                gc.fillOval(-70, -70, 140, 140);
+                
+                // 3. 动态旋转主炮塔 (始终瞄准玩家)
+                gc.save();
+                // 抵消外层机身悬浮旋转的影响，计算真实的相对瞄准角度
+                double aimAngle = Math.toDegrees(Math.atan2(playerY - enemy.y, playerX - enemy.x)) - Math.sin(enemy.phase) * 5;
+                gc.rotate(aimAngle);
+                gc.setFill(flash ? Color.WHITE : Color.web("#3F3F46"));
+                gc.fillRect(0, -12, 80, 24); // 巨型炮管
+                gc.setFill(flash ? Color.WHITE : Color.web("#00FF66"));
+                gc.fillOval(-20, -20, 40, 40); // 炮塔基座发光能量环
+                gc.restore();
+
+                // 4. 动力核心 (受损严重时闪烁红色警报)
+                boolean lowHp = enemy.hp < enemy.maxHp * 0.3;
+                Color coreColor = lowHp && (frame % 10 < 5) ? Color.web("#FF0055") : Color.web("#00FF66");
+                gc.setFill(flash ? Color.WHITE : coreColor);
                 gc.fillOval(-15, -15, 30, 30);
                 
                 // BOSS血条
@@ -572,12 +594,13 @@ public final class SideScrollingShooter implements GameInterface {
                     new Stop(0, Color.web("#00FF66")), new Stop(1, Color.web("#10B981"))));
                 gc.fillRoundRect(-60, -90, 120 * ratio, 8, 4, 4);
             } else {
-                // 小型机械侦察机
-                gc.setFill(new LinearGradient(0, 0, 0, 1, true, CycleMethod.NO_CYCLE, 
+                // 小型侦察机小兵
+                gc.setFill(flash ? Color.WHITE : new LinearGradient(0, 0, 0, 1, true, CycleMethod.NO_CYCLE, 
                     new Stop(0, Color.web("#3F3F46")), new Stop(1, Color.web("#18181B"))));
                 gc.fillPolygon(new double[]{15, -15, -15}, new double[]{0, -15, 15}, 3);
-                // 引擎发光
-                gc.setFill(Color.web("#00FF66"));
+                
+                // 能量核心发光 (电光粉，还原概念图设计)
+                gc.setFill(flash ? Color.WHITE : Color.web("#FF007F"));
                 gc.fillOval(-10, -4, 8, 8);
             }
             gc.restore();
@@ -796,10 +819,12 @@ public final class SideScrollingShooter implements GameInterface {
     private static final class Enemy {
         double x, y, speed, phase;
         int hp, maxHp, fireCooldown;
+        int hitFlashFrames; // 新增：受击闪白计时器
         final boolean shooter, boss;
         Enemy(double x, double y, double speed, int hp, boolean shooter, boolean boss) {
             this.x = x; this.y = y; this.speed = speed; this.hp = hp; this.maxHp = hp;
             this.shooter = shooter; this.boss = boss;
+            this.hitFlashFrames = 0;
         }
     }
 
