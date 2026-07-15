@@ -392,10 +392,10 @@ public final class SideScrollingShooter implements GameInterface {
 
         if (playerImage != null) {
             // 使用贴图渲染
-            double w = 180; // 设定战机渲染宽度，稍微放大以匹配原图比例
+            double w = 220; // 进一步放大战机比例，让细节更清晰
             double h = playerImage.getHeight() * (w / playerImage.getWidth());
-            // 稍微向左偏移，让机身中心对准碰撞箱中心
-            gc.drawImage(playerImage, -w * 0.45, -h / 2, w, h);
+            // 向左偏移更多，补偿黑底图片中飞船偏左的情况，让机身中心对准碰撞箱中心
+            gc.drawImage(playerImage, -w * 0.4, -h / 2, w, h);
         } else {
             // 霓虹品红能量护盾
             gc.setGlobalBlendMode(BlendMode.ADD);
