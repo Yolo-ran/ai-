@@ -1,7 +1,9 @@
 package com.gesturegame.game;
 
+import com.gesturegame.ai.OpponentAI;
 import com.gesturegame.audio.SystemSpeech;
 import com.gesturegame.common.Difficulty;
+import javafx.application.Platform;
 import com.gesturegame.common.GameInterface;
 import com.gesturegame.common.GestureData;
 import com.gesturegame.common.GestureType;
@@ -69,7 +71,8 @@ public class RPSGame implements GameInterface {
     private int totalRounds;
     private int cpuSmartLevel;
     private int[] playerGestureHistory = new int[3];
-    private int initialCountdown; // 记录本轮倒计时初始值
+    private int initialCountdown;
+    private String opponentLine;  // AI 对手本局台词
     private final RpsCsvStatsStore statsStore = new RpsCsvStatsStore();
     private Summary historySummary = Summary.empty();
     private boolean matchSaveAttempted;
@@ -328,6 +331,13 @@ public class RPSGame implements GameInterface {
             gc.setFont(javafx.scene.text.Font.font(16));
             gc.fillText("比分 " + playerScore + " : " + computerScore,
                     canvasWidth / 2.0 - 35, canvasHeight / 2.0 + 10);
+            // AI 对手台词
+            if (opponentLine != null && !opponentLine.isEmpty()) {
+                gc.setFill(Color.web("#fbbf24"));
+                gc.setFont(javafx.scene.text.Font.font(14));
+                gc.fillText("\"" + opponentLine + "\"",
+                        canvasWidth / 2.0 - 120, canvasHeight / 2.0 + 40);
+            }
         }
 
         if (over) {
@@ -436,6 +446,21 @@ public class RPSGame implements GameInterface {
         roundJudged = true;
         resultFrames = 120;
         SystemSpeech.speak("本回合" + result + "。比分 " + playerScore + " 比 " + computerScore);
+        // AI 对手台词（本地秒回 + LLM异步覆盖）
+        OpponentAI.getLine(result, gestureToName(playerGesture),
+                computerChoiceName(computerChoice), playerScore, computerScore,
+                line -> Platform.runLater(() -> { this.opponentLine = line; }));
+    }
+
+    private static String gestureToName(GestureType g) {
+        if (g == GestureType.FIST) return "石头";
+        if (g == GestureType.PEACE) return "剪刀";
+        if (g == GestureType.OPEN) return "布";
+        return "未知";
+    }
+
+    private static String computerChoiceName(int c) {
+        return c == 0 ? "石头" : c == 1 ? "剪刀" : "布";
     }
 
     private void announceFinalResult() {
