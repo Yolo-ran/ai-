@@ -438,9 +438,36 @@ public final class SideScrollingShooter implements GameInterface {
             // 开启 SCREEN (屏幕) 混合模式，强行过滤掉图片中的纯黑色背景
             gc.setGlobalBlendMode(BlendMode.SCREEN);
             
-            // 向左偏移更多，补偿黑底图片中飞船偏左的情况，让机身中心对准碰撞箱中心
-            // 偏移量同步根据新宽度 w 调整
+            // 1. 基础贴图渲染
             gc.drawImage(playerImage, -w * 0.45, -h / 2, w, h);
+
+            // 2. 动态光感：全机身能量脉冲 (Energy Pulse)
+            // 再次叠加同一张贴图，使用 ADD 模式，透明度随时间正弦波动，使机身的亮部（如驾驶舱、金属反光）产生“呼吸灯”般的能量涌动感
+            double pulseAlpha = 0.15 + Math.sin(frame * 0.1) * 0.15; // 在 0.0 ~ 0.3 之间呼吸波动
+            gc.setGlobalAlpha(pulseAlpha);
+            gc.setGlobalBlendMode(BlendMode.ADD); 
+            gc.drawImage(playerImage, -w * 0.45, -h / 2, w, h);
+            gc.setGlobalAlpha(1.0); // 恢复透明度
+
+            // 3. 动态光感：尾部引擎反照光 (Engine Backlight)
+            // 模拟极高亮度的尾焰照亮了战机尾部金属的效果，光晕大小会随机闪烁
+            double engineGlowRadius = 50 + RANDOM.nextDouble() * 15;
+            gc.setFill(new RadialGradient(
+                    0, 0, -w * 0.25, 0, engineGlowRadius, false, CycleMethod.NO_CYCLE,
+                    new Stop(0, Color.rgb(0, 255, 255, 0.6)), // 亮青色环境反光
+                    new Stop(1, Color.TRANSPARENT)
+            ));
+            gc.fillOval(-w * 0.25 - engineGlowRadius, -engineGlowRadius, engineGlowRadius * 2, engineGlowRadius * 2);
+
+            // 4. 物理反馈：机动光学残影 (Velocity Ghosting)
+            // 当手势控制战机高速上下移动时，由于“视觉残留”，在反方向拖拽出科幻的光学残影
+            double vy = playerY - lastPlayerY;
+            if (Math.abs(vy) > 1.5) {
+                gc.setGlobalAlpha(0.25);
+                gc.setGlobalBlendMode(BlendMode.SCREEN);
+                gc.drawImage(playerImage, -w * 0.45, -h / 2 - vy * 2.0, w, h);
+                gc.setGlobalAlpha(1.0);
+            }
             
             // 恢复正常的混合模式，以免影响后续渲染（如子弹、UI等）
             gc.setGlobalBlendMode(BlendMode.SRC_OVER);
