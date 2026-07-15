@@ -158,8 +158,8 @@ public final class SideScrollingShooter implements GameInterface {
     private void updateParticles() {
         // 1. 动态粒子尾焰 (Dynamic Particle Trail)
         double playerVy = playerY - lastPlayerY;
-        // 计算排气口位置 (根据战机缩放比例 w=220 估算尾部坐标)
-        double exhaustX = playerX - 85; 
+        // 计算排气口位置 (根据战机放大到 w=280 重新估算尾部坐标)
+        double exhaustX = playerX - 110; 
         double exhaustY = playerY;
         
         for (int i = 0; i < 6; i++) { // 每帧生成6个微小粒子
@@ -410,7 +410,7 @@ public final class SideScrollingShooter implements GameInterface {
 
         if (playerImage != null) {
             // 使用贴图渲染
-            double w = 220; // 进一步放大战机比例，让细节更清晰
+            double w = 280; // 进一步放大战机比例 (从220放大到280)
             double h = playerImage.getHeight() * (w / playerImage.getWidth());
             
             // 3. 动态边缘光 (Ambient Rim Light)
@@ -425,7 +425,8 @@ public final class SideScrollingShooter implements GameInterface {
             gc.setGlobalBlendMode(BlendMode.SCREEN);
             
             // 向左偏移更多，补偿黑底图片中飞船偏左的情况，让机身中心对准碰撞箱中心
-            gc.drawImage(playerImage, -w * 0.4, -h / 2, w, h);
+            // 偏移量同步根据新宽度 w 调整
+            gc.drawImage(playerImage, -w * 0.45, -h / 2, w, h);
             
             // 恢复正常的混合模式，以免影响后续渲染（如子弹、UI等）
             gc.setGlobalBlendMode(BlendMode.SRC_OVER);
