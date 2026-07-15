@@ -449,7 +449,10 @@ public class RPSGame implements GameInterface {
         // AI 对手台词（本地秒回 + LLM异步覆盖）
         OpponentAI.getLine(result, gestureToName(playerGesture),
                 computerChoiceName(computerChoice), playerScore, computerScore,
-                line -> Platform.runLater(() -> { this.opponentLine = line; }));
+                line -> Platform.runLater(() -> {
+                    this.opponentLine = line;
+                    SystemSpeech.speak(line); // 语音念出台词
+                }));
     }
 
     private static String gestureToName(GestureType g) {

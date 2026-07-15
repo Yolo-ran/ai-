@@ -38,31 +38,27 @@ public final class SystemSpeech {
     }
 
     private static void speakOnWindows(String text) {
-        String payload = Base64.getEncoder().encodeToString(text.getBytes(StandardCharsets.UTF_8));
-        String command = "$text=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($args[0]));"
-                + "$voice=New-Object -ComObject SAPI.SpVoice;"
-                + "[void]$voice.Speak($text)";
         try {
-            Process process = new ProcessBuilder(
-                    "powershell",
-                    "-NoProfile",
-                    "-NonInteractive",
-                    "-ExecutionPolicy",
-                    "Bypass",
-                    "-Command",
-                    command,
-                    payload)
+            java.nio.file.Path vbs = java.nio.file.Files.createTempFile("speech_", ".vbs");
+            String safe = text.replace("\"", "'");
+            String script = "Dim voice: Set voice = CreateObject(\"SAPI.SpVoice\")\r\n"
+                    // 优先选中文字音色，找不到就用默认
+                    + "Dim token: For Each token In voice.GetVoices\r\n"
+                    + "  If InStr(token.GetDescription, \"Chinese\") > 0 Then\r\n"
+                    + "    Set voice.Voice = token: Exit For\r\n"
+                    + "  End If\r\n"
+                    + "Next\r\n"
+                    + "voice.Rate = 1\r\n"       // 语速稍慢（默认0，范围-10~10）
+                    + "voice.Volume = 100\r\n"
+                    + "voice.Speak \"" + safe + "\"\r\n";
+            java.nio.file.Files.write(vbs, script.getBytes("GBK"));
+            new ProcessBuilder("cscript", "//Nologo", vbs.toString())
                     .redirectErrorStream(true)
-                    .start();
-            if (!process.waitFor(8, TimeUnit.SECONDS)) {
-                process.destroyForcibly();
-                LOGGER.warning("语音播报超时，已终止本次播报");
-            }
-        } catch (IOException ex) {
+                    .start()
+                    .waitFor(8, TimeUnit.SECONDS);
+            try { java.nio.file.Files.deleteIfExists(vbs); } catch (IOException ignored) {}
+        } catch (IOException | InterruptedException ex) {
             LOGGER.log(Level.FINE, "语音播报不可用", ex);
-        } catch (InterruptedException ex) {
-            Thread.currentThread().interrupt();
-            LOGGER.log(Level.FINE, "语音播报被中断", ex);
         }
     }
 }
