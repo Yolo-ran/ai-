@@ -181,18 +181,24 @@ public final class SideScrollingShooter implements GameInterface {
             particles.add(new Particle(px, py, vx, vy, 18, 22, Color.web("#00FFFF"), Color.web("#BD00FF")));
         }
         
-        // 3. 外围燃烧火花 (橙黄 -> 暗红)，速度稍慢，扩散范围大，还原贴图边缘的暖色点缀
-        for (int i = 0; i < 3; i++) {
+        // 3. 外围飞溅的火花 (Sparks)，高随机性，模拟 Unity 的 Burst 粒子
+        for (int i = 0; i < 4; i++) {
             double px = exhaustX + RANDOM.nextDouble() * 10 - 5;
             double py = exhaustY + RANDOM.nextDouble() * 30 - 15;
-            double vx = -10 - RANDOM.nextDouble() * 8; 
-            double vy = playerVy * 0.2 + RANDOM.nextDouble() * 4 - 2;
-            particles.add(new Particle(px, py, vx, vy, 22, 10, Color.web("#FFEA00"), Color.web("#FF0055")));
+            // 火花会有更强的不规则扩散和向上/向下的弹射
+            double vx = -10 - RANDOM.nextDouble() * 12; 
+            double vy = playerVy * 0.3 + RANDOM.nextDouble() * 10 - 5;
+            // size 很小，life 短，标记为火花
+            particles.add(new Particle(px, py, vx, vy, 10 + RANDOM.nextDouble() * 10, 2 + RANDOM.nextDouble() * 3, 
+                Color.web("#FFFFFF"), Color.web("#FF0055"), true));
         }
 
         particles.forEach(p -> {
             p.x += p.vx;
             p.y += p.vy;
+            // 模拟阻力 (Drag)：速度逐渐衰减
+            p.vx *= 0.95;
+            p.vy *= 0.95;
             p.life--;
             p.size *= 0.94; // 随着时间慢慢变小
         });
@@ -408,9 +414,17 @@ public final class SideScrollingShooter implements GameInterface {
             double g = p.startColor.getGreen() + (p.endColor.getGreen() - p.startColor.getGreen()) * progress;
             double b = p.startColor.getBlue() + (p.endColor.getBlue() - p.startColor.getBlue()) * progress;
             
-            gc.setFill(Color.color(r, g, b, alpha * 0.8));
-            // 将圆形拉长为椭圆，模拟高速喷射的火焰形态
-            gc.fillOval(p.x - p.size * 1.5, p.y - p.size / 2, p.size * 3.0, p.size); 
+            if (p.isSpark) {
+                // 如果是火花，画极高亮度的锐利小圆点，并带有辉光
+                gc.setFill(Color.color(r, g, b, alpha));
+                gc.fillOval(p.x - p.size, p.y - p.size, p.size * 2, p.size * 2);
+                gc.setFill(Color.WHITE);
+                gc.fillOval(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+            } else {
+                // 如果是火焰喷流，将其拉长为椭圆，透明度更柔和
+                gc.setFill(Color.color(r, g, b, alpha * 0.7));
+                gc.fillOval(p.x - p.size * 1.8, p.y - p.size / 2, p.size * 3.6, p.size); 
+            }
         }
         gc.setGlobalBlendMode(BlendMode.SRC_OVER);
     }
@@ -789,10 +803,17 @@ public final class SideScrollingShooter implements GameInterface {
     private static final class Particle {
         double x, y, vx, vy, life, maxLife, size;
         Color startColor, endColor;
+        boolean isSpark; // 标记是否为火花粒子
+        
         Particle(double x, double y, double vx, double vy, double life, double size, Color startColor, Color endColor) {
+            this(x, y, vx, vy, life, size, startColor, endColor, false);
+        }
+
+        Particle(double x, double y, double vx, double vy, double life, double size, Color startColor, Color endColor, boolean isSpark) {
             this.x = x; this.y = y; this.vx = vx; this.vy = vy; 
             this.life = life; this.maxLife = life; this.size = size; 
             this.startColor = startColor; this.endColor = endColor;
+            this.isSpark = isSpark;
         }
     }
 }
