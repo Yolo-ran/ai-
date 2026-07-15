@@ -8,6 +8,7 @@ import com.gesturegame.common.GameInterface;
 import com.gesturegame.common.GestureData;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.effect.BlendMode;
+import javafx.scene.effect.DropShadow;
 import javafx.scene.paint.Color;
 import javafx.scene.paint.LinearGradient;
 import javafx.scene.paint.RadialGradient;
@@ -155,23 +156,32 @@ public final class SideScrollingShooter implements GameInterface {
     }
 
     private void updateParticles() {
-        // 生成玩家战机尾焰粒子 (霓虹品红/荧光黄)
+        // 1. 动态粒子尾焰 (Dynamic Particle Trail)
         double playerVy = playerY - lastPlayerY;
-        for (int i = 0; i < 4; i++) {
-            double py = playerY + RANDOM.nextDouble() * 12 - 6;
-            double px = playerX - 35 + RANDOM.nextDouble() * 5;
-            double vx = -6 - RANDOM.nextDouble() * 6;
-            double vy = playerVy * 0.3 + RANDOM.nextDouble() * 2 - 1;
-            Color c = RANDOM.nextDouble() > 0.4 ? Color.web("#FF007F") : Color.web("#FFEA00");
-            if (RANDOM.nextDouble() > 0.8) c = Color.web("#FFFFFF"); // 亮白核心
-            particles.add(new Particle(px, py, vx, vy, 15 + RANDOM.nextDouble() * 15, 5 + RANDOM.nextDouble() * 7, c));
+        // 计算排气口位置 (根据战机缩放比例 w=220 估算尾部坐标)
+        double exhaustX = playerX - 85; 
+        double exhaustY = playerY;
+        
+        for (int i = 0; i < 6; i++) { // 每帧生成6个微小粒子
+            double px = exhaustX + RANDOM.nextDouble() * 10 - 5;
+            double py = exhaustY + RANDOM.nextDouble() * 14 - 7;
+            double vx = -12 - RANDOM.nextDouble() * 6; // 向左高速喷射
+            double vy = playerVy * 0.15 + RANDOM.nextDouble() * 6 - 3; // 带有轻微扩散角度 (Angle Spark)
+            
+            // 生命周期设为 0.3 秒 (约 18 帧)
+            double life = 18 + RANDOM.nextDouble() * 5;
+            double size = 8 + RANDOM.nextDouble() * 6;
+            
+            particles.add(new Particle(px, py, vx, vy, life, size, 
+                    Color.web("#00FFFF"), // 亮蓝色
+                    Color.web("#BD00FF"))); // 电光紫
         }
 
         particles.forEach(p -> {
             p.x += p.vx;
             p.y += p.vy;
             p.life--;
-            p.size *= 0.92;
+            p.size *= 0.92; // 随着时间变小
         });
         particles.removeIf(p -> p.life <= 0);
     }
@@ -226,7 +236,7 @@ public final class SideScrollingShooter implements GameInterface {
             
             // 敌机尾迹 (毒绿)
             if (frame % 2 == 0 && !enemy.boss) {
-                particles.add(new Particle(enemy.x + 20, enemy.y, 2, 0, 10, 4, Color.web("#00FF66")));
+                particles.add(new Particle(enemy.x + 20, enemy.y, 2, 0, 10, 4, Color.web("#00FF66"), Color.web("#00FF66")));
             }
 
             if (enemy.shooter && enemy.x < width - 40) {
@@ -266,7 +276,7 @@ public final class SideScrollingShooter implements GameInterface {
                     enemiesDestroyed++;
                     // 爆炸特效
                     for(int i=0; i<15; i++) {
-                        particles.add(new Particle(hit.x, hit.y, RANDOM.nextDouble()*8-4, RANDOM.nextDouble()*8-4, 20, 8, Color.web("#FF007F")));
+                        particles.add(new Particle(hit.x, hit.y, RANDOM.nextDouble()*8-4, RANDOM.nextDouble()*8-4, 20, 8, Color.web("#FF007F"), Color.web("#4A00E0")));
                     }
                 }
             }
@@ -295,7 +305,7 @@ public final class SideScrollingShooter implements GameInterface {
                 } else {
                     enemy.hp = 0;
                     for(int i=0; i<15; i++) {
-                        particles.add(new Particle(enemy.x, enemy.y, RANDOM.nextDouble()*8-4, RANDOM.nextDouble()*8-4, 20, 8, Color.web("#00FF66")));
+                        particles.add(new Particle(enemy.x, enemy.y, RANDOM.nextDouble()*8-4, RANDOM.nextDouble()*8-4, 20, 8, Color.web("#00FF66"), Color.web("#00FF66")));
                     }
                 }
             }
@@ -374,11 +384,19 @@ public final class SideScrollingShooter implements GameInterface {
     }
 
     private void drawParticles(GraphicsContext gc) {
-        gc.setGlobalBlendMode(BlendMode.ADD);
+        // 2. 应用混合模式 (Blend Modes) - 让特效融入星云产生自发光效果
+        gc.setGlobalBlendMode(BlendMode.ADD); 
         for (Particle p : particles) {
-            double alpha = Math.max(0, p.life / p.maxLife);
-            gc.setFill(Color.color(p.color.getRed(), p.color.getGreen(), p.color.getBlue(), alpha * 0.7));
-            gc.fillOval(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+            double progress = clamp(1.0 - (p.life / p.maxLife), 0, 1);
+            double alpha = Math.max(0, p.life / p.maxLife); // 随着时间变透明
+            
+            // 颜色插值渐变 (如：亮蓝 -> 电光紫)
+            double r = p.startColor.getRed() + (p.endColor.getRed() - p.startColor.getRed()) * progress;
+            double g = p.startColor.getGreen() + (p.endColor.getGreen() - p.startColor.getGreen()) * progress;
+            double b = p.startColor.getBlue() + (p.endColor.getBlue() - p.startColor.getBlue()) * progress;
+            
+            gc.setFill(Color.color(r, g, b, alpha * 0.8));
+            gc.fillOval(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size); // 圆形微小粒子
         }
         gc.setGlobalBlendMode(BlendMode.SRC_OVER);
     }
@@ -395,6 +413,14 @@ public final class SideScrollingShooter implements GameInterface {
             double w = 220; // 进一步放大战机比例，让细节更清晰
             double h = playerImage.getHeight() * (w / playerImage.getWidth());
             
+            // 3. 动态边缘光 (Ambient Rim Light)
+            // 给飞船 Sprite 加上发光滤镜，使其融入宇宙空间
+            DropShadow rimLight = new DropShadow();
+            rimLight.setColor(Color.web("#BD00FF", 0.8)); // 与背景星云同色系的电光紫边缘光
+            rimLight.setRadius(25);
+            rimLight.setSpread(0.4);
+            gc.setEffect(rimLight);
+            
             // 开启 SCREEN (屏幕) 混合模式，强行过滤掉图片中的纯黑色背景
             gc.setGlobalBlendMode(BlendMode.SCREEN);
             
@@ -403,6 +429,7 @@ public final class SideScrollingShooter implements GameInterface {
             
             // 恢复正常的混合模式，以免影响后续渲染（如子弹、UI等）
             gc.setGlobalBlendMode(BlendMode.SRC_OVER);
+            gc.setEffect(null); // 清除着色器滤镜
         } else {
             // 霓虹品红能量护盾
             gc.setGlobalBlendMode(BlendMode.ADD);
@@ -719,10 +746,11 @@ public final class SideScrollingShooter implements GameInterface {
 
     private static final class Particle {
         double x, y, vx, vy, life, maxLife, size;
-        Color color;
-        Particle(double x, double y, double vx, double vy, double life, double size, Color color) {
+        Color startColor, endColor;
+        Particle(double x, double y, double vx, double vy, double life, double size, Color startColor, Color endColor) {
             this.x = x; this.y = y; this.vx = vx; this.vy = vy; 
-            this.life = life; this.maxLife = life; this.size = size; this.color = color;
+            this.life = life; this.maxLife = life; this.size = size; 
+            this.startColor = startColor; this.endColor = endColor;
         }
     }
 }
