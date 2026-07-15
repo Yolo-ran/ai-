@@ -394,8 +394,15 @@ public final class SideScrollingShooter implements GameInterface {
             // 使用贴图渲染
             double w = 220; // 进一步放大战机比例，让细节更清晰
             double h = playerImage.getHeight() * (w / playerImage.getWidth());
+            
+            // 开启 SCREEN (屏幕) 混合模式，强行过滤掉图片中的纯黑色背景
+            gc.setGlobalBlendMode(BlendMode.SCREEN);
+            
             // 向左偏移更多，补偿黑底图片中飞船偏左的情况，让机身中心对准碰撞箱中心
             gc.drawImage(playerImage, -w * 0.4, -h / 2, w, h);
+            
+            // 恢复正常的混合模式，以免影响后续渲染（如子弹、UI等）
+            gc.setGlobalBlendMode(BlendMode.SRC_OVER);
         } else {
             // 霓虹品红能量护盾
             gc.setGlobalBlendMode(BlendMode.ADD);
