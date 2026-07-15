@@ -257,7 +257,7 @@ public class LobbyController {
                     navigate(-1);
                     break;
                 case CONFIRM:
-                    // 已改由 tick() 本地 PEACE 进度环触发，此处不再响应防止重复
+                    // 已改由 tick() 本地 FIST 进度环触发，此处不再响应防止重复
                     break;
                 case BACK:
                     if (appStateManager != null) {
@@ -348,7 +348,7 @@ public class LobbyController {
     }
 
     private void updateConfirmHold(GestureType gesture) {
-        if (gesture == GestureType.PEACE) {
+        if (gesture == GestureType.FIST) {
             confirmHoldFrames = Math.min(confirmHoldFrames + 1, CONFIRM_HOLD_FRAMES);
         } else {
             confirmHoldFrames = 0;

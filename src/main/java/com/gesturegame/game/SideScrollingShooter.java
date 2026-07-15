@@ -43,6 +43,7 @@ public final class SideScrollingShooter implements GameInterface {
     private final List<Flash> flashes = new ArrayList<>();
     private final List<Particle> particles = new ArrayList<>();
     private final List<Nebula> nebulas = new ArrayList<>();
+    private final List<PowerUp> powerUps = new ArrayList<>();
 
     private Image playerImage;
 
@@ -67,6 +68,11 @@ public final class SideScrollingShooter implements GameInterface {
     private boolean bossSpawned;
     private boolean over;
     private boolean cleared;
+    // 道具系统
+    private boolean hasShield;
+    private int multiShotTimer;
+    private int speedBoostTimer;
+    private int powerUpSpawnDelay = 480; // 约8秒后开始出道具
 
     @Override
     public String getName() { return "星际突击"; }
@@ -132,11 +138,19 @@ public final class SideScrollingShooter implements GameInterface {
 
         updateBackgroundElements();
         spawnScheduledWaves();
-        if (frame % PLAYER_FIRE_INTERVAL == 0) {
-            // 双翼发射激光束
-            playerBullets.add(new Bullet(playerX + 20, playerY - 15, 14.5, 0, true));
-            playerBullets.add(new Bullet(playerX + 20, playerY + 15, 14.5, 0, true));
-            shotsFired += 2;
+        int fireInterval = speedBoostTimer > 0 ? PLAYER_FIRE_INTERVAL / 2 : PLAYER_FIRE_INTERVAL;
+        if (frame % fireInterval == 0) {
+            if (multiShotTimer > 0) {
+                // 三散发弹
+                playerBullets.add(new Bullet(playerX + 20, playerY, 14.5, 0, true));
+                playerBullets.add(new Bullet(playerX + 20, playerY - 15, 14.5, -2.5, true));
+                playerBullets.add(new Bullet(playerX + 20, playerY + 15, 14.5, 2.5, true));
+                shotsFired += 3;
+            } else {
+                playerBullets.add(new Bullet(playerX + 20, playerY - 15, 14.5, 0, true));
+                playerBullets.add(new Bullet(playerX + 20, playerY + 15, 14.5, 0, true));
+                shotsFired += 2;
+            }
         }
 
         if (!bossSpawned && frame >= level.durationSeconds() * 60) {
@@ -149,6 +163,17 @@ public final class SideScrollingShooter implements GameInterface {
         handleCollisions();
         updateFlashes();
         updateParticles();
+        updatePowerUps();
+
+        // 道具计时器
+        if (multiShotTimer > 0) multiShotTimer--;
+        if (speedBoostTimer > 0) speedBoostTimer--;
+        // 每8~12秒生成一个道具
+        if (powerUpSpawnDelay > 0) powerUpSpawnDelay--;
+        else {
+            spawnPowerUp();
+            powerUpSpawnDelay = 480 + RANDOM.nextInt(241); // 8~12秒
+        }
 
         if (hp <= 0) finish(false);
         if (bossSpawned && enemies.stream().noneMatch(enemy -> enemy.boss)) finish(true);
@@ -330,16 +355,17 @@ public final class SideScrollingShooter implements GameInterface {
             Bullet bullet = enemyIterator.next();
             if (distanceSquared(bullet.x, bullet.y, playerX, playerY) < 28 * 28) {
                 enemyIterator.remove();
-                hp--;
-                damageTaken++;
-                flashes.add(new Flash(playerX, playerY, Color.web("#00FF66"))); // 玩家受伤毒绿
+                if (hasShield) { hasShield = false; flashes.add(new Flash(playerX, playerY, Color.CYAN)); }
+                else { hp--; damageTaken++; flashes.add(new Flash(playerX, playerY, Color.web("#00FF66"))); }
             }
         }
 
         for (Enemy enemy : enemies) {
             double radius = enemy.boss ? 68 : 30;
             if (distanceSquared(enemy.x, enemy.y, playerX, playerY) < (radius + 22) * (radius + 22)) {
-                hp -= enemy.boss ? 2 : 1;
+                int dmg = enemy.boss ? 2 : 1;
+                if (hasShield) { hasShield = false; damageTaken += (dmg - 1); }
+                else hp -= dmg;
                 damageTaken++;
                 if (enemy.boss) {
                     enemy.x = Math.max(enemy.x + 140, width * 0.72);
@@ -383,6 +409,8 @@ public final class SideScrollingShooter implements GameInterface {
         drawParticles(gc);
         drawBullets(gc);
         drawEnemies(gc);
+        renderPowerUps(gc);
+        if (hasShield) drawShield(gc);
         drawPlayer(gc);
         drawFlashes(gc);
         drawHud(gc);
@@ -816,6 +844,81 @@ public final class SideScrollingShooter implements GameInterface {
 
     private static double clamp(double value, double min, double max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    // ===== 道具系统 =====
+    private void spawnPowerUp() {
+        int type = RANDOM.nextInt(4); // 0=护盾, 1=多弹道, 2=回血, 3=射速
+        double px = width + 30;
+        double py = 60 + RANDOM.nextDouble() * (height - 120);
+        powerUps.add(new PowerUp(px, py, type));
+    }
+
+    private void updatePowerUps() {
+        for (PowerUp p : powerUps) p.x -= 2.0; // 慢慢飘
+        powerUps.removeIf(p -> p.x < -50);
+        for (PowerUp p : powerUps) {
+            if (distanceSquared(p.x, p.y, playerX, playerY) < 35 * 35) {
+                applyPowerUp(p.type);
+                p.collected = true;
+            }
+        }
+        powerUps.removeIf(p -> p.collected);
+    }
+
+    private void applyPowerUp(int type) {
+        switch (type) {
+            case 0: hasShield = true; break;              // 护盾
+            case 1: multiShotTimer = 900; break;          // 多弹道 15秒
+            case 2: hp = Math.min(level.playerHp(), hp + 1); break; // 回血
+            case 3: speedBoostTimer = 600; break;         // 射速提升 10秒
+        }
+    }
+
+    private void renderPowerUps(GraphicsContext gc) {
+        for (PowerUp p : powerUps) {
+            double px = p.x, py = p.y;
+            // 外发光
+            gc.setFill(Color.rgb(255, 255, 255, 0.15));
+            gc.fillOval(px - 18, py - 18, 36, 36);
+            // 主体
+            Color c = switch (p.type) {
+                case 0 -> Color.CYAN;     // 护盾
+                case 1 -> Color.GOLD;     // 多弹道
+                case 2 -> Color.LIME;     // 回血
+                default -> Color.ORANGE;  // 射速
+            };
+            gc.setFill(c);
+            gc.fillOval(px - 10, py - 10, 20, 20);
+            gc.setStroke(Color.WHITE);
+            gc.setLineWidth(1.5);
+            gc.strokeOval(px - 10, py - 10, 20, 20);
+            // 图标
+            gc.setFill(Color.BLACK);
+            gc.setFont(Font.font(12));
+            String icon = switch (p.type) {
+                case 0 -> "S"; case 1 -> "M"; case 2 -> "+"; default -> "⚡";
+            };
+            gc.fillText(icon, px - 4, py + 4);
+        }
+    }
+
+    private void drawShield(GraphicsContext gc) {
+        gc.setGlobalBlendMode(BlendMode.ADD);
+        gc.setStroke(Color.CYAN.deriveColor(0, 1, 1, 0.6));
+        gc.setLineWidth(3);
+        gc.strokeOval(playerX - 30, playerY - 30, 60, 60);
+        gc.setStroke(Color.CYAN.deriveColor(0, 1, 1, 0.3));
+        gc.setLineWidth(8);
+        gc.strokeOval(playerX - 35, playerY - 35, 70, 70);
+        gc.setGlobalBlendMode(BlendMode.SRC_OVER);
+    }
+
+    private static final class PowerUp {
+        double x, y;
+        int type;
+        boolean collected;
+        PowerUp(double x, double y, int type) { this.x = x; this.y = y; this.type = type; }
     }
 
     private static final class Bullet {
