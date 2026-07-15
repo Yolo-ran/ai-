@@ -316,9 +316,9 @@ public final class SideScrollingShooter implements GameInterface {
                 if (hit.hp <= 0) {
                     score += hit.boss ? 1800 : 100;
                     enemiesDestroyed++;
-                    // 爆炸特效
+                    // 死亡爆炸：向四周发射电光粉色/紫色像素块粒子，生命周期极短
                     for(int i=0; i<15; i++) {
-                        particles.add(new Particle(hit.x, hit.y, RANDOM.nextDouble()*8-4, RANDOM.nextDouble()*8-4, 20, 8, Color.web("#FF007F"), Color.web("#4A00E0")));
+                        particles.add(new Particle(hit.x, hit.y, RANDOM.nextDouble()*16-8, RANDOM.nextDouble()*16-8, 12, 10, Color.web("#FF007F"), Color.web("#4A00E0"), true));
                     }
                 }
             }
@@ -347,7 +347,7 @@ public final class SideScrollingShooter implements GameInterface {
                 } else {
                     enemy.hp = 0;
                     for(int i=0; i<15; i++) {
-                        particles.add(new Particle(enemy.x, enemy.y, RANDOM.nextDouble()*8-4, RANDOM.nextDouble()*8-4, 20, 8, Color.web("#00FF66"), Color.web("#00FF66")));
+                        particles.add(new Particle(enemy.x, enemy.y, RANDOM.nextDouble()*16-8, RANDOM.nextDouble()*16-8, 12, 10, Color.web("#FF007F"), Color.web("#FF007F"), true));
                     }
                 }
             }
@@ -585,6 +585,18 @@ public final class SideScrollingShooter implements GameInterface {
                 Color coreColor = lowHp && (frame % 10 < 5) ? Color.web("#FF0055") : Color.web("#00FF66");
                 gc.setFill(flash ? Color.WHITE : coreColor);
                 gc.fillOval(-15, -15, 30, 30);
+                
+                // 5. 环境光融入 (Point Light)
+                // 模拟 2D 绿色点光源照亮背景星云
+                gc.setGlobalBlendMode(BlendMode.ADD);
+                double lightRadius = 150 + Math.sin(frame * 0.1) * 10;
+                gc.setFill(new RadialGradient(
+                        0, 0, 0, 0, lightRadius, false, CycleMethod.NO_CYCLE,
+                        new Stop(0, Color.rgb(0, 255, 102, 0.15)), // 极微弱的荧光绿照亮背景
+                        new Stop(1, Color.TRANSPARENT)
+                ));
+                gc.fillOval(-lightRadius, -lightRadius, lightRadius * 2, lightRadius * 2);
+                gc.setGlobalBlendMode(BlendMode.SRC_OVER);
                 
                 // BOSS血条
                 double ratio = Math.max(0, enemy.hp / (double) enemy.maxHp);
