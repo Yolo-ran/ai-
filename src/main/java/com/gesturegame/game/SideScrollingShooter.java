@@ -26,6 +26,7 @@ import java.util.concurrent.CompletableFuture;
 /**
  * 横向卷轴太空射击：手的纵坐标控制战机，战机自动射击。
  * 包含全新的赛博科幻 UI、粒子尾焰、激光武器与全息 HUD。
+ * 当前配色方案：方案 C (赛博暗流 / 量子星系)
  */
 public final class SideScrollingShooter implements GameInterface {
 
@@ -139,15 +140,15 @@ public final class SideScrollingShooter implements GameInterface {
     }
 
     private void updateParticles() {
-        // 生成玩家战机尾焰粒子
+        // 生成玩家战机尾焰粒子 (量子绿/碧色)
         double playerVy = playerY - lastPlayerY;
         for (int i = 0; i < 4; i++) {
             double py = playerY + RANDOM.nextDouble() * 12 - 6;
             double px = playerX - 35 + RANDOM.nextDouble() * 5;
             double vx = -6 - RANDOM.nextDouble() * 6;
             double vy = playerVy * 0.3 + RANDOM.nextDouble() * 2 - 1;
-            Color c = RANDOM.nextDouble() > 0.4 ? Color.web("#00F0FF") : Color.web("#D946EF"); // 电光蓝/荧光紫
-            if (RANDOM.nextDouble() > 0.8) c = Color.web("#F97316"); // 亮橙核心
+            Color c = RANDOM.nextDouble() > 0.4 ? Color.web("#00FF9D") : Color.web("#14B8A6");
+            if (RANDOM.nextDouble() > 0.8) c = Color.web("#E2E8F0"); // 亮白核心
             particles.add(new Particle(px, py, vx, vy, 15 + RANDOM.nextDouble() * 15, 5 + RANDOM.nextDouble() * 7, c));
         }
 
@@ -208,9 +209,9 @@ public final class SideScrollingShooter implements GameInterface {
             enemy.y += Math.sin(enemy.phase) * (enemy.boss ? 1.2 : 0.75);
             enemy.y = clamp(enemy.y, 65, height - 65);
             
-            // 敌机尾迹
+            // 敌机尾迹 (等离子紫)
             if (frame % 2 == 0 && !enemy.boss) {
-                particles.add(new Particle(enemy.x + 20, enemy.y, 2, 0, 10, 4, Color.web("#FF0055")));
+                particles.add(new Particle(enemy.x + 20, enemy.y, 2, 0, 10, 4, Color.web("#D946EF")));
             }
 
             if (enemy.shooter && enemy.x < width - 40) {
@@ -244,13 +245,13 @@ public final class SideScrollingShooter implements GameInterface {
                 playerIterator.remove();
                 shotsHit++;
                 hit.hp--;
-                flashes.add(new Flash(hit.x, hit.y, Color.web("#00F0FF"))); // 击中特效改蓝
+                flashes.add(new Flash(hit.x, hit.y, Color.web("#00FF9D"))); // 击中特效改量子绿
                 if (hit.hp <= 0) {
                     score += hit.boss ? 1800 : 100;
                     enemiesDestroyed++;
                     // 爆炸特效
                     for(int i=0; i<15; i++) {
-                        particles.add(new Particle(hit.x, hit.y, RANDOM.nextDouble()*8-4, RANDOM.nextDouble()*8-4, 20, 8, Color.web("#00F0FF")));
+                        particles.add(new Particle(hit.x, hit.y, RANDOM.nextDouble()*8-4, RANDOM.nextDouble()*8-4, 20, 8, Color.web("#00FF9D")));
                     }
                 }
             }
@@ -264,7 +265,7 @@ public final class SideScrollingShooter implements GameInterface {
                 enemyIterator.remove();
                 hp--;
                 damageTaken++;
-                flashes.add(new Flash(playerX, playerY, Color.web("#FF0055")));
+                flashes.add(new Flash(playerX, playerY, Color.web("#E11D48"))); // 玩家受伤血红
             }
         }
 
@@ -279,7 +280,7 @@ public final class SideScrollingShooter implements GameInterface {
                 } else {
                     enemy.hp = 0;
                     for(int i=0; i<15; i++) {
-                        particles.add(new Particle(enemy.x, enemy.y, RANDOM.nextDouble()*8-4, RANDOM.nextDouble()*8-4, 20, 8, Color.web("#FF0055")));
+                        particles.add(new Particle(enemy.x, enemy.y, RANDOM.nextDouble()*8-4, RANDOM.nextDouble()*8-4, 20, 8, Color.web("#E11D48")));
                     }
                 }
             }
@@ -322,20 +323,20 @@ public final class SideScrollingShooter implements GameInterface {
     }
 
     private void drawBackground(GraphicsContext gc) {
-        // 宇宙深空渐变底色
-        gc.setFill(new LinearGradient(0, 0, 1, 1, true, CycleMethod.NO_CYCLE,
-                new Stop(0, Color.web("#050510")), new Stop(0.5, Color.web("#0B0C10")),
-                new Stop(1, Color.web("#0A0514"))));
+        // 方案 C：赛博暗流 (Cyberpunk Obsidian Background)
+        gc.setFill(new LinearGradient(0, 0, 0, 1, true, CycleMethod.NO_CYCLE,
+                new Stop(0, Color.web("#09090E")), // 顶部深空
+                new Stop(0.6, Color.web("#050508")), // 中部极夜黑 (留给战场)
+                new Stop(1, Color.web("#1A0B2E")))); // 底部紫罗兰裂隙
         gc.fillRect(0, 0, width, height);
         
-        // 动态流动的星云层 (Flowing Nebula)
+        // 动态流动的星云层
         gc.setGlobalBlendMode(BlendMode.SCREEN);
         for (Nebula n : nebulas) {
-            // 星云呼吸缩放
             double scale = 1.0 + Math.sin(n.phase) * 0.15;
             gc.setFill(new RadialGradient(
                     0, 0, n.x, n.y, n.radiusX * scale, false, CycleMethod.NO_CYCLE,
-                    new Stop(0, Color.color(n.color.getRed(), n.color.getGreen(), n.color.getBlue(), 0.15)),
+                    new Stop(0, Color.color(n.color.getRed(), n.color.getGreen(), n.color.getBlue(), 0.12)),
                     new Stop(1, Color.TRANSPARENT)
             ));
             gc.fillOval(n.x - n.radiusX * scale, n.y - n.radiusY * scale, n.radiusX * 2 * scale, n.radiusY * 2 * scale);
@@ -344,13 +345,11 @@ public final class SideScrollingShooter implements GameInterface {
     }
 
     private void drawStars(GraphicsContext gc) {
-        // 闪烁的彩色星空与流星层
         gc.setGlobalBlendMode(BlendMode.ADD);
         for (Star star : stars) {
             double currentAlpha = clamp(star.alpha + Math.sin(star.phase) * 0.3, 0.1, 1.0);
             gc.setFill(Color.color(star.color.getRed(), star.color.getGreen(), star.color.getBlue(), currentAlpha));
             if (star.size > 2.5) {
-                // 流星拉长
                 gc.fillRoundRect(star.x, star.y, star.size * 4, star.size * 0.4, 2, 2);
             } else {
                 gc.fillOval(star.x, star.y, star.size, star.size);
@@ -373,34 +372,33 @@ public final class SideScrollingShooter implements GameInterface {
         gc.save();
         gc.translate(playerX, playerY);
         
-        // 随手势俯仰的动态倾斜 (Pitch/Roll)
         double pitch = clamp((playerY - lastPlayerY) * 0.08, -0.4, 0.4);
         gc.rotate(Math.toDegrees(pitch));
 
-        // 蜂窝半透明能量护盾
+        // 量子绿能量护盾
         gc.setGlobalBlendMode(BlendMode.ADD);
-        gc.setStroke(Color.rgb(0, 240, 255, 0.4));
+        gc.setStroke(Color.rgb(0, 255, 157, 0.3));
         gc.setLineWidth(2);
         gc.strokeOval(-45, -35, 90, 70);
-        gc.setStroke(Color.rgb(0, 240, 255, 0.8));
+        gc.setStroke(Color.rgb(0, 255, 157, 0.7));
         gc.strokeArc(-40, -30, 80, 60, -45, 90, javafx.scene.shape.ArcType.OPEN);
         gc.setGlobalBlendMode(BlendMode.SRC_OVER);
 
-        // 战机 3D 金属机身
-        // 顶翼
+        // 战机 3D 金属机身 (方案三：冷调白/藏蓝)
+        gc.setFill(new LinearGradient(0, 0, 0, 1, true, CycleMethod.NO_CYCLE, 
+            new Stop(0, Color.web("#E2E8F0")), new Stop(1, Color.web("#94A3B8"))));
+        gc.fillPolygon(new double[]{-25, 30, -10}, new double[]{-15, 0, 0}, 3);
+        
         gc.setFill(new LinearGradient(0, 0, 0, 1, true, CycleMethod.NO_CYCLE, 
             new Stop(0, Color.web("#94A3B8")), new Stop(1, Color.web("#475569"))));
-        gc.fillPolygon(new double[]{-25, 30, -10}, new double[]{-15, 0, 0}, 3);
-        // 底翼
-        gc.setFill(new LinearGradient(0, 0, 0, 1, true, CycleMethod.NO_CYCLE, 
-            new Stop(0, Color.web("#475569")), new Stop(1, Color.web("#1E293B"))));
         gc.fillPolygon(new double[]{-25, 30, -10}, new double[]{15, 0, 0}, 3);
-        // 主机体（拉丝蓝碳纤维）
+        
         gc.setFill(new LinearGradient(0, 0, 1, 1, true, CycleMethod.NO_CYCLE, 
-            new Stop(0, Color.web("#0F172A")), new Stop(1, Color.web("#1E293B"))));
+            new Stop(0, Color.web("#1E3A8A")), new Stop(1, Color.web("#0F172A"))));
         gc.fillPolygon(new double[]{-35, 20, -15}, new double[]{-5, 0, 5}, 3);
-        // 座舱发光
-        gc.setFill(Color.web("#00F0FF"));
+        
+        // 座舱发光 (量子绿)
+        gc.setFill(Color.web("#00FF9D"));
         gc.fillOval(5, -4, 12, 8);
         
         gc.restore();
@@ -410,19 +408,18 @@ public final class SideScrollingShooter implements GameInterface {
         for (Enemy enemy : enemies) {
             gc.save();
             gc.translate(enemy.x, enemy.y);
-            // 敌机轻微悬浮
             gc.rotate(Math.sin(enemy.phase) * 5);
 
             if (enemy.boss) {
                 // 科幻机械 BOSS
-                gc.setFill(Color.web("#1F1229")); // 暗机械底色
+                gc.setFill(Color.web("#11051F")); // 深渊暗紫
                 gc.fillOval(-70, -70, 140, 140);
                 gc.setFill(new LinearGradient(0, 0, 0, 1, true, CycleMethod.NO_CYCLE, 
-                    new Stop(0, Color.web("#6B21A8")), new Stop(1, Color.web("#3B0764"))));
+                    new Stop(0, Color.web("#D946EF")), new Stop(1, Color.web("#4C1D95"))));
                 gc.fillPolygon(new double[]{-40, -60, -40, 20}, new double[]{-50, 0, 50, 0}, 4);
                 
-                // 红色核心
-                gc.setFill(Color.web("#FF0055"));
+                // 血红核心
+                gc.setFill(Color.web("#E11D48"));
                 gc.fillOval(-15, -15, 30, 30);
                 
                 // BOSS血条
@@ -430,15 +427,15 @@ public final class SideScrollingShooter implements GameInterface {
                 gc.setFill(Color.rgb(0, 0, 0, 0.6));
                 gc.fillRoundRect(-60, -90, 120, 8, 4, 4);
                 gc.setFill(new LinearGradient(0, 0, 1, 0, true, CycleMethod.NO_CYCLE, 
-                    new Stop(0, Color.web("#FF0055")), new Stop(1, Color.web("#F97316"))));
+                    new Stop(0, Color.web("#E11D48")), new Stop(1, Color.web("#D946EF"))));
                 gc.fillRoundRect(-60, -90, 120 * ratio, 8, 4, 4);
             } else {
                 // 小型机械侦察机
                 gc.setFill(new LinearGradient(0, 0, 0, 1, true, CycleMethod.NO_CYCLE, 
-                    new Stop(0, Color.web("#4C1D95")), new Stop(1, Color.web("#2E1065"))));
+                    new Stop(0, Color.web("#31103F")), new Stop(1, Color.web("#1A0B2E"))));
                 gc.fillPolygon(new double[]{15, -15, -15}, new double[]{0, -15, 15}, 3);
                 // 引擎发光
-                gc.setFill(Color.web("#FF0055"));
+                gc.setFill(Color.web("#E11D48"));
                 gc.fillOval(-10, -4, 8, 8);
             }
             gc.restore();
@@ -448,11 +445,11 @@ public final class SideScrollingShooter implements GameInterface {
     private void drawBullets(GraphicsContext gc) {
         gc.setGlobalBlendMode(BlendMode.ADD);
         for (Bullet bullet : playerBullets) {
-            // 电光蓝激光束特效 (Laser Beams)
-            gc.setStroke(Color.rgb(0, 240, 255, 0.2));
+            // 量子绿激光束特效
+            gc.setStroke(Color.rgb(0, 255, 157, 0.2));
             gc.setLineWidth(12);
             gc.strokeLine(bullet.x - 30, bullet.y, bullet.x + 10, bullet.y);
-            gc.setStroke(Color.rgb(0, 240, 255, 0.6));
+            gc.setStroke(Color.rgb(0, 255, 157, 0.6));
             gc.setLineWidth(5);
             gc.strokeLine(bullet.x - 20, bullet.y, bullet.x + 10, bullet.y);
             gc.setStroke(Color.WHITE);
@@ -460,10 +457,10 @@ public final class SideScrollingShooter implements GameInterface {
             gc.strokeLine(bullet.x - 10, bullet.y, bullet.x + 10, bullet.y);
         }
         for (Bullet bullet : enemyBullets) {
-            // 敌方能量弹
-            gc.setFill(Color.rgb(255, 0, 85, 0.3));
+            // 敌方能量弹 (血红/等离子紫)
+            gc.setFill(Color.rgb(225, 29, 72, 0.3));
             gc.fillOval(bullet.x - 12, bullet.y - 12, 24, 24);
-            gc.setFill(Color.rgb(255, 0, 85, 0.8));
+            gc.setFill(Color.rgb(217, 70, 239, 0.8));
             gc.fillOval(bullet.x - 6, bullet.y - 6, 12, 12);
             gc.setFill(Color.WHITE);
             gc.fillOval(bullet.x - 3, bullet.y - 3, 6, 6);
@@ -483,53 +480,51 @@ public final class SideScrollingShooter implements GameInterface {
     }
 
     private void drawHud(GraphicsContext gc) {
-        // 全息发光面板风格 (Holographic HUD)
         gc.setTextAlign(TextAlignment.LEFT);
-        gc.setFont(Font.font("Arial", FontWeight.BOLD, 16)); // 科技感无衬线
+        gc.setFont(Font.font("Arial", FontWeight.BOLD, 16));
         
         // 顶部网格半透明面板
         gc.setFill(Color.rgb(15, 23, 42, 0.6));
         gc.fillRoundRect(20, 20, 240, 65, 8, 8);
-        gc.setStroke(Color.rgb(0, 240, 255, 0.3));
+        gc.setStroke(Color.rgb(0, 255, 157, 0.3)); // 量子绿边框
         gc.setLineWidth(1);
         gc.strokeRoundRect(20, 20, 240, 65, 8, 8);
 
-        gc.setFill(Color.web("#00F0FF"));
+        gc.setFill(Color.web("#00FF9D"));
         gc.fillText("🚀 " + level.title() + " [Lv." + level.levelNumber() + "]", 35, 45);
         
-        // 能量槽形式血条 (Energy Bar)
+        // 能量槽形式血条
         gc.setFill(Color.rgb(0, 0, 0, 0.5));
         gc.fillRect(35, 60, 150, 8);
         int maxHp = level.playerHp();
         double hpRatio = Math.max(0, hp / (double) maxHp);
         gc.setFill(new LinearGradient(0, 0, 1, 0, true, CycleMethod.NO_CYCLE, 
-            new Stop(0, Color.web("#00F0FF")), new Stop(1, Color.web("#38BDF8"))));
+            new Stop(0, Color.web("#00FF9D")), new Stop(1, Color.web("#14B8A6"))));
         gc.fillRect(35, 60, 150 * hpRatio, 8);
 
-        // 倒计时进度条
         int remaining = Math.max(0, level.durationSeconds() - frame / 60);
         gc.setTextAlign(TextAlignment.CENTER);
         gc.setFill(Color.web("#94A3B8"));
         gc.setFont(Font.font("Arial", 14));
         gc.fillText(bossSpawned ? ">> BOSS 接触 <<" : "距离 BOSS 接触: " + remaining + "s", width / 2.0, 35);
         
-        // 得分面板 (右上角悬浮面板)
+        // 得分面板
         gc.setFill(Color.rgb(15, 23, 42, 0.6));
         gc.fillPolygon(new double[]{width - 140, width - 20, width - 20, width - 155}, 
                        new double[]{20, 20, 50, 50}, 4);
-        gc.setStroke(Color.rgb(0, 240, 255, 0.5));
+        gc.setStroke(Color.rgb(0, 255, 157, 0.5));
         gc.strokePolygon(new double[]{width - 140, width - 20, width - 20, width - 155}, 
                          new double[]{20, 20, 50, 50}, 4);
-        gc.setFill(Color.web("#00F0FF"));
+        gc.setFill(Color.web("#00FF9D"));
         gc.fillText("SCORE: " + score, width - 85, 40);
 
-        // 底部“双手入镜保持返回”提示 (隐式悬浮 + 响应式边框)
+        // 底部“双手入镜保持返回”提示
         gc.setFill(Color.rgb(0, 0, 0, 0.4));
         gc.fillRoundRect(width / 2.0 - 100, height - 40, 200, 24, 12, 12);
-        gc.setStroke(Color.rgb(217, 70, 239, 0.6)); // 荧光紫提示边框流光
+        gc.setStroke(Color.rgb(217, 70, 239, 0.6)); // 紫色提示边框
         gc.setLineWidth(1);
         gc.strokeRoundRect(width / 2.0 - 100, height - 40, 200, 24, 12, 12);
-        gc.setFill(Color.web("#00F0FF"));
+        gc.setFill(Color.web("#00FF9D"));
         gc.setFont(Font.font("Arial", 12));
         gc.fillText("👐 双手入镜保持返回", width / 2.0, height - 23);
         
@@ -537,10 +532,10 @@ public final class SideScrollingShooter implements GameInterface {
     }
 
     private void drawResult(GraphicsContext gc) {
-        gc.setFill(Color.rgb(2, 6, 23, 0.85));
+        gc.setFill(Color.rgb(5, 5, 8, 0.85));
         gc.fillRect(0, 0, width, height);
         gc.setTextAlign(TextAlignment.CENTER);
-        gc.setFill(cleared ? Color.web("#00F0FF") : Color.web("#FF0055"));
+        gc.setFill(cleared ? Color.web("#00FF9D") : Color.web("#E11D48"));
         gc.setFont(Font.font("Arial", FontWeight.BOLD, 42));
         gc.fillText(cleared ? "MISSION ACCOMPLISHED" : "SIGNAL LOST", width / 2.0, height * 0.39);
         
@@ -550,7 +545,7 @@ public final class SideScrollingShooter implements GameInterface {
         gc.fillText(String.format("SCORE: %d   ACCURACY: %.1f%%", score, accuracy),
                 width / 2.0, height * 0.48);
         
-        gc.setFill(Color.web("#A78BFA"));
+        gc.setFill(Color.web("#D946EF"));
         gc.setFont(Font.font("Arial", 16));
         String generation = nextLevelFuture != null && nextLevelFuture.isDone()
                 ? ">> NEXT LEVEL READY <<" : ">> GENERATING NEXT LEVEL <<";
@@ -563,9 +558,9 @@ public final class SideScrollingShooter implements GameInterface {
         for (int i = 0; i < 150; i++) {
             Color c = Color.WHITE;
             double r = RANDOM.nextDouble();
-            if (r > 0.8) c = Color.web("#A5F3FC"); // 浅蓝色星光
-            else if (r > 0.6) c = Color.web("#FDE047"); // 淡黄色星光
-            else if (r > 0.4) c = Color.web("#FBCFE8"); // 淡紫色星光
+            if (r > 0.8) c = Color.web("#00FF9D"); // 量子绿星光
+            else if (r > 0.6) c = Color.web("#14B8A6"); // 碧色星光
+            else if (r > 0.4) c = Color.web("#D946EF"); // 紫色星光
             
             stars.add(new Star(RANDOM.nextDouble() * width, RANDOM.nextDouble() * height,
                     0.5 + RANDOM.nextDouble() * 3.5, 0.15 + RANDOM.nextDouble() * 0.6, c));
@@ -574,11 +569,10 @@ public final class SideScrollingShooter implements GameInterface {
         nebulas.clear();
         for (int i = 0; i < 6; i++) {
             Color[] colors = {
-                Color.web("#3B0764"), // 深紫
-                Color.web("#172554"), // 深蓝
-                Color.web("#4C1D95"), // 亮紫
+                Color.web("#1E1B4B"), // 极深紫
+                Color.web("#0F172A"), // 黑曜石蓝
+                Color.web("#31103F"), // 暗洋红
                 Color.web("#064E3B"), // 深绿
-                Color.web("#831843")  // 深酒红
             };
             Color c = colors[RANDOM.nextInt(colors.length)];
             nebulas.add(new Nebula(RANDOM.nextDouble() * width, RANDOM.nextDouble() * height,
@@ -588,19 +582,17 @@ public final class SideScrollingShooter implements GameInterface {
     }
 
     private void updateBackgroundElements() {
-        // 更新星星与流星
         for (Star star : stars) {
-            star.x -= star.size * 0.8; // 产生视差纵深感
-            star.phase += 0.05; // 闪烁相位
+            star.x -= star.size * 0.8;
+            star.phase += 0.05;
             if (star.x < 0) {
                 star.x = width;
                 star.y = RANDOM.nextDouble() * height;
             }
         }
-        // 更新星云流动
         for (Nebula n : nebulas) {
             n.x -= n.speed;
-            n.phase += 0.02; // 呼吸缩放相位
+            n.phase += 0.02;
             if (n.x + n.radiusX < 0) {
                 n.x = width + n.radiusX;
                 n.y = RANDOM.nextDouble() * height;
