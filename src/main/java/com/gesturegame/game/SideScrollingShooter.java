@@ -10,6 +10,7 @@ import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.effect.BlendMode;
 import javafx.scene.paint.Color;
 import javafx.scene.paint.LinearGradient;
+import javafx.scene.paint.RadialGradient;
 import javafx.scene.paint.Stop;
 import javafx.scene.paint.CycleMethod;
 import javafx.scene.text.Font;
@@ -38,6 +39,7 @@ public final class SideScrollingShooter implements GameInterface {
     private final List<Star> stars = new ArrayList<>();
     private final List<Flash> flashes = new ArrayList<>();
     private final List<Particle> particles = new ArrayList<>();
+    private final List<Nebula> nebulas = new ArrayList<>();
 
     private Difficulty difficulty = Difficulty.NORMAL;
     private ShooterLevelConfig level;
@@ -96,7 +98,8 @@ public final class SideScrollingShooter implements GameInterface {
         enemies.clear();
         flashes.clear();
         particles.clear();
-        createStars();
+        nebulas.clear();
+        createBackgroundElements();
     }
 
     @Override
@@ -110,7 +113,7 @@ public final class SideScrollingShooter implements GameInterface {
         lastPlayerY = playerY;
         playerY += (targetY - playerY) * 0.18;
 
-        updateStars();
+        updateBackgroundElements();
         spawnScheduledWaves();
         if (frame % PLAYER_FIRE_INTERVAL == 0) {
             // 双翼发射激光束
@@ -319,32 +322,41 @@ public final class SideScrollingShooter implements GameInterface {
     }
 
     private void drawBackground(GraphicsContext gc) {
-        // 方案一：星际暗流 (Deep Nebula)
+        // 宇宙深空渐变底色
         gc.setFill(new LinearGradient(0, 0, 1, 1, true, CycleMethod.NO_CYCLE,
-                new Stop(0, Color.web("#0A0F1D")), new Stop(0.5, Color.web("#111827")),
-                new Stop(1, Color.web("#1A1129"))));
+                new Stop(0, Color.web("#050510")), new Stop(0.5, Color.web("#0B0C10")),
+                new Stop(1, Color.web("#0A0514"))));
         gc.fillRect(0, 0, width, height);
         
-        // 动态星云层 (Nebula Dust)
+        // 动态流动的星云层 (Flowing Nebula)
         gc.setGlobalBlendMode(BlendMode.SCREEN);
-        gc.setFill(new LinearGradient(0, 0, 1, 1, true, CycleMethod.NO_CYCLE,
-                new Stop(0, Color.rgb(0, 240, 255, 0.05)), new Stop(0.5, Color.TRANSPARENT),
-                new Stop(1, Color.rgb(217, 70, 239, 0.08))));
-        gc.fillOval(-width*0.2, -height*0.2, width*1.4, height*1.4);
+        for (Nebula n : nebulas) {
+            // 星云呼吸缩放
+            double scale = 1.0 + Math.sin(n.phase) * 0.15;
+            gc.setFill(new RadialGradient(
+                    0, 0, n.x, n.y, n.radiusX * scale, false, CycleMethod.NO_CYCLE,
+                    new Stop(0, Color.color(n.color.getRed(), n.color.getGreen(), n.color.getBlue(), 0.15)),
+                    new Stop(1, Color.TRANSPARENT)
+            ));
+            gc.fillOval(n.x - n.radiusX * scale, n.y - n.radiusY * scale, n.radiusX * 2 * scale, n.radiusY * 2 * scale);
+        }
         gc.setGlobalBlendMode(BlendMode.SRC_OVER);
     }
 
     private void drawStars(GraphicsContext gc) {
-        // 星空与流星粒子层
+        // 闪烁的彩色星空与流星层
+        gc.setGlobalBlendMode(BlendMode.ADD);
         for (Star star : stars) {
-            gc.setFill(Color.rgb(255, 255, 255, star.alpha));
-            if (star.size > 2) {
+            double currentAlpha = clamp(star.alpha + Math.sin(star.phase) * 0.3, 0.1, 1.0);
+            gc.setFill(Color.color(star.color.getRed(), star.color.getGreen(), star.color.getBlue(), currentAlpha));
+            if (star.size > 2.5) {
                 // 流星拉长
-                gc.fillRoundRect(star.x, star.y, star.size * 3, star.size * 0.5, 2, 2);
+                gc.fillRoundRect(star.x, star.y, star.size * 4, star.size * 0.4, 2, 2);
             } else {
                 gc.fillOval(star.x, star.y, star.size, star.size);
             }
         }
+        gc.setGlobalBlendMode(BlendMode.SRC_OVER);
     }
 
     private void drawParticles(GraphicsContext gc) {
@@ -546,21 +558,52 @@ public final class SideScrollingShooter implements GameInterface {
         gc.setTextAlign(TextAlignment.LEFT);
     }
 
-    private void createStars() {
+    private void createBackgroundElements() {
         stars.clear();
-        for (int i = 0; i < 120; i++) {
-            // 背景远景星系和前景流星混杂
+        for (int i = 0; i < 150; i++) {
+            Color c = Color.WHITE;
+            double r = RANDOM.nextDouble();
+            if (r > 0.8) c = Color.web("#A5F3FC"); // 浅蓝色星光
+            else if (r > 0.6) c = Color.web("#FDE047"); // 淡黄色星光
+            else if (r > 0.4) c = Color.web("#FBCFE8"); // 淡紫色星光
+            
             stars.add(new Star(RANDOM.nextDouble() * width, RANDOM.nextDouble() * height,
-                    0.5 + RANDOM.nextDouble() * 3.5, 0.15 + RANDOM.nextDouble() * 0.5));
+                    0.5 + RANDOM.nextDouble() * 3.5, 0.15 + RANDOM.nextDouble() * 0.6, c));
+        }
+        
+        nebulas.clear();
+        for (int i = 0; i < 6; i++) {
+            Color[] colors = {
+                Color.web("#3B0764"), // 深紫
+                Color.web("#172554"), // 深蓝
+                Color.web("#4C1D95"), // 亮紫
+                Color.web("#064E3B"), // 深绿
+                Color.web("#831843")  // 深酒红
+            };
+            Color c = colors[RANDOM.nextInt(colors.length)];
+            nebulas.add(new Nebula(RANDOM.nextDouble() * width, RANDOM.nextDouble() * height,
+                    300 + RANDOM.nextDouble() * 400, 200 + RANDOM.nextDouble() * 300,
+                    0.05 + RANDOM.nextDouble() * 0.15, c));
         }
     }
 
-    private void updateStars() {
+    private void updateBackgroundElements() {
+        // 更新星星与流星
         for (Star star : stars) {
-            star.x -= star.size * 0.8; // 大星星(流星)移动更快产生纵深感
+            star.x -= star.size * 0.8; // 产生视差纵深感
+            star.phase += 0.05; // 闪烁相位
             if (star.x < 0) {
                 star.x = width;
                 star.y = RANDOM.nextDouble() * height;
+            }
+        }
+        // 更新星云流动
+        for (Nebula n : nebulas) {
+            n.x -= n.speed;
+            n.phase += 0.02; // 呼吸缩放相位
+            if (n.x + n.radiusX < 0) {
+                n.x = width + n.radiusX;
+                n.y = RANDOM.nextDouble() * height;
             }
         }
     }
@@ -627,10 +670,21 @@ public final class SideScrollingShooter implements GameInterface {
     }
 
     private static final class Star {
-        double x, y;
+        double x, y, phase;
         final double size, alpha;
-        Star(double x, double y, double size, double alpha) {
-            this.x = x; this.y = y; this.size = size; this.alpha = alpha;
+        final Color color;
+        Star(double x, double y, double size, double alpha, Color color) {
+            this.x = x; this.y = y; this.size = size; this.alpha = alpha; this.color = color;
+            this.phase = RANDOM.nextDouble() * Math.PI * 2;
+        }
+    }
+
+    private static final class Nebula {
+        double x, y, radiusX, radiusY, speed, phase;
+        Color color;
+        Nebula(double x, double y, double rx, double ry, double speed, Color color) {
+            this.x = x; this.y = y; this.radiusX = rx; this.radiusY = ry; this.speed = speed; this.color = color;
+            this.phase = RANDOM.nextDouble() * Math.PI * 2;
         }
     }
 
