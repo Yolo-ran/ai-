@@ -46,6 +46,8 @@ public final class SideScrollingShooter implements GameInterface {
     private final List<PowerUp> powerUps = new ArrayList<>();
 
     private Image playerImage;
+    private Image bossImage;
+    private Image minionImage;
 
     private Difficulty difficulty = Difficulty.NORMAL;
     private ShooterLevelConfig level;
@@ -117,17 +119,21 @@ public final class SideScrollingShooter implements GameInterface {
         powerUps.clear();
         createBackgroundElements();
 
-        // 尝试加载玩家战机贴图
+        // 尝试加载战机与敌机贴图
         try {
             var is = getClass().getResourceAsStream("/assets/player_ship.png");
-            if (is != null) {
-                playerImage = new Image(is);
-            } else {
-                playerImage = null;
-            }
-        } catch (Exception e) {
-            playerImage = null;
-        }
+            playerImage = is != null ? new Image(is) : null;
+        } catch (Exception e) { playerImage = null; }
+
+        try {
+            var isBoss = getClass().getResourceAsStream("/assets/boss.png");
+            bossImage = isBoss != null ? new Image(isBoss) : null;
+        } catch (Exception e) { bossImage = null; }
+
+        try {
+            var isMinion = getClass().getResourceAsStream("/assets/minion.png");
+            minionImage = isMinion != null ? new Image(isMinion) : null;
+        } catch (Exception e) { minionImage = null; }
     }
 
     @Override
@@ -591,62 +597,155 @@ public final class SideScrollingShooter implements GameInterface {
             boolean flash = enemy.hitFlashFrames > 0;
 
             if (enemy.boss) {
-                // 科幻机械 BOSS (半生物半机械分块渲染设计)
-                
-                // 1. 动力翼
-                gc.setFill(flash ? Color.WHITE : new LinearGradient(0, 0, 0, 1, true, CycleMethod.NO_CYCLE, 
-                    new Stop(0, Color.web("#27272A")), new Stop(1, Color.web("#18181B"))));
-                gc.fillPolygon(new double[]{-40, -60, -40, 20}, new double[]{-50, 0, 50, 0}, 4);
-                
-                // 2. 主装甲躯干
-                gc.setFill(flash ? Color.WHITE : Color.web("#09090B")); // 纯黑装甲
-                gc.fillOval(-70, -70, 140, 140);
-                
-                // 3. 动态旋转主炮塔 (始终瞄准玩家)
-                gc.save();
-                // 抵消外层机身悬浮旋转的影响，计算真实的相对瞄准角度
-                double aimAngle = Math.toDegrees(Math.atan2(playerY - enemy.y, playerX - enemy.x)) - Math.sin(enemy.phase) * 5;
-                gc.rotate(aimAngle);
-                gc.setFill(flash ? Color.WHITE : Color.web("#3F3F46"));
-                gc.fillRect(0, -12, 80, 24); // 巨型炮管
-                gc.setFill(flash ? Color.WHITE : Color.web("#00FF66"));
-                gc.fillOval(-20, -20, 40, 40); // 炮塔基座发光能量环
-                gc.restore();
+                if (bossImage != null) {
+                    double w = 380; // BOSS尺寸
+                    double h = bossImage.getHeight() * (w / bossImage.getWidth());
 
-                // 4. 动力核心 (受损严重时闪烁红色警报)
-                boolean lowHp = enemy.hp < enemy.maxHp * 0.3;
-                Color coreColor = lowHp && (frame % 10 < 5) ? Color.web("#FF0055") : Color.web("#00FF66");
-                gc.setFill(flash ? Color.WHITE : coreColor);
-                gc.fillOval(-15, -15, 30, 30);
-                
-                // 5. 环境光融入 (Point Light)
-                // 模拟 2D 绿色点光源照亮背景星云
-                gc.setGlobalBlendMode(BlendMode.ADD);
-                double lightRadius = 150 + Math.sin(frame * 0.1) * 10;
-                gc.setFill(new RadialGradient(
-                        0, 0, 0, 0, lightRadius, false, CycleMethod.NO_CYCLE,
-                        new Stop(0, Color.rgb(0, 255, 102, 0.15)), // 极微弱的荧光绿照亮背景
-                        new Stop(1, Color.TRANSPARENT)
-                ));
-                gc.fillOval(-lightRadius, -lightRadius, lightRadius * 2, lightRadius * 2);
-                gc.setGlobalBlendMode(BlendMode.SRC_OVER);
-                
-                // BOSS血条
-                double ratio = Math.max(0, enemy.hp / (double) enemy.maxHp);
-                gc.setFill(Color.rgb(0, 0, 0, 0.6));
-                gc.fillRoundRect(-60, -90, 120, 8, 4, 4);
-                gc.setFill(new LinearGradient(0, 0, 1, 0, true, CycleMethod.NO_CYCLE, 
-                    new Stop(0, Color.web("#00FF66")), new Stop(1, Color.web("#10B981"))));
-                gc.fillRoundRect(-60, -90, 120 * ratio, 8, 4, 4);
+                    // 1. 动态边缘光 (Rim Light) 照亮星云
+                    DropShadow rimLight = new DropShadow();
+                    rimLight.setColor(Color.web("#00FF66", 0.6)); // 毒绿环境光
+                    rimLight.setRadius(50);
+                    rimLight.setSpread(0.2);
+
+                    if (flash) {
+                        // 受击闪白 (Hit Flash): 亮度拉满
+                        javafx.scene.effect.ColorAdjust colorAdjust = new javafx.scene.effect.ColorAdjust();
+                        colorAdjust.setBrightness(1.0);
+                        rimLight.setInput(colorAdjust);
+                    }
+                    gc.setEffect(rimLight);
+
+                    // 开启 SCREEN 过滤黑底
+                    gc.setGlobalBlendMode(BlendMode.SCREEN);
+                    gc.drawImage(bossImage, -w / 2, -h / 2, w, h);
+
+                    // 2. 能量脉冲呼吸灯 (ADD 叠加)
+                    double pulseAlpha = 0.15 + Math.sin(frame * 0.1) * 0.15;
+                    gc.setGlobalAlpha(pulseAlpha);
+                    gc.setGlobalBlendMode(BlendMode.ADD);
+                    gc.drawImage(bossImage, -w / 2, -h / 2, w, h);
+                    gc.setGlobalAlpha(1.0);
+
+                    // 3. 核心环境点光源
+                    double lightRadius = 180 + Math.sin(frame * 0.1) * 15;
+                    gc.setFill(new RadialGradient(
+                            0, 0, 0, 0, lightRadius, false, CycleMethod.NO_CYCLE,
+                            new Stop(0, Color.rgb(0, 255, 102, 0.15)),
+                            new Stop(1, Color.TRANSPARENT)
+                    ));
+                    gc.fillOval(-lightRadius, -lightRadius, lightRadius * 2, lightRadius * 2);
+
+                    gc.setGlobalBlendMode(BlendMode.SRC_OVER);
+                    gc.setEffect(null);
+
+                    // 4. 动态炮塔指示 (虽然有了整图，但在顶部叠加一个旋转的光束瞄准线增加压迫感)
+                    gc.save();
+                    double aimAngle = Math.toDegrees(Math.atan2(playerY - enemy.y, playerX - enemy.x)) - Math.sin(enemy.phase) * 5;
+                    gc.rotate(aimAngle);
+                    gc.setGlobalBlendMode(BlendMode.ADD);
+                    gc.setFill(new LinearGradient(0, 0, 1, 0, true, CycleMethod.NO_CYCLE,
+                            new Stop(0, Color.rgb(0, 255, 102, 0.4)), new Stop(1, Color.TRANSPARENT)));
+                    gc.fillRect(0, -2, 300, 4); // 极长的微弱瞄准激光
+                    gc.restore();
+
+                    // BOSS血条
+                    double ratio = Math.max(0, enemy.hp / (double) enemy.maxHp);
+                    gc.setFill(Color.rgb(0, 0, 0, 0.6));
+                    gc.fillRoundRect(-80, -h / 2 - 20, 160, 8, 4, 4);
+                    gc.setFill(new LinearGradient(0, 0, 1, 0, true, CycleMethod.NO_CYCLE, 
+                        new Stop(0, Color.web("#00FF66")), new Stop(1, Color.web("#10B981"))));
+                    gc.fillRoundRect(-80, -h / 2 - 20, 160 * ratio, 8, 4, 4);
+
+                } else {
+                    // 科幻机械 BOSS (半生物半机械分块渲染设计 - 降级方案)
+                    
+                    // 1. 动力翼
+                    gc.setFill(flash ? Color.WHITE : new LinearGradient(0, 0, 0, 1, true, CycleMethod.NO_CYCLE, 
+                        new Stop(0, Color.web("#27272A")), new Stop(1, Color.web("#18181B"))));
+                    gc.fillPolygon(new double[]{-40, -60, -40, 20}, new double[]{-50, 0, 50, 0}, 4);
+                    
+                    // 2. 主装甲躯干
+                    gc.setFill(flash ? Color.WHITE : Color.web("#09090B")); // 纯黑装甲
+                    gc.fillOval(-70, -70, 140, 140);
+                    
+                    // 3. 动态旋转主炮塔 (始终瞄准玩家)
+                    gc.save();
+                    // 抵消外层机身悬浮旋转的影响，计算真实的相对瞄准角度
+                    double aimAngle = Math.toDegrees(Math.atan2(playerY - enemy.y, playerX - enemy.x)) - Math.sin(enemy.phase) * 5;
+                    gc.rotate(aimAngle);
+                    gc.setFill(flash ? Color.WHITE : Color.web("#3F3F46"));
+                    gc.fillRect(0, -12, 80, 24); // 巨型炮管
+                    gc.setFill(flash ? Color.WHITE : Color.web("#00FF66"));
+                    gc.fillOval(-20, -20, 40, 40); // 炮塔基座发光能量环
+                    gc.restore();
+
+                    // 4. 动力核心 (受损严重时闪烁红色警报)
+                    boolean lowHp = enemy.hp < enemy.maxHp * 0.3;
+                    Color coreColor = lowHp && (frame % 10 < 5) ? Color.web("#FF0055") : Color.web("#00FF66");
+                    gc.setFill(flash ? Color.WHITE : coreColor);
+                    gc.fillOval(-15, -15, 30, 30);
+                    
+                    // 5. 环境光融入 (Point Light)
+                    // 模拟 2D 绿色点光源照亮背景星云
+                    gc.setGlobalBlendMode(BlendMode.ADD);
+                    double lightRadius = 150 + Math.sin(frame * 0.1) * 10;
+                    gc.setFill(new RadialGradient(
+                            0, 0, 0, 0, lightRadius, false, CycleMethod.NO_CYCLE,
+                            new Stop(0, Color.rgb(0, 255, 102, 0.15)), // 极微弱的荧光绿照亮背景
+                            new Stop(1, Color.TRANSPARENT)
+                    ));
+                    gc.fillOval(-lightRadius, -lightRadius, lightRadius * 2, lightRadius * 2);
+                    gc.setGlobalBlendMode(BlendMode.SRC_OVER);
+                    
+                    // BOSS血条
+                    double ratio = Math.max(0, enemy.hp / (double) enemy.maxHp);
+                    gc.setFill(Color.rgb(0, 0, 0, 0.6));
+                    gc.fillRoundRect(-60, -90, 120, 8, 4, 4);
+                    gc.setFill(new LinearGradient(0, 0, 1, 0, true, CycleMethod.NO_CYCLE, 
+                        new Stop(0, Color.web("#00FF66")), new Stop(1, Color.web("#10B981"))));
+                    gc.fillRoundRect(-60, -90, 120 * ratio, 8, 4, 4);
+                }
             } else {
-                // 小型侦察机小兵
-                gc.setFill(flash ? Color.WHITE : new LinearGradient(0, 0, 0, 1, true, CycleMethod.NO_CYCLE, 
-                    new Stop(0, Color.web("#3F3F46")), new Stop(1, Color.web("#18181B"))));
-                gc.fillPolygon(new double[]{15, -15, -15}, new double[]{0, -15, 15}, 3);
-                
-                // 能量核心发光 (电光粉，还原概念图设计)
-                gc.setFill(flash ? Color.WHITE : Color.web("#FF007F"));
-                gc.fillOval(-10, -4, 8, 8);
+                if (minionImage != null) {
+                    double w = 90; // 小兵尺寸
+                    double h = minionImage.getHeight() * (w / minionImage.getWidth());
+
+                    // 1. 动态边缘光
+                    DropShadow rimLight = new DropShadow();
+                    rimLight.setColor(Color.web("#FF007F", 0.6)); // 电光粉
+                    rimLight.setRadius(15);
+                    rimLight.setSpread(0.3);
+
+                    if (flash) {
+                        javafx.scene.effect.ColorAdjust colorAdjust = new javafx.scene.effect.ColorAdjust();
+                        colorAdjust.setBrightness(1.0);
+                        rimLight.setInput(colorAdjust);
+                    }
+                    gc.setEffect(rimLight);
+
+                    gc.setGlobalBlendMode(BlendMode.SCREEN);
+                    gc.drawImage(minionImage, -w / 2, -h / 2, w, h);
+
+                    // 2. 能量脉冲
+                    double pulseAlpha = 0.2 + Math.sin(frame * 0.2) * 0.2;
+                    gc.setGlobalAlpha(pulseAlpha);
+                    gc.setGlobalBlendMode(BlendMode.ADD);
+                    gc.drawImage(minionImage, -w / 2, -h / 2, w, h);
+                    gc.setGlobalAlpha(1.0);
+
+                    // 恢复
+                    gc.setGlobalBlendMode(BlendMode.SRC_OVER);
+                    gc.setEffect(null);
+                } else {
+                    // 小型侦察机小兵 - 降级方案
+                    gc.setFill(flash ? Color.WHITE : new LinearGradient(0, 0, 0, 1, true, CycleMethod.NO_CYCLE, 
+                        new Stop(0, Color.web("#3F3F46")), new Stop(1, Color.web("#18181B"))));
+                    gc.fillPolygon(new double[]{15, -15, -15}, new double[]{0, -15, 15}, 3);
+                    
+                    // 能量核心发光 (电光粉，还原概念图设计)
+                    gc.setFill(flash ? Color.WHITE : Color.web("#FF007F"));
+                    gc.fillOval(-10, -4, 8, 8);
+                }
             }
             gc.restore();
         }
