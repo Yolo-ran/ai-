@@ -16,39 +16,30 @@ import com.gesturegame.network.GestureCommandResolver;
 import com.gesturegame.network.GestureStreamServer.DualHandState;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
+import javafx.geometry.VPos;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.Label;
-import javafx.scene.effect.Bloom;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
-import javafx.scene.image.PixelWriter;
-import javafx.scene.image.WritableImage;
 import javafx.scene.layout.Pane;
 import javafx.scene.paint.Color;
 import javafx.scene.paint.CycleMethod;
+import javafx.scene.paint.LinearGradient;
 import javafx.scene.paint.RadialGradient;
 import javafx.scene.paint.Stop;
+import javafx.scene.shape.ArcType;
+import javafx.scene.text.Font;
+import javafx.scene.text.FontWeight;
+import javafx.scene.text.TextAlignment;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.function.Supplier;
 import java.util.logging.Logger;
 
 /**
- * 星河大厅控制器：单团 3D 粒子云在多种游戏形态间形变（仿 GEM 粒子幻境）。
- *
- * <p>渲染要点：
- * <ul>
- *   <li>~3000 粒子，每帧 lerp 向当前形态目标点 → 平滑形变</li>
- *   <li>柔光径向 sprite（PixelWriter 预渲染）+ drawImage，替掉硬圆点</li>
- *   <li>Canvas 节点套 {@link Glow} 效果 → 真·泛光，逼近 GEM 的 UnrealBloom</li>
- *   <li>3D 透视投影（绕 Y 自转 + 近大远小近亮远暗），按深度排序</li>
- *   <li>OPEN 张手 → 能量爆发（整体缩放 + 外层扩得更多 + 湍流 + 增亮）</li>
- *   <li>随机闪烁（闪白衰减）、深底 #020205 + 暗角雾、手位视差</li>
- * </ul>
- *
- * <p>选择按索引：SWIPE 切形态、FIST 按住确认进游戏（复用现有滑动状态机）。
+ * 轻量轨道大厅。固定数量的游戏节点代替原来的 3000 粒子与逐帧深度排序，
+ * 保留单手切换、握拳确认和大厅摄像头预览；轨道保持固定尺寸。
  */
 public class LobbyController {
 
@@ -62,59 +53,48 @@ public class LobbyController {
             FruitNinja::new,
             RhythmMaster::new,
             SideScrollingShooter::new);
-    private static final int MAX_GAMES = GAME_REGISTRY.size();
 
-    private record GameInfo(String name, String desc, String icon, String color, String shape) {}
+    private record GameInfo(String name, String desc, String icon, String color,
+                            String category, int energy) {}
+
     private static final List<GameInfo> GAME_INFO = List.of(
-            new GameInfo("接水果", "手势控篮子接水果躲炸弹", "🍎", "#22d3ee", "sphere"),
-            new GameInfo("猜拳", "三秒倒计时出拳对决", "✂️", "#ec4899", "galaxy"),
-            new GameInfo("戳泡泡", "手势瞄准戳破泡泡连击", "🫧", "#84cc16", "lotus"),
-            new GameInfo("塔罗牌", "选牌翻牌探索命运", "🔮", "#f59e0b", "heart"),
-            new GameInfo("切水果", "手滑动切水果躲炸弹", "🔪", "#f97316", "saturn"),
-            new GameInfo("节奏大师", "按时摆出正确手势", "🥁", "#a78bfa", "star"),
-            new GameInfo("星际突击", "AI 动态生成横版射击关卡", "🚀", "#38bdf8", "galaxy"));
+            new GameInfo("接水果", "移动手掌控制果篮，接住水果并避开炸弹。", "🍎", "#22d3ee", "ARCADE", 72),
+            new GameInfo("猜拳", "三秒倒计时完成出拳，战绩会自动写入 CSV。", "✂", "#ec4899", "CLASSIC", 66),
+            new GameInfo("戳泡泡", "用手势光标连续击破泡泡，挑战反应速度。", "◉", "#84cc16", "CASUAL", 58),
+            new GameInfo("塔罗牌", "选择牌阵并翻开塔罗牌，获得完整牌面解读。", "◆", "#f59e0b", "MYSTIC", 80),
+            new GameInfo("切水果", "挥动手掌切开水果，以目标分数完成挑战。", "◒", "#f97316", "ACTION", 88),
+            new GameInfo("节奏大师", "跟随节奏摆出正确手势，积累连击分数。", "♪", "#a78bfa", "RHYTHM", 84),
+            new GameInfo("星际突击", "驾驶战机突破航线，AI 动态生成下一关。", "🚀", "#38bdf8", "AI GENERATED", 94));
 
-    private static final int PARTICLE_COUNT = 3000;
-    private static final int SPRITE_SIZE = 64;
-    private static final double CAMERA_Z = 30.0;
-    private static final double PX_PER_UNIT = 16.0;
-    private static final double LERP_SPEED = 0.06;
-    private static final double MORPH_LERP = 0.12;
-    private static final double ROT_SPEED = 0.004;
-    private static final double TURBULENCE = 0.03;
-    private static final double PARTICLE_DRAW_SIZE = 10.0;
-    private static final long NAVIGATION_COOLDOWN_MS = 180L;
+    private static final int MAX_GAMES = GAME_REGISTRY.size();
+    private static final int CONFIRM_HOLD_FRAMES = 72;
+    private static final long NAVIGATION_COOLDOWN_MS = 520L;
     private static final long ACTION_COOLDOWN_MS = 500L;
+    private static final long DETAIL_VISIBLE_NS = 5_000_000_000L;
+    private static final long LOBBY_ENTRY_GUARD_NS = 900_000_000L;
+    private static final double IDLE_ROTATION_DEG_PER_SECOND = 5.0;
 
-    @FXML
-    private Canvas lobbyCanvas;
-
-    @FXML
-    private ImageView cameraView;
-
-    @FXML
-    private Label statusLabel;
+    @FXML private Canvas lobbyCanvas;
+    @FXML private Label statusLabel;
+    @FXML private ImageView cameraView;
 
     private AppStateManager appStateManager;
     private GraphicsContext gc;
-    private Image[] sprites;
-    private double[][][] shapeTargets;
-    private Particle[] particles;
-    private Integer[] order;
-    private final double[] sxArr = new double[PARTICLE_COUNT];
-    private final double[] syArr = new double[PARTICLE_COUNT];
-    private final double[] szArr = new double[PARTICLE_COUNT];
-    private final double[] saArr = new double[PARTICLE_COUNT];
-    private final double[] ssArr = new double[PARTICLE_COUNT];
     private int currentIndex;
+    private int confirmHoldFrames;
     private long lastNavigationTime;
     private long lastActionTime;
-    private double morph;
-    private double rotY;
-    private double pulse;
-    private int confirmHoldFrames;
-    private static final int CONFIRM_HOLD_FRAMES = 72; // 1.2秒@60fps
-    private double morphTarget;
+    private long lastFrameNanos;
+    private long detailVisibleUntilNanos;
+    private long inputGuardUntilNanos;
+    private boolean detailVisible;
+    private boolean confirmArmed;
+    private int releaseFrames;
+    private double elapsedSeconds;
+    private double rotationAngle = -90.0;
+    private double targetRotationAngle = -90.0;
+    private final double[] nodeX = new double[MAX_GAMES];
+    private final double[] nodeY = new double[MAX_GAMES];
 
     public void bindStateManager(AppStateManager appStateManager) {
         this.appStateManager = appStateManager;
@@ -123,22 +103,24 @@ public class LobbyController {
     @FXML
     public void initialize() {
         gc = lobbyCanvas.getGraphicsContext2D();
-        if (lobbyCanvas.getParent() instanceof Pane) {
-            Pane parent = (Pane) lobbyCanvas.getParent();
+        if (lobbyCanvas.getParent() instanceof Pane parent) {
             lobbyCanvas.widthProperty().bind(parent.widthProperty());
             lobbyCanvas.heightProperty().bind(parent.heightProperty());
         }
-        Bloom bloomEffect = new Bloom();
-        bloomEffect.setThreshold(0.6);
-        lobbyCanvas.setEffect(bloomEffect);
-
-        sprites = createSprites();
-        shapeTargets = createShapeTargets();
-        particles = createParticles();
-        order = new Integer[PARTICLE_COUNT];
-        for (int i = 0; i < PARTICLE_COUNT; i++) {
-            order[i] = i;
-        }
+        lobbyCanvas.setFocusTraversable(true);
+        lobbyCanvas.setOnMouseClicked(event -> selectNearestNode(event.getX(), event.getY()));
+        lobbyCanvas.setOnScroll(event -> navigate(event.getDeltaY() < 0 ? 1 : -1));
+        lobbyCanvas.setOnKeyPressed(event -> {
+            switch (event.getCode()) {
+                case LEFT -> navigate(-1);
+                case RIGHT -> navigate(1);
+                case ENTER, SPACE -> {
+                    if (detailVisible) launchGame();
+                    else showSelectedDetail(System.nanoTime());
+                }
+                default -> { }
+            }
+        });
         updateStatusText();
     }
 
@@ -147,126 +129,51 @@ public class LobbyController {
     }
 
     public void tick(GestureData gesture, DualHandState dualHands) {
-        if (gc == null || lobbyCanvas == null) {
-            return;
+        if (gc == null || lobbyCanvas == null) return;
+
+        long now = System.nanoTime();
+        boolean enteringLobby = lastFrameNanos == 0 || now - lastFrameNanos > 500_000_000L;
+        double dt = enteringLobby ? 1.0 / 60.0
+                : Math.min(0.05, Math.max(0.001, (now - lastFrameNanos) / 1_000_000_000.0));
+        lastFrameNanos = now;
+        if (enteringLobby) resetLobbyPresentation(now);
+        elapsedSeconds += dt;
+
+        boolean handDetected = gesture != null && gesture.isHandDetected();
+        GestureType gestureType = handDetected ? gesture.getGesture() : GestureType.NONE;
+        updateConfirmHold(dualHands.captured() ? GestureType.NONE : gestureType, now);
+
+        if (detailVisible && now > detailVisibleUntilNanos && confirmHoldFrames == 0) {
+            detailVisible = false;
         }
+        if (detailVisible) {
+            rotationAngle = approachAngle(rotationAngle, targetRotationAngle,
+                    1.0 - Math.exp(-8.5 * dt));
+        } else {
+            rotationAngle = normalizeAngle(rotationAngle + IDLE_ROTATION_DEG_PER_SECOND * dt);
+        }
+
         double w = lobbyCanvas.getWidth();
         double h = lobbyCanvas.getHeight();
-        if (w < 1 || h < 1) {
-            return;
-        }
+        if (w <= 1 || h <= 1) return;
 
-        boolean hand = gesture != null && gesture.isHandDetected();
-        double handX = hand ? gesture.getHandX() : 0.5;
-        double handY = hand ? gesture.getHandY() : 0.5;
-
-        GestureType gestureType = hand ? gesture.getGesture() : GestureType.NONE;
-        updateConfirmHold(dualHands.captured() ? GestureType.NONE : gestureType);
-        if (dualHands.active()) {
-            // 双手靠近时聚拢、分开时散开。
-            morphTarget = 2.0 * dualHands.spread() - 1.0;
-        } else if (gestureType == GestureType.OPEN) {
-            // 本机兼容：单手张开时也允许看到外放效果，便于内置摄像头测试。
-            morphTarget = 0.8;
-        } else if (gestureType == GestureType.FIST) {
-            // 本机兼容：单手握拳时回到聚拢态。
-            morphTarget = -0.8;
-        }
-        morph += (morphTarget - morph) * MORPH_LERP;
-        rotY += ROT_SPEED * (1.0 + Math.max(0.0, morph) * 2.0);
-        double time = pulse;
-        pulse += 0.016;
-        double turb = TURBULENCE + Math.max(0.0, morph) * 0.15;
-
-        double[][] targets = shapeTargets[currentIndex];
-        for (int i = 0; i < particles.length; i++) {
-            Particle p = particles[i];
-            double tx = targets[i][0] + Math.sin(time * 2 + i) * turb;
-            double ty = targets[i][1] + Math.cos(time * 3 + i) * turb;
-            double tz = targets[i][2] + Math.sin(time * 4 + i) * turb;
-            p.x += (tx - p.x) * p.lerp;
-            p.y += (ty - p.y) * p.lerp;
-            p.z += (tz - p.z) * p.lerp;
-            if (Math.random() > 0.9995) {
-                p.spark = 1.0;
-            }
-            p.spark *= 0.9;
-        }
-
-        drawBackground(w, h);
-
-        double cx = w / 2.0 + (handX - 0.5) * 30.0;
-        double cy = h / 2.0 + (handY - 0.5) * 30.0;
-        double cosR = Math.cos(rotY);
-        double sinR = Math.sin(rotY);
-
-        for (int i = 0; i < particles.length; i++) {
-            Particle p = particles[i];
-            double rx = p.x * cosR + p.z * sinR;
-            double rz = -p.x * sinR + p.z * cosR;
-            double ry = p.y;
-            double dist = Math.hypot(p.x, Math.hypot(p.y, p.z));
-            double normDist = Math.min(dist / 12.0, 1.0);
-            double scale = (1.0 + morph * 0.5) * (1.0 + Math.max(0.0, morph) * Math.pow(normDist, 1.5) * 1.3);
-            rx *= scale;
-            ry *= scale;
-            rz *= scale;
-            double factor = CAMERA_Z / (CAMERA_Z - rz);
-            sxArr[i] = cx + rx * factor * PX_PER_UNIT;
-            syArr[i] = cy + ry * factor * PX_PER_UNIT;
-            szArr[i] = rz;
-            double depthBright = 0.4 + 0.6 * (rz + 12.0) / 24.0;
-            saArr[i] = clamp(p.brightness * depthBright * (0.7 + 0.4 * morph), 0.05, 1.0);
-            ssArr[i] = PARTICLE_DRAW_SIZE * factor * (0.7 + 0.3 * p.brightness) * (1.0 + morph * 0.3);
-        }
-        Arrays.sort(order, (a, b) -> Double.compare(szArr[a], szArr[b]));
-
-        Image sprite = sprites[currentIndex];
-        Image sparkSprite = sprites[sprites.length - 1];
-        for (int idx : order) {
-            if (particles[idx].spark > 0.2) {
-                gc.setGlobalAlpha(clamp(particles[idx].spark, 0.0, 1.0));
-                double ss = ssArr[idx] * 1.6;
-                gc.drawImage(sparkSprite, sxArr[idx] - ss / 2, syArr[idx] - ss / 2, ss, ss);
-            }
-            gc.setGlobalAlpha(saArr[idx]);
-            double ss = ssArr[idx];
-            gc.drawImage(sprite, sxArr[idx] - ss / 2, syArr[idx] - ss / 2, ss, ss);
-        }
-        gc.setGlobalAlpha(1.0);
-
-        if (hand) {
-            drawHandCursor(handX * w, handY * h);
-            if (dualHands.active()) {
-                drawHandCursor(dualHands.secondHandX() * w, dualHands.secondHandY() * h);
-            }
-        }
+        double handX = handDetected ? gesture.getHandX() : 0.5;
+        double handY = handDetected ? gesture.getHandY() : 0.5;
+        render(w, h, handDetected, handX, handY, dualHands, detailVisible);
     }
 
     public void handleAgentCommand(GestureCommand command, double confidence, String hand) {
         Platform.runLater(() -> {
-            if (!AppStateManager.STATE_LOBBY.equals(AppStateManager.getInstance().getCurrentState())) {
-                return;
-            }
+            if (!AppStateManager.STATE_LOBBY.equals(AppStateManager.getInstance().getCurrentState())) return;
             switch (command) {
-                case SWIPE_LEFT:
-                    navigate(1);
-                    break;
-                case SWIPE_RIGHT:
-                    navigate(-1);
-                    break;
-                case CONFIRM:
-                    launchGame();
-                    break;
-                case BACK:
-                    if (appStateManager != null) {
-                        appStateManager.switchState(AppStateManager.STATE_LOGIN);
-                    }
-                    break;
-                default:
-                    break;
+                case SWIPE_LEFT -> navigate(1);
+                case SWIPE_RIGHT -> navigate(-1);
+                case CONFIRM -> handleConfirmCommand();
+                case BACK -> {
+                    if (appStateManager != null) appStateManager.switchState(AppStateManager.STATE_LOGIN);
+                }
+                default -> { }
             }
-            LOGGER.info(() -> "大厅接收指令: " + command + ", confidence=" + confidence + ", hand=" + hand);
         });
     }
 
@@ -279,293 +186,385 @@ public class LobbyController {
     }
 
     public void updateCameraImage(Image image) {
-        if (image == null) {
-            return;
-        }
         Platform.runLater(() -> {
-            if (cameraView != null) {
-                cameraView.setImage(image);
-            }
+            if (cameraView != null) cameraView.setImage(image);
         });
+    }
+
+    private void render(double w, double h, boolean handDetected, double handX, double handY,
+                        DualHandState dualHands, boolean focused) {
+        gc.setGlobalAlpha(1.0);
+        gc.setTextAlign(TextAlignment.LEFT);
+        gc.setTextBaseline(VPos.BASELINE);
+        gc.setFill(Color.BLACK);
+        gc.fillRect(0, 0, w, h);
+
+        double cx = w / 2.0;
+        double cy = h / 2.0 - 10.0;
+        double orbitRadius = clamp(Math.min(w, h) * 0.285, 165, 225);
+
+        drawAtmosphere(w, h, cx, cy);
+        drawOrbit(cx, cy, orbitRadius);
+        drawCenterOrb(cx, cy);
+        calculateNodePositions(cx, cy, orbitRadius);
+
+        for (int i = 0; i < MAX_GAMES; i++) {
+            if (!focused || i != currentIndex) drawNode(i, false);
+        }
+        if (focused) {
+            drawSelectedCard(w, h, cx);
+            drawNode(currentIndex, true);
+        }
+
+        if (handDetected) drawHandCursor(handX * w, handY * h, false);
+        if (dualHands.active()) drawHandCursor(dualHands.secondHandX() * w, dualHands.secondHandY() * h, true);
+    }
+
+    private void drawAtmosphere(double w, double h, double cx, double cy) {
+        RadialGradient haze = new RadialGradient(0, 0, cx, cy,
+                Math.max(w, h) * 0.55, false, CycleMethod.NO_CYCLE,
+                new Stop(0, Color.rgb(25, 20, 58, 0.28)),
+                new Stop(0.45, Color.rgb(8, 20, 42, 0.13)),
+                new Stop(1, Color.TRANSPARENT));
+        gc.setFill(haze);
+        gc.fillRect(0, 0, w, h);
+
+        gc.setFill(Color.rgb(255, 255, 255, 0.018));
+        for (int i = 0; i < 28; i++) {
+            double x = ((i * 193.0) % Math.max(1, w));
+            double y = ((i * 97.0 + 31) % Math.max(1, h));
+            double pulse = 0.6 + 0.4 * Math.sin(elapsedSeconds * 0.7 + i);
+            gc.setGlobalAlpha(0.15 + pulse * 0.22);
+            gc.fillOval(x, y, 1.2, 1.2);
+        }
+        gc.setGlobalAlpha(1.0);
+    }
+
+    private void drawOrbit(double cx, double cy, double radius) {
+        gc.setStroke(Color.rgb(255, 255, 255, 0.10));
+        gc.setLineWidth(1.0);
+        gc.strokeOval(cx - radius, cy - radius, radius * 2, radius * 2);
+        gc.setStroke(Color.rgb(125, 211, 252, 0.025));
+        gc.setLineWidth(20);
+        gc.strokeOval(cx - radius, cy - radius, radius * 2, radius * 2);
+        gc.setStroke(Color.rgb(255, 255, 255, 0.16));
+        gc.setLineWidth(1.4);
+        gc.strokeArc(cx - radius, cy - radius, radius * 2, radius * 2,
+                -elapsedSeconds * 10.0, 34, ArcType.OPEN);
+    }
+
+    private void drawCenterOrb(double cx, double cy) {
+        drawPulseRing(cx, cy, elapsedSeconds % 2.2 / 2.2);
+        drawPulseRing(cx, cy, (elapsedSeconds + 1.1) % 2.2 / 2.2);
+
+        RadialGradient halo = new RadialGradient(0, 0, 0.5, 0.5, 0.5, true,
+                CycleMethod.NO_CYCLE,
+                new Stop(0, Color.rgb(96, 165, 250, 0.30)),
+                new Stop(0.46, Color.rgb(139, 92, 246, 0.15)),
+                new Stop(1, Color.TRANSPARENT));
+        gc.setFill(halo);
+        gc.fillOval(cx - 58, cy - 58, 116, 116);
+
+        LinearGradient core = new LinearGradient(0, 0, 1, 1, true, CycleMethod.NO_CYCLE,
+                new Stop(0, Color.web("#a855f7")),
+                new Stop(0.52, Color.web("#3b82f6")),
+                new Stop(1, Color.web("#14b8a6")));
+        gc.setFill(core);
+        gc.fillOval(cx - 32, cy - 32, 64, 64);
+        gc.setStroke(Color.rgb(255, 255, 255, 0.32));
+        gc.setLineWidth(1.0);
+        gc.strokeOval(cx - 32, cy - 32, 64, 64);
+        gc.setFill(Color.rgb(255, 255, 255, 0.88));
+        gc.fillOval(cx - 16, cy - 16, 32, 32);
+        gc.setFill(Color.rgb(255, 255, 255, 0.34));
+        gc.fillOval(cx - 10, cy - 11, 13, 9);
+    }
+
+    private void drawPulseRing(double cx, double cy, double phase) {
+        double radius = 34 + phase * 38;
+        gc.setStroke(Color.rgb(255, 255, 255, (1.0 - phase) * 0.18));
+        gc.setLineWidth(1.2);
+        gc.strokeOval(cx - radius, cy - radius, radius * 2, radius * 2);
+    }
+
+    private void calculateNodePositions(double cx, double cy, double radius) {
+        double step = 360.0 / MAX_GAMES;
+        for (int i = 0; i < MAX_GAMES; i++) {
+            double rad = Math.toRadians(i * step + rotationAngle);
+            nodeX[i] = cx + radius * Math.cos(rad);
+            nodeY[i] = cy + radius * Math.sin(rad);
+        }
+    }
+
+    private void drawNode(int index, boolean selected) {
+        GameInfo info = GAME_INFO.get(index);
+        double rad = Math.toRadians(index * (360.0 / MAX_GAMES) + rotationAngle);
+        double depth = (1.0 + Math.sin(rad)) / 2.0;
+        double opacity = selected ? 1.0 : 0.42 + depth * 0.48;
+        double scale = selected ? 1.48 : 0.84 + depth * 0.18;
+        double radius = 20 * scale;
+        Color accent = Color.web(info.color());
+
+        gc.setGlobalAlpha(opacity);
+        double glowRadius = radius + 15 + info.energy() * 0.08;
+        RadialGradient glow = new RadialGradient(0, 0, 0.5, 0.5, 0.5, true,
+                CycleMethod.NO_CYCLE,
+                new Stop(0, Color.color(accent.getRed(), accent.getGreen(), accent.getBlue(), selected ? 0.26 : 0.12)),
+                new Stop(0.4, Color.rgb(255, 255, 255, selected ? 0.10 : 0.035)),
+                new Stop(1, Color.TRANSPARENT));
+        gc.setFill(glow);
+        gc.fillOval(nodeX[index] - glowRadius, nodeY[index] - glowRadius,
+                glowRadius * 2, glowRadius * 2);
+
+        gc.setFill(selected ? Color.WHITE : Color.rgb(3, 7, 18, 0.94));
+        gc.fillOval(nodeX[index] - radius, nodeY[index] - radius, radius * 2, radius * 2);
+        gc.setStroke(selected ? Color.WHITE : Color.rgb(255, 255, 255, 0.42));
+        gc.setLineWidth(selected ? 2.3 : 1.5);
+        gc.strokeOval(nodeX[index] - radius, nodeY[index] - radius, radius * 2, radius * 2);
+
+        gc.setFill(selected ? Color.BLACK : Color.WHITE);
+        gc.setFont(Font.font("Segoe UI Emoji", FontWeight.NORMAL, selected ? 21 : 17));
+        gc.setTextAlign(TextAlignment.CENTER);
+        gc.setTextBaseline(VPos.CENTER);
+        gc.fillText(info.icon(), nodeX[index], nodeY[index] + 1);
+
+        gc.setTextBaseline(VPos.BASELINE);
+        gc.setFill(selected ? Color.WHITE : Color.rgb(255, 255, 255, 0.72));
+        gc.setFont(Font.font("Microsoft YaHei", FontWeight.BOLD, selected ? 15 : 12));
+        gc.fillText(info.name(), nodeX[index], nodeY[index] + radius + 24);
+        gc.setGlobalAlpha(1.0);
+        gc.setTextAlign(TextAlignment.LEFT);
+    }
+
+    private void drawSelectedCard(double w, double h, double cx) {
+        GameInfo info = GAME_INFO.get(currentIndex);
+        double cardW = clamp(w * 0.225, 264, 296);
+        double cardH = 188;
+        double x = clamp(cx - cardW / 2.0, 24, w - cardW - 24);
+        double y = clamp(nodeY[currentIndex] + 66, 78, h - cardH - 72);
+
+        gc.setStroke(Color.rgb(255, 255, 255, 0.30));
+        gc.setLineWidth(1.0);
+        gc.strokeLine(nodeX[currentIndex], nodeY[currentIndex] + 38,
+                nodeX[currentIndex], y);
+
+        gc.setFill(Color.rgb(0, 0, 0, 0.42));
+        gc.fillRoundRect(x - 7, y + 8, cardW + 14, cardH + 8, 20, 20);
+        LinearGradient glass = new LinearGradient(0, 0, 1, 1, true, CycleMethod.NO_CYCLE,
+                new Stop(0, Color.rgb(8, 10, 19, 0.96)),
+                new Stop(0.58, Color.rgb(2, 6, 15, 0.93)),
+                new Stop(1, Color.rgb(14, 13, 28, 0.95)));
+        gc.setFill(glass);
+        gc.fillRoundRect(x, y, cardW, cardH, 18, 18);
+        gc.setStroke(Color.rgb(255, 255, 255, 0.23));
+        gc.strokeRoundRect(x, y, cardW, cardH, 18, 18);
+        gc.setStroke(Color.rgb(255, 255, 255, 0.18));
+        gc.strokeLine(x + 18, y + 1, x + cardW - 18, y + 1);
+
+        drawBadge(x + 16, y + 13, info.category());
+        gc.setFill(Color.rgb(255, 255, 255, 0.48));
+        gc.setFont(Font.font("Consolas", 9));
+        gc.setTextAlign(TextAlignment.RIGHT);
+        gc.fillText(String.format("%02d / %02d", currentIndex + 1, MAX_GAMES), x + cardW - 16, y + 27);
+
+        gc.setTextAlign(TextAlignment.LEFT);
+        gc.setFill(Color.WHITE);
+        gc.setFont(Font.font("Microsoft YaHei", FontWeight.BOLD, 17));
+        gc.fillText(info.name(), x + 16, y + 58);
+
+        gc.setFill(Color.rgb(255, 255, 255, 0.68));
+        gc.setFont(Font.font("Microsoft YaHei", 11));
+        drawWrappedText(info.desc(), x + 16, y + 82, cardW - 32, 18);
+
+        double energyY = y + 119;
+        gc.setFill(Color.rgb(255, 255, 255, 0.65));
+        gc.setFont(Font.font("Microsoft YaHei", 9));
+        gc.fillText("ENERGY", x + 16, energyY);
+        gc.setTextAlign(TextAlignment.RIGHT);
+        gc.setFont(Font.font("Consolas", 9));
+        gc.fillText(info.energy() + "%", x + cardW - 16, energyY);
+        gc.setTextAlign(TextAlignment.LEFT);
+
+        gc.setFill(Color.rgb(255, 255, 255, 0.10));
+        gc.fillRoundRect(x + 16, energyY + 8, cardW - 32, 4, 4, 4);
+        Color accent = Color.web(info.color());
+        gc.setFill(accent);
+        gc.fillRoundRect(x + 16, energyY + 8, (cardW - 32) * info.energy() / 100.0, 4, 4, 4);
+
+        double holdProgress = clamp(confirmHoldFrames / (double) CONFIRM_HOLD_FRAMES, 0, 1);
+        gc.setFill(Color.rgb(255, 255, 255, 0.05));
+        gc.fillRoundRect(x + 16, y + cardH - 36, cardW - 32, 22, 7, 7);
+        if (holdProgress > 0) {
+            gc.setFill(Color.color(accent.getRed(), accent.getGreen(), accent.getBlue(), 0.22));
+            gc.fillRoundRect(x + 16, y + cardH - 36, (cardW - 32) * holdProgress, 22, 7, 7);
+        }
+        gc.setFill(Color.rgb(255, 255, 255, 0.80));
+        gc.setFont(Font.font("Microsoft YaHei", FontWeight.BOLD, 9));
+        gc.setTextAlign(TextAlignment.CENTER);
+        gc.fillText(holdProgress > 0 ? "正在确认  " + Math.round(holdProgress * 100) + "%" : "✊  握拳保持进入游戏",
+                x + cardW / 2.0, y + cardH - 21);
+        gc.setTextAlign(TextAlignment.LEFT);
+    }
+
+    private void drawBadge(double x, double y, String text) {
+        double badgeW = Math.max(56, text.length() * 6.2 + 16);
+        gc.setFill(Color.WHITE);
+        gc.fillRoundRect(x, y, badgeW, 19, 5, 5);
+        gc.setFill(Color.BLACK);
+        gc.setFont(Font.font("Consolas", FontWeight.BOLD, 8));
+        gc.setTextAlign(TextAlignment.CENTER);
+        gc.fillText(text, x + badgeW / 2.0, y + 12.8);
+        gc.setTextAlign(TextAlignment.LEFT);
+    }
+
+    private void drawWrappedText(String text, double x, double y, double maxWidth, double lineHeight) {
+        StringBuilder line = new StringBuilder();
+        double currentY = y;
+        for (int i = 0; i < text.length(); i++) {
+            char ch = text.charAt(i);
+            String candidate = line.toString() + ch;
+            if (!line.isEmpty() && gc.getFont().getSize() * candidate.length() > maxWidth * 1.55) {
+                gc.fillText(line.toString(), x, currentY, maxWidth);
+                line.setLength(0);
+                currentY += lineHeight;
+            }
+            line.append(ch);
+        }
+        if (!line.isEmpty()) gc.fillText(line.toString(), x, currentY, maxWidth);
+    }
+
+    private void drawHandCursor(double x, double y, boolean secondary) {
+        Color color = secondary ? Color.web("#a78bfa") : Color.web("#67e8f9");
+        gc.setFill(Color.color(color.getRed(), color.getGreen(), color.getBlue(), 0.12));
+        gc.fillOval(x - 18, y - 18, 36, 36);
+        gc.setStroke(color);
+        gc.setLineWidth(1.5);
+        gc.strokeOval(x - 10, y - 10, 20, 20);
+        gc.strokeLine(x - 15, y, x + 15, y);
+        gc.strokeLine(x, y - 15, x, y + 15);
+
+        if (!secondary && confirmHoldFrames > 0) {
+            double progress = clamp(confirmHoldFrames / (double) CONFIRM_HOLD_FRAMES, 0, 1);
+            gc.setLineWidth(3.0);
+            gc.strokeArc(x - 24, y - 24, 48, 48, 90, -360 * progress, ArcType.OPEN);
+        }
     }
 
     private void navigate(int direction) {
         long now = System.currentTimeMillis();
-        if (now - lastNavigationTime < NAVIGATION_COOLDOWN_MS) {
-            return;
-        }
+        if (now - lastNavigationTime < NAVIGATION_COOLDOWN_MS) return;
         currentIndex = Math.floorMod(currentIndex + direction, MAX_GAMES);
         lastNavigationTime = now;
+        confirmHoldFrames = 0;
+        showSelectedDetail(System.nanoTime());
         updateStatusText();
+    }
+
+    private void showSelectedDetail(long now) {
+        targetRotationAngle = normalizeAngle(-90.0 - currentIndex * (360.0 / MAX_GAMES));
+        detailVisible = true;
+        detailVisibleUntilNanos = now + DETAIL_VISIBLE_NS;
+    }
+
+    private void resetLobbyPresentation(long now) {
+        detailVisible = false;
+        confirmHoldFrames = 0;
+        confirmArmed = false;
+        releaseFrames = 0;
+        inputGuardUntilNanos = now + LOBBY_ENTRY_GUARD_NS;
+    }
+
+    private void handleConfirmCommand() {
+        long now = System.nanoTime();
+        if (now < inputGuardUntilNanos || !confirmArmed) return;
+        if (detailVisible && now > detailVisibleUntilNanos) detailVisible = false;
+        if (!detailVisible) {
+            showSelectedDetail(now);
+            confirmArmed = false;
+            releaseFrames = 0;
+            confirmHoldFrames = 0;
+            return;
+        }
+        launchGame();
+    }
+
+    private void selectNearestNode(double x, double y) {
+        int nearest = -1;
+        double nearestDistance = 52 * 52;
+        for (int i = 0; i < MAX_GAMES; i++) {
+            double dx = x - nodeX[i];
+            double dy = y - nodeY[i];
+            double distance = dx * dx + dy * dy;
+            if (distance < nearestDistance) {
+                nearest = i;
+                nearestDistance = distance;
+            }
+        }
+        if (nearest >= 0) {
+            currentIndex = nearest;
+            confirmHoldFrames = 0;
+            showSelectedDetail(System.nanoTime());
+            updateStatusText();
+            lobbyCanvas.requestFocus();
+        }
+    }
+
+    private void updateConfirmHold(GestureType gesture, long now) {
+        if (now < inputGuardUntilNanos) {
+            confirmHoldFrames = 0;
+            return;
+        }
+        if (gesture != GestureType.FIST) {
+            releaseFrames = Math.min(20, releaseFrames + 1);
+            if (releaseFrames >= 8) confirmArmed = true;
+            confirmHoldFrames = Math.max(0, confirmHoldFrames - 4);
+        } else if (confirmArmed && detailVisible) {
+            releaseFrames = 0;
+            confirmHoldFrames = Math.min(CONFIRM_HOLD_FRAMES, confirmHoldFrames + 1);
+            detailVisibleUntilNanos = now + 1_000_000_000L;
+        } else {
+            releaseFrames = 0;
+            confirmHoldFrames = 0;
+        }
     }
 
     private void launchGame() {
         long now = System.currentTimeMillis();
-        if (now - lastActionTime < ACTION_COOLDOWN_MS) {
-            return;
-        }
+        if (now - lastActionTime < ACTION_COOLDOWN_MS) return;
         GameInterface game = createGame(currentIndex);
         if (game == null || appStateManager == null) {
             LOGGER.warning(() -> "[大厅] 无法启动游戏，索引越界: " + currentIndex);
             return;
         }
         lastActionTime = now;
-        LOGGER.info(() -> "[大厅] 启动游戏: " + game.getName() + " (形态索引 " + currentIndex + ")");
+        confirmHoldFrames = 0;
+        detailVisible = false;
+        LOGGER.info(() -> "[轨道大厅] 启动游戏: " + game.getName() + " (节点 " + currentIndex + ")");
         appStateManager.setActiveGame(game);
         appStateManager.switchState(AppStateManager.STATE_DIFFICULTY);
     }
 
     private GameInterface createGame(int index) {
-        if (index < 0 || index >= GAME_REGISTRY.size()) {
-            return null;
-        }
-        return GAME_REGISTRY.get(index).get();
+        return index >= 0 && index < GAME_REGISTRY.size() ? GAME_REGISTRY.get(index).get() : null;
     }
 
     private void updateStatusText() {
-        if (statusLabel == null || currentIndex < 0 || currentIndex >= GAME_INFO.size()) {
-            return;
-        }
-        GameInfo gi = GAME_INFO.get(currentIndex);
-        statusLabel.setText(gi.icon() + "  " + gi.name() + " — " + gi.desc()
-                + "    ·    单手张开挥动切换 · 双手开合聚散 · ✊握拳开始");
+        if (statusLabel == null) return;
+        statusLabel.setText("张开手掌左右挥动选择   ·   轨道自动巡航   ·   ✊ 握拳查看 / 进入");
     }
 
-    // ===== 渲染 =====
-
-    private void drawBackground(double w, double h) {
-        gc.setFill(Color.web("#020205"));
-        gc.fillRect(0, 0, w, h);
-        double cx = w / 2.0;
-        double cy = h / 2.0;
-        double maxR = Math.hypot(w, h) / 2.0;
-        gc.setFill(new RadialGradient(0, 0, cx, cy, maxR, false, CycleMethod.NO_CYCLE,
-                new Stop(0, Color.color(0.01, 0.01, 0.02, 0.0)),
-                new Stop(0.65, Color.color(0.01, 0.01, 0.02, 0.0)),
-                new Stop(1, Color.color(0.01, 0.01, 0.02, 0.85))));
-        gc.fillRect(0, 0, w, h);
+    private static double approachAngle(double current, double target, double amount) {
+        return normalizeAngle(current + normalizeAngle(target - current) * clamp(amount, 0, 1));
     }
 
-    private void updateConfirmHold(GestureType gesture) {
-        if (gesture == GestureType.FIST) {
-            confirmHoldFrames++;
-        } else {
-            confirmHoldFrames = 0;
-        }
+    private static double normalizeAngle(double angle) {
+        double normalized = angle % 360.0;
+        if (normalized > 180) normalized -= 360;
+        if (normalized < -180) normalized += 360;
+        return normalized;
     }
 
-    private void drawHandCursor(double x, double y) {
-        if (confirmHoldFrames > 0) {
-            gc.setFill(Color.color(0.87, 1.0, 0.6, 0.1));
-            gc.fillOval(x - 22, y - 22, 44, 44);
-            gc.setStroke(Color.web("#deff9a"));
-            gc.setLineWidth(2.0);
-            gc.strokeOval(x - 16, y - 16, 32, 32);
-            double progress = Math.min(1.0, (double) confirmHoldFrames / CONFIRM_HOLD_FRAMES);
-            gc.setStroke(Color.web("#deff9a"));
-            gc.setLineWidth(3);
-            gc.strokeArc(x - 20, y - 20, 40, 40, 90, -360 * progress,
-                    javafx.scene.shape.ArcType.OPEN);
-        }
-        // 中心小点（始终显示）
-        gc.setFill(Color.color(0.87, 1.0, 0.6, 0.95));
-        gc.fillOval(x - 3, y - 3, 6, 6);
-    }
-
-    private Image[] createSprites() {
-        Image[] sp = new Image[GAME_INFO.size() + 1];
-        for (int i = 0; i < GAME_INFO.size(); i++) {
-            sp[i] = makeSprite(Color.web(GAME_INFO.get(i).color()));
-        }
-        sp[sp.length - 1] = makeSprite(Color.color(1.0, 1.0, 1.0));
-        return sp;
-    }
-
-    private Image makeSprite(Color tint) {
-        int s = SPRITE_SIZE;
-        WritableImage img = new WritableImage(s, s);
-        PixelWriter pw = img.getPixelWriter();
-        double r = tint.getRed();
-        double g = tint.getGreen();
-        double b = tint.getBlue();
-        double half = (s - 1) / 2.0;
-        for (int py = 0; py < s; py++) {
-            for (int px = 0; px < s; px++) {
-                double dx = (px - half) / half;
-                double dy = (py - half) / half;
-                double d = Math.min(1.0, Math.sqrt(dx * dx + dy * dy));
-                double a = Math.max(0.0, 1.0 - d);
-                a = a * a;
-                pw.setColor(px, py, new Color(r, g, b, a));
-            }
-        }
-        return img;
-    }
-
-    private double[][][] createShapeTargets() {
-        double[][][] all = new double[GAME_INFO.size()][PARTICLE_COUNT][3];
-        for (int i = 0; i < GAME_INFO.size(); i++) {
-            buildShape(GAME_INFO.get(i).shape(), all[i]);
-        }
-        return all;
-    }
-
-    private void buildShape(String type, double[][] pos) {
-        int n = pos.length;
-        for (int i = 0; i < n; i++) {
-            double x = 0, y = 0, z = 0;
-            switch (type) {
-                case "sphere": {
-                    double r = 10 + Math.random() * 2;
-                    double theta = Math.random() * Math.PI * 2;
-                    double phi = Math.acos(2 * Math.random() - 1);
-                    x = r * Math.sin(phi) * Math.cos(theta);
-                    y = r * Math.sin(phi) * Math.sin(theta);
-                    z = r * Math.cos(phi);
-                    if (i < n * 0.2) {
-                        x *= 0.3;
-                        y *= 0.3;
-                        z *= 0.3;
-                    }
-                    break;
-                }
-                case "galaxy": {
-                    int arms = 3;
-                    int spin = i % arms;
-                    double offset = (spin / (double) arms) * Math.PI * 2;
-                    double dist = Math.pow(Math.random(), 0.5);
-                    double r = dist * 20;
-                    double angle = dist * 10 + offset;
-                    x = r * Math.cos(angle);
-                    z = r * Math.sin(angle);
-                    y = (Math.random() - 0.5) * (15 - r) * 0.2;
-                    if (r < 2) {
-                        y *= 0.2;
-                    }
-                    break;
-                }
-                case "lotus": {
-                    double u = Math.random() * Math.PI * 2;
-                    double v = Math.random();
-                    int petals = 7;
-                    double rBase = 8 * (0.5 + 0.5 * Math.pow(Math.sin(petals * u * 0.5), 2)) * v;
-                    x = rBase * Math.cos(u);
-                    z = rBase * Math.sin(u);
-                    y = 4 * Math.pow(v, 2) - 2;
-                    if (i < n * 0.15) {
-                        x = (Math.random() - 0.5);
-                        z = (Math.random() - 0.5);
-                        y = (Math.random() - 0.5) * 10;
-                    }
-                    break;
-                }
-                case "heart": {
-                    double t = Math.PI - 2 * Math.PI * Math.random();
-                    double u = 2 * Math.PI * Math.random();
-                    x = 16 * Math.pow(Math.sin(t), 3);
-                    y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
-                    z = 6 * Math.cos(t) * Math.sin(u) * Math.sin(t);
-                    double sc = 0.6;
-                    x *= sc;
-                    y *= sc;
-                    z *= sc;
-                    if (Math.random() > 0.8) {
-                        x *= 1.1;
-                        y *= 1.1;
-                        z *= 1.1;
-                    }
-                    break;
-                }
-                case "saturn": {
-                    if (i < n * 0.3) {
-                        double r = 5.5;
-                        double theta = Math.random() * Math.PI * 2;
-                        double phi = Math.acos(2 * Math.random() - 1);
-                        x = r * Math.sin(phi) * Math.cos(theta);
-                        y = r * 0.9 * Math.sin(phi) * Math.sin(theta);
-                        z = r * Math.cos(phi);
-                    } else {
-                        double angle = Math.random() * Math.PI * 2;
-                        double sel = Math.random();
-                        double r;
-                        double thick;
-                        if (sel < 0.45) {
-                            r = 7 + Math.random() * 3.5;
-                            thick = 0.2;
-                        } else if (sel < 0.5) {
-                            x = 0;
-                            y = 0;
-                            z = 0;
-                            break;
-                        } else {
-                            r = 12 + Math.random() * 5;
-                            thick = 0.4;
-                        }
-                        r += (Math.random() - 0.5) * 0.3;
-                        x = r * Math.cos(angle);
-                        y = (Math.random() - 0.5) * thick;
-                        z = r * Math.sin(angle);
-                        double tilt = 0.4;
-                        double yNew = y * Math.cos(tilt) - x * Math.sin(tilt);
-                        double xNew = y * Math.sin(tilt) + x * Math.cos(tilt);
-                        x = xNew;
-                        y = yNew;
-                    }
-                    break;
-                }
-                case "star": {
-                    double a = Math.random() * Math.PI * 2;
-                    int points = 5;
-                    double segAngle = Math.PI * 2 / points;
-                    double halfSeg = segAngle / 2;
-                    double localA = a % segAngle;
-                    double tt = localA / halfSeg;
-                    if (tt > 1) {
-                        tt = 2 - tt;
-                    }
-                    double r = (Math.random() < 0.15) ? Math.random() * 5 : lerp(12, 5, tt);
-                    x = r * Math.cos(a);
-                    y = r * Math.sin(a);
-                    z = (Math.random() - 0.5) * 2;
-                    break;
-                }
-                default:
-                    break;
-            }
-            pos[i][0] = x;
-            pos[i][1] = y;
-            pos[i][2] = z;
-        }
-    }
-
-    private Particle[] createParticles() {
-        Particle[] ps = new Particle[PARTICLE_COUNT];
-        double[][] base = shapeTargets[0];
-        for (int i = 0; i < PARTICLE_COUNT; i++) {
-            Particle p = new Particle();
-            p.brightness = 0.2 + Math.random() * 0.8;
-            p.spark = 0.0;
-            p.lerp = LERP_SPEED * (0.7 + Math.random() * 0.6);
-            p.x = base[i][0];
-            p.y = base[i][1];
-            p.z = base[i][2];
-            ps[i] = p;
-        }
-        return ps;
-    }
-
-    private static double lerp(double a, double b, double t) {
-        return a + (b - a) * t;
-    }
-
-    private static double clamp(double v, double lo, double hi) {
-        return v < lo ? lo : (v > hi ? hi : v);
-    }
-
-    private static final class Particle {
-        double x, y, z;
-        double brightness;
-        double spark;
-        double lerp;
+    private static double clamp(double value, double min, double max) {
+        return Math.max(min, Math.min(max, value));
     }
 }

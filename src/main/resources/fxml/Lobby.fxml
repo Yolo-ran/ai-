@@ -5,9 +5,7 @@
 <?import javafx.scene.control.Label?>
 <?import javafx.scene.image.ImageView?>
 <?import javafx.scene.layout.AnchorPane?>
-<?import javafx.scene.layout.HBox?>
 <?import javafx.scene.layout.StackPane?>
-<?import javafx.scene.layout.VBox?>
 <?import javafx.scene.shape.Rectangle?>
 
 <AnchorPane prefHeight="720.0" prefWidth="1280.0" stylesheets="@../css/app.css"
@@ -20,43 +18,24 @@
                 AnchorPane.bottomAnchor="0.0" AnchorPane.leftAnchor="0.0"
                 AnchorPane.rightAnchor="0.0" AnchorPane.topAnchor="0.0" />
 
-        <VBox alignment="TOP_CENTER" spacing="8.0"
-              AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0" AnchorPane.topAnchor="26.0">
-            <children>
-                <Label styleClass="lobby-title" text="AI Gesture Game Lobby" />
-                <Label styleClass="lobby-subtitle" text="星河之中，挥手穿梭六颗游戏星球" />
-            </children>
-        </VBox>
+        <Label fx:id="statusLabel" alignment="CENTER" maxWidth="1.7976931348623157E308"
+               styleClass="lobby-status"
+               text="张开手掌左右挥动选择 · 轨道自动巡航 · ✊握拳查看 / 进入"
+               AnchorPane.bottomAnchor="22.0" AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0" />
 
-        <VBox alignment="BOTTOM_CENTER" spacing="12.0"
-              AnchorPane.bottomAnchor="26.0" AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0">
+        <StackPane AnchorPane.rightAnchor="22.0" AnchorPane.topAnchor="22.0"
+                   maxHeight="154.0" maxWidth="210.0" minHeight="154.0" minWidth="210.0"
+                   prefHeight="154.0" prefWidth="210.0" styleClass="camera-preview-panel">
             <children>
-                <Label fx:id="statusLabel" styleClass="lobby-status"
-                       text="单手张开左右挥动切换 · 双手开合控制聚散 · ✊握拳保持开始" wrapText="true" />
-                <HBox alignment="CENTER" spacing="14.0">
-                    <children>
-                        <Label styleClass="hint-badge" text="挥手切换" />
-                        <Label styleClass="hint-badge" text="双手靠近聚" />
-                        <Label styleClass="hint-badge" text="双手分开散" />
-                        <Label styleClass="hint-badge" text="✊开始" />
-                    </children>
-                </HBox>
-            </children>
-        </VBox>
-
-        <StackPane AnchorPane.rightAnchor="20.0" AnchorPane.topAnchor="20.0"
-                   maxHeight="180.0" maxWidth="240.0" minHeight="180.0" minWidth="240.0"
-                   prefHeight="180.0" prefWidth="240.0" styleClass="camera-preview-panel">
-            <children>
-                <ImageView fx:id="cameraView" fitHeight="148.0" fitWidth="212.0" preserveRatio="true"
+                <ImageView fx:id="cameraView" fitHeight="126.0" fitWidth="184.0" preserveRatio="true"
                            styleClass="camera-preview-image" />
-                <Rectangle arcHeight="20.0" arcWidth="20.0" fill="TRANSPARENT"
-                           height="148.0" mouseTransparent="true" stroke="#38bdf8"
-                           strokeType="INSIDE" strokeWidth="1.4" width="212.0" />
+                <Rectangle arcHeight="12.0" arcWidth="12.0" fill="TRANSPARENT"
+                           height="126.0" mouseTransparent="true" stroke="#FFFFFF55"
+                           strokeType="INSIDE" strokeWidth="1.0" width="184.0" />
                 <Label StackPane.alignment="TOP_LEFT" styleClass="preview-title" text="LIVE FEED" />
             </children>
             <padding>
-                <Insets bottom="14.0" left="14.0" right="14.0" top="14.0" />
+                <Insets bottom="14.0" left="13.0" right="13.0" top="14.0" />
             </padding>
         </StackPane>
     </children>
