@@ -156,32 +156,45 @@ public final class SideScrollingShooter implements GameInterface {
     }
 
     private void updateParticles() {
-        // 1. 动态粒子尾焰 (Dynamic Particle Trail)
+        // 1. 动态粒子尾焰 (Dynamic Flame Trail)
         double playerVy = playerY - lastPlayerY;
         // 计算排气口位置 (根据战机放大到 w=280 重新估算尾部坐标)
         double exhaustX = playerX - 110; 
         double exhaustY = playerY;
         
-        for (int i = 0; i < 6; i++) { // 每帧生成6个微小粒子
+        // 分三层生成火焰，还原原贴图的复杂光影
+        // 1. 核心高亮喷流 (白 -> 亮青)，速度最快，集中在中心
+        for (int i = 0; i < 5; i++) {
+            double px = exhaustX + RANDOM.nextDouble() * 8 - 4;
+            double py = exhaustY + RANDOM.nextDouble() * 10 - 5;
+            double vx = -16 - RANDOM.nextDouble() * 4; 
+            double vy = playerVy * 0.1;
+            particles.add(new Particle(px, py, vx, vy, 12, 14, Color.WHITE, Color.web("#00FFFF")));
+        }
+        
+        // 2. 中层等离子火焰 (亮青 -> 电光紫)，体积大，稍微扩散
+        for (int i = 0; i < 8; i++) {
+            double px = exhaustX + RANDOM.nextDouble() * 15 - 5;
+            double py = exhaustY + RANDOM.nextDouble() * 20 - 10;
+            double vx = -12 - RANDOM.nextDouble() * 6; 
+            double vy = playerVy * 0.15 + RANDOM.nextDouble() * 2 - 1;
+            particles.add(new Particle(px, py, vx, vy, 18, 22, Color.web("#00FFFF"), Color.web("#BD00FF")));
+        }
+        
+        // 3. 外围燃烧火花 (橙黄 -> 暗红)，速度稍慢，扩散范围大，还原贴图边缘的暖色点缀
+        for (int i = 0; i < 3; i++) {
             double px = exhaustX + RANDOM.nextDouble() * 10 - 5;
-            double py = exhaustY + RANDOM.nextDouble() * 14 - 7;
-            double vx = -12 - RANDOM.nextDouble() * 6; // 向左高速喷射
-            double vy = playerVy * 0.15 + RANDOM.nextDouble() * 6 - 3; // 带有轻微扩散角度 (Angle Spark)
-            
-            // 生命周期设为 0.3 秒 (约 18 帧)
-            double life = 18 + RANDOM.nextDouble() * 5;
-            double size = 8 + RANDOM.nextDouble() * 6;
-            
-            particles.add(new Particle(px, py, vx, vy, life, size, 
-                    Color.web("#00FFFF"), // 亮蓝色
-                    Color.web("#BD00FF"))); // 电光紫
+            double py = exhaustY + RANDOM.nextDouble() * 30 - 15;
+            double vx = -10 - RANDOM.nextDouble() * 8; 
+            double vy = playerVy * 0.2 + RANDOM.nextDouble() * 4 - 2;
+            particles.add(new Particle(px, py, vx, vy, 22, 10, Color.web("#FFEA00"), Color.web("#FF0055")));
         }
 
         particles.forEach(p -> {
             p.x += p.vx;
             p.y += p.vy;
             p.life--;
-            p.size *= 0.92; // 随着时间变小
+            p.size *= 0.94; // 随着时间慢慢变小
         });
         particles.removeIf(p -> p.life <= 0);
     }
@@ -396,7 +409,8 @@ public final class SideScrollingShooter implements GameInterface {
             double b = p.startColor.getBlue() + (p.endColor.getBlue() - p.startColor.getBlue()) * progress;
             
             gc.setFill(Color.color(r, g, b, alpha * 0.8));
-            gc.fillOval(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size); // 圆形微小粒子
+            // 将圆形拉长为椭圆，模拟高速喷射的火焰形态
+            gc.fillOval(p.x - p.size * 1.5, p.y - p.size / 2, p.size * 3.0, p.size); 
         }
         gc.setGlobalBlendMode(BlendMode.SRC_OVER);
     }
