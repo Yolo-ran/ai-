@@ -653,7 +653,7 @@ public final class SideScrollingShooter implements GameInterface {
     }
 
     @Override
-    public void setDifficulty(difficulty) {
+    public void setDifficulty(Difficulty difficulty) {
         this.difficulty = difficulty == null ? Difficulty.NORMAL : difficulty;
         this.level = null;
     }
