@@ -158,37 +158,57 @@ public final class SideScrollingShooter implements GameInterface {
     private void updateParticles() {
         // 1. 动态粒子尾焰 (Dynamic Flame Trail)
         double playerVy = playerY - lastPlayerY;
-        // 计算排气口位置 (根据战机放大到 w=280 重新估算尾部坐标)
-        double exhaustX = playerX - 110; 
-        double exhaustY = playerY;
+        
+        // 同步获取与 drawPlayer 完全一致的倾斜角 (Pitch)
+        double pitch = clamp(playerVy * 0.08, -0.4, 0.4);
+        double cosP = Math.cos(pitch);
+        double sinP = Math.sin(pitch);
+        
+        // 计算旋转后的真实排气口物理坐标 (机尾相对中心点横向偏移约 -110)
+        double exhaustX = playerX - 110 * cosP; 
+        double exhaustY = playerY - 110 * sinP;
         
         // 分三层生成火焰，还原原贴图的复杂光影
         // 1. 核心高亮喷流 (白 -> 亮青)，速度最快，集中在中心
         for (int i = 0; i < 5; i++) {
-            double px = exhaustX + RANDOM.nextDouble() * 8 - 4;
-            double py = exhaustY + RANDOM.nextDouble() * 10 - 5;
-            double vx = -16 - RANDOM.nextDouble() * 4; 
-            double vy = playerVy * 0.1;
+            double offsetX = RANDOM.nextDouble() * 8 - 4;
+            double offsetY = RANDOM.nextDouble() * 10 - 5;
+            double px = exhaustX + offsetX * cosP - offsetY * sinP;
+            double py = exhaustY + offsetX * sinP + offsetY * cosP;
+            
+            double baseVx = -16 - RANDOM.nextDouble() * 4; 
+            double baseVy = 0;
+            double vx = baseVx * cosP - baseVy * sinP;
+            double vy = baseVx * sinP + baseVy * cosP + playerVy * 0.1;
             particles.add(new Particle(px, py, vx, vy, 12, 14, Color.WHITE, Color.web("#00FFFF")));
         }
         
         // 2. 中层等离子火焰 (亮青 -> 电光紫)，体积大，稍微扩散
         for (int i = 0; i < 8; i++) {
-            double px = exhaustX + RANDOM.nextDouble() * 15 - 5;
-            double py = exhaustY + RANDOM.nextDouble() * 20 - 10;
-            double vx = -12 - RANDOM.nextDouble() * 6; 
-            double vy = playerVy * 0.15 + RANDOM.nextDouble() * 2 - 1;
+            double offsetX = RANDOM.nextDouble() * 15 - 5;
+            double offsetY = RANDOM.nextDouble() * 20 - 10;
+            double px = exhaustX + offsetX * cosP - offsetY * sinP;
+            double py = exhaustY + offsetX * sinP + offsetY * cosP;
+            
+            double baseVx = -12 - RANDOM.nextDouble() * 6; 
+            double baseVy = RANDOM.nextDouble() * 2 - 1;
+            double vx = baseVx * cosP - baseVy * sinP;
+            double vy = baseVx * sinP + baseVy * cosP + playerVy * 0.15;
             particles.add(new Particle(px, py, vx, vy, 18, 22, Color.web("#00FFFF"), Color.web("#BD00FF")));
         }
         
         // 3. 外围飞溅的火花 (Sparks)，高随机性，模拟 Unity 的 Burst 粒子
         for (int i = 0; i < 4; i++) {
-            double px = exhaustX + RANDOM.nextDouble() * 10 - 5;
-            double py = exhaustY + RANDOM.nextDouble() * 30 - 15;
-            // 火花会有更强的不规则扩散和向上/向下的弹射
-            double vx = -10 - RANDOM.nextDouble() * 12; 
-            double vy = playerVy * 0.3 + RANDOM.nextDouble() * 10 - 5;
-            // size 很小，life 短，标记为火花
+            double offsetX = RANDOM.nextDouble() * 10 - 5;
+            double offsetY = RANDOM.nextDouble() * 30 - 15;
+            double px = exhaustX + offsetX * cosP - offsetY * sinP;
+            double py = exhaustY + offsetX * sinP + offsetY * cosP;
+            
+            double baseVx = -10 - RANDOM.nextDouble() * 12; 
+            double baseVy = RANDOM.nextDouble() * 10 - 5;
+            double vx = baseVx * cosP - baseVy * sinP;
+            double vy = baseVx * sinP + baseVy * cosP + playerVy * 0.3;
+            
             particles.add(new Particle(px, py, vx, vy, 10 + RANDOM.nextDouble() * 10, 2 + RANDOM.nextDouble() * 3, 
                 Color.web("#FFFFFF"), Color.web("#FF0055"), true));
         }
@@ -414,17 +434,26 @@ public final class SideScrollingShooter implements GameInterface {
             double g = p.startColor.getGreen() + (p.endColor.getGreen() - p.startColor.getGreen()) * progress;
             double b = p.startColor.getBlue() + (p.endColor.getBlue() - p.startColor.getBlue()) * progress;
             
+            gc.save();
+            gc.translate(p.x, p.y);
+            
             if (p.isSpark) {
                 // 如果是火花，画极高亮度的锐利小圆点，并带有辉光
                 gc.setFill(Color.color(r, g, b, alpha));
-                gc.fillOval(p.x - p.size, p.y - p.size, p.size * 2, p.size * 2);
+                gc.fillOval(-p.size, -p.size, p.size * 2, p.size * 2);
                 gc.setFill(Color.WHITE);
-                gc.fillOval(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+                gc.fillOval(-p.size / 2, -p.size / 2, p.size, p.size);
             } else {
+                // 根据速度方向计算粒子的旋转角度，让火焰拖尾完美顺着喷射方向
+                double angle = Math.toDegrees(Math.atan2(p.vy, p.vx));
+                gc.rotate(angle);
+                
                 // 如果是火焰喷流，将其拉长为椭圆，透明度更柔和
                 gc.setFill(Color.color(r, g, b, alpha * 0.7));
-                gc.fillOval(p.x - p.size * 1.8, p.y - p.size / 2, p.size * 3.6, p.size); 
+                gc.fillOval(-p.size * 1.8, -p.size / 2, p.size * 3.6, p.size); 
             }
+            
+            gc.restore();
         }
         gc.setGlobalBlendMode(BlendMode.SRC_OVER);
     }
