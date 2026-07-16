@@ -77,7 +77,19 @@ function Find-JavaCommand {
 }
 
 function Assert-JavaVersion($java) {
-    $versionText = (& $java -version 2>&1 | Select-Object -First 1).ToString()
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $java
+    $startInfo.Arguments = "-version"
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $startInfo
+    [void]$process.Start()
+    $versionOutput = $process.StandardError.ReadToEnd() + $process.StandardOutput.ReadToEnd()
+    $process.WaitForExit()
+    $versionText = ($versionOutput -split "`r?`n" | Select-Object -First 1).ToString()
     if ($versionText -notmatch 'version\s+"(?<first>\d+)(?:\.(?<second>\d+))?') {
         throw "Unable to determine the Java version: $versionText"
     }
@@ -139,7 +151,7 @@ function Start-GestureEngine($python) {
         foreach ($logFile in @($gestureStdErrLog, $gestureStdOutLog)) {
             if (Test-Path $logFile) {
                 $logText = Get-Content -LiteralPath $logFile -Raw -ErrorAction SilentlyContinue
-                if ($logText -match "手势模型已就绪") {
+                if ($logText -match "GESTURE_ENGINE_READY") {
                     $ready = $true
                     break
                 }

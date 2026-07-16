@@ -558,7 +558,7 @@ async def stream_gestures():
 
     try:
         with create_landmarker() as hand_landmarker:
-            LOGGER.info("手势模型已就绪，等待 Java 服务...")
+            LOGGER.info("GESTURE_ENGINE_READY: 手势模型已就绪，等待 Java 服务...")
             while True:
                 try:
                     async with websockets.connect(SERVER_URL, max_size=None) as websocket:
