@@ -11,7 +11,7 @@
 <?import javafx.scene.layout.Region?>
 <?import javafx.scene.layout.StackPane?>
 <?import javafx.scene.layout.VBox?>
-<?import javafx.scene.media.MediaView?>
+<?import javafx.scene.image.ImageView?>
 <?import javafx.scene.text.Text?>
 
 <StackPane fx:id="rootPane" prefHeight="720.0" prefWidth="1280.0"
@@ -21,7 +21,8 @@
            fx:controller="com.gesturegame.ui.AuthController"
            styleClass="auth-root">
     <children>
-        <MediaView fx:id="mediaView" smooth="true" mouseTransparent="true" opacity="0.0" />
+        <ImageView fx:id="backgroundFrame" smooth="true" mouseTransparent="true"
+                   preserveRatio="true" opacity="0.0" />
         <Pane mouseTransparent="true" styleClass="auth-video-overlay" />
 
         <BorderPane pickOnBounds="false">

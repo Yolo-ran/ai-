@@ -3,6 +3,7 @@ package com.gesturegame.ui;
 import com.gesturegame.engine.AppStateManager;
 import com.gesturegame.persistence.UserAccountStore;
 import com.gesturegame.persistence.UserAccountStore.RegistrationResult;
+import javafx.animation.AnimationTimer;
 import javafx.animation.FadeTransition;
 import javafx.animation.PauseTransition;
 import javafx.animation.ScaleTransition;
@@ -12,12 +13,11 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.PasswordField;
 import javafx.scene.control.TextField;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
-import javafx.scene.media.Media;
-import javafx.scene.media.MediaPlayer;
-import javafx.scene.media.MediaView;
 import javafx.scene.paint.Color;
 import javafx.scene.paint.LinearGradient;
 import javafx.scene.paint.Stop;
@@ -29,10 +29,9 @@ import javafx.util.Duration;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.LockSupport;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -40,10 +39,14 @@ import java.util.logging.Logger;
 public final class AuthController {
 
     private static final Logger LOGGER = Logger.getLogger(AuthController.class.getName());
-    private static final String VIDEO_RESOURCE = "/assets/auth/web3-hero.mp4";
+    private static final int FRAME_COUNT = 217;
+    private static final int FRAME_STEP = 2;
+    private static final long FRAME_INTERVAL_NANOS = 42_000_000L;
+    private static final double FRAME_WIDTH = 1280.0;
+    private static final double FRAME_HEIGHT = 720.0;
 
     @FXML private StackPane rootPane;
-    @FXML private MediaView mediaView;
+    @FXML private ImageView backgroundFrame;
     @FXML private HBox navigationLinks;
     @FXML private Text heroHeading;
     @FXML private StackPane authModal;
@@ -62,7 +65,12 @@ public final class AuthController {
 
     private AppStateManager stateManager;
     private UserAccountStore accountStore;
-    private MediaPlayer mediaPlayer;
+    private final AtomicReference<Image> pendingFrame = new AtomicReference<>();
+    private AnimationTimer frameDisplayTimer;
+    private Thread frameLoaderThread;
+    private volatile boolean frameAnimationRunning;
+    private boolean backgroundRevealed;
+    private int frameIndex;
     private boolean registrationMode;
     private boolean submitting;
 
@@ -81,9 +89,9 @@ public final class AuthController {
         rootPane.widthProperty().addListener((ignored, oldValue, newValue) -> {
             navigationLinks.setVisible(newValue.doubleValue() >= 940.0);
             navigationLinks.setManaged(newValue.doubleValue() >= 940.0);
-            layoutVideo();
+            layoutBackground();
         });
-        rootPane.heightProperty().addListener((ignored, oldValue, newValue) -> layoutVideo());
+        rootPane.heightProperty().addListener((ignored, oldValue, newValue) -> layoutBackground());
 
         try {
             accountStore = new UserAccountStore();
@@ -96,7 +104,7 @@ public final class AuthController {
             submitButton.setDisable(true);
         }
 
-        Platform.runLater(this::startVideo);
+        Platform.runLater(this::startBackgroundFrames);
     }
 
     public void bindStateManager(AppStateManager stateManager) {
@@ -190,7 +198,7 @@ public final class AuthController {
     private void completeAuthentication(String username) {
         PauseTransition pause = new PauseTransition(Duration.millis(520));
         pause.setOnFinished(event -> {
-            if (mediaPlayer != null) mediaPlayer.stop();
+            stopBackgroundFrames();
             if (stateManager != null) {
                 stateManager.markAccountAuthenticated(username);
                 stateManager.switchState(AppStateManager.STATE_LOGIN);
@@ -227,57 +235,82 @@ public final class AuthController {
         }
     }
 
-    private void startVideo() {
-        try {
-            Media media = new Media(resolveMediaUri());
-            mediaPlayer = new MediaPlayer(media);
-            mediaPlayer.setMute(true);
-            mediaPlayer.setVolume(0.0);
-            mediaPlayer.setCycleCount(MediaPlayer.INDEFINITE);
-            mediaPlayer.setAutoPlay(true);
-            mediaPlayer.setOnReady(() -> {
-                layoutVideo();
-                mediaPlayer.play();
-                FadeTransition reveal = new FadeTransition(Duration.millis(1100), mediaView);
-                reveal.setToValue(1.0);
-                reveal.play();
-            });
-            mediaPlayer.setOnError(() -> LOGGER.log(Level.WARNING,
-                    "视频背景播放失败，使用纯黑背景", mediaPlayer.getError()));
-            mediaView.setMediaPlayer(mediaPlayer);
-        } catch (RuntimeException | IOException error) {
-            LOGGER.log(Level.WARNING, "无法加载登录页视频背景，使用纯黑背景", error);
+    private void startBackgroundFrames() {
+        if (frameAnimationRunning) return;
+        frameAnimationRunning = true;
+        frameIndex = 0;
+        layoutBackground();
+
+        if (frameDisplayTimer == null) {
+            frameDisplayTimer = new AnimationTimer() {
+                @Override
+                public void handle(long now) {
+                    Image frame = pendingFrame.getAndSet(null);
+                    if (frame == null) return;
+                    backgroundFrame.setImage(frame);
+                    if (!backgroundRevealed) {
+                        backgroundRevealed = true;
+                        LOGGER.info("登录背景帧动画已启动");
+                        FadeTransition reveal = new FadeTransition(
+                                Duration.millis(700), backgroundFrame);
+                        reveal.setToValue(1.0);
+                        reveal.play();
+                    }
+                }
+            };
         }
+        frameDisplayTimer.start();
+
+        frameLoaderThread = new Thread(this::loadFrameLoop, "auth-frame-loader");
+        frameLoaderThread.setDaemon(true);
+        frameLoaderThread.start();
     }
 
-    private void layoutVideo() {
-        if (mediaPlayer == null || mediaPlayer.getMedia() == null) return;
-        double videoWidth = mediaPlayer.getMedia().getWidth();
-        double videoHeight = mediaPlayer.getMedia().getHeight();
-        double paneWidth = rootPane.getWidth();
-        double paneHeight = rootPane.getHeight();
-        if (videoWidth <= 0 || videoHeight <= 0 || paneWidth <= 0 || paneHeight <= 0) return;
+    private void loadFrameLoop() {
+        long nextFrameAt = System.nanoTime();
+        while (frameAnimationRunning) {
+            URL resource = AuthController.class.getResource(
+                    String.format("/assets/frames/f%04d.jpg", frameIndex));
+            if (resource == null) {
+                LOGGER.warning("登录背景帧缺失: f" + String.format("%04d", frameIndex) + ".jpg");
+                break;
+            }
+            try {
+                Image image = new Image(resource.toExternalForm(),
+                        FRAME_WIDTH, FRAME_HEIGHT, false, true, false);
+                pendingFrame.set(image);
+            } catch (RuntimeException error) {
+                LOGGER.log(Level.WARNING, "登录背景帧解码失败", error);
+            }
 
-        double scale = Math.max(paneWidth / videoWidth, paneHeight / videoHeight);
-        mediaView.setFitWidth(videoWidth * scale);
-        mediaView.setFitHeight(videoHeight * scale);
-        mediaView.setPreserveRatio(true);
-    }
-
-    private static String resolveMediaUri() throws IOException {
-        URL resource = AuthController.class.getResource(VIDEO_RESOURCE);
-        if (resource == null) throw new IOException("找不到资源 " + VIDEO_RESOURCE);
-        if ("file".equalsIgnoreCase(resource.getProtocol())) return resource.toExternalForm();
-
-        Path extracted = Path.of(System.getProperty("java.io.tmpdir"), "ai-gesture-game", "web3-hero.mp4");
-        Files.createDirectories(extracted.getParent());
-        if (!Files.exists(extracted) || Files.size(extracted) < 1024) {
-            try (InputStream input = AuthController.class.getResourceAsStream(VIDEO_RESOURCE)) {
-                if (input == null) throw new IOException("无法读取资源 " + VIDEO_RESOURCE);
-                Files.copy(input, extracted, StandardCopyOption.REPLACE_EXISTING);
+            frameIndex += FRAME_STEP;
+            if (frameIndex >= FRAME_COUNT) frameIndex = 0;
+            nextFrameAt += FRAME_INTERVAL_NANOS;
+            long remaining = nextFrameAt - System.nanoTime();
+            if (remaining > 0L) {
+                LockSupport.parkNanos(remaining);
+            } else {
+                nextFrameAt = System.nanoTime();
             }
         }
-        return extracted.toUri().toString();
+        frameAnimationRunning = false;
+    }
+
+    private void stopBackgroundFrames() {
+        frameAnimationRunning = false;
+        if (frameLoaderThread != null) frameLoaderThread.interrupt();
+        if (frameDisplayTimer != null) frameDisplayTimer.stop();
+        pendingFrame.set(null);
+    }
+
+    private void layoutBackground() {
+        double paneWidth = rootPane.getWidth();
+        double paneHeight = rootPane.getHeight();
+        if (paneWidth <= 0 || paneHeight <= 0) return;
+
+        double scale = Math.max(paneWidth / FRAME_WIDTH, paneHeight / FRAME_HEIGHT);
+        backgroundFrame.setFitWidth(FRAME_WIDTH * scale);
+        backgroundFrame.setFitHeight(FRAME_HEIGHT * scale);
     }
 
     private static void loadFonts() {
