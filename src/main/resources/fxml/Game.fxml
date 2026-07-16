@@ -1,8 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <?import javafx.scene.canvas.Canvas?>
+<?import javafx.scene.control.Button?>
 <?import javafx.scene.control.Label?>
+<?import javafx.scene.control.TextField?>
 <?import javafx.scene.layout.AnchorPane?>
+<?import javafx.scene.layout.Pane?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.VBox?>
 
 <AnchorPane prefHeight="720.0" prefWidth="1280.0" stylesheets="@../css/app.css"
             xmlns="http://javafx.com/javafx/17"
@@ -22,5 +27,29 @@
                AnchorPane.bottomAnchor="24.0" AnchorPane.leftAnchor="0.0"
                AnchorPane.rightAnchor="0.0" alignment="CENTER"
                text="双手同时入镜并保持返回" />
+        <StackPane fx:id="tarotQuestionOverlay" visible="false" managed="false"
+                   AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0"
+                   AnchorPane.topAnchor="0.0" AnchorPane.bottomAnchor="0.0"
+                   styleClass="tarot-question-overlay">
+            <children>
+                <Pane styleClass="tarot-question-scrim" />
+                <VBox alignment="CENTER" maxWidth="720.0" maxHeight="430.0" spacing="20.0"
+                      styleClass="tarot-question-card">
+                    <children>
+                        <Label text="YOUR QUESTION" styleClass="tarot-question-eyebrow" />
+                        <Label text="把此刻最想看清的问题交给牌面"
+                               wrapText="true" styleClass="tarot-question-title" />
+                        <Label text="建议围绕一件具体的事提问；问题只用于本次三牌占读。"
+                               wrapText="true" styleClass="tarot-question-copy" />
+                        <TextField fx:id="tarotQuestionField"
+                                   promptText="例如：未来三个月，我应该如何推进当前的目标？"
+                                   onAction="#submitTarotQuestion"
+                                   styleClass="tarot-question-field" />
+                        <Button text="开始占读" onAction="#submitTarotQuestion"
+                                defaultButton="true" styleClass="tarot-question-submit" />
+                    </children>
+                </VBox>
+            </children>
+        </StackPane>
     </children>
 </AnchorPane>

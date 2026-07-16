@@ -386,7 +386,25 @@ public class RhythmMaster implements GameInterface {
             gc.fillText("下一个 → " + previewEmoji, canvasWidth - 160, judgeCircleY - 80);
         }
 
-        // ===== 6. HUD（分数/游戏名由 FXML 标签显示）=====
+        // ===== 6. 游戏自己的 HUD =====
+        gc.setFill(Color.color(0.04, 0.05, 0.16, 0.80));
+        gc.fillRoundRect(22, 18, 235, 70, 18, 18);
+        gc.setStroke(Color.color(0.58, 0.44, 1.0, 0.40));
+        gc.setLineWidth(1.2);
+        gc.strokeRoundRect(22, 18, 235, 70, 18, 18);
+        gc.setFill(Color.web("#ddd6fe"));
+        gc.setFont(Font.font("Microsoft YaHei UI", 20));
+        gc.fillText("🥁  节奏大师", 40, 46);
+        gc.setFill(Color.web("#a5b4fc"));
+        gc.setFont(Font.font("Microsoft YaHei UI", 13));
+        gc.fillText("得分  " + score + "    连击  " + combo, 40, 72);
+
+        gc.setTextAlign(TextAlignment.RIGHT);
+        gc.setFill(Color.color(0.78, 0.76, 1.0, 0.68));
+        gc.setFont(Font.font("Microsoft YaHei UI", 13));
+        gc.fillText("跟随音符摆出对应手势", canvasWidth - 28, canvasHeight - 24);
+        gc.setTextAlign(TextAlignment.LEFT);
+
         // 左上：combo
         if (combo >= 10) {
             gc.setFill(Color.GOLD);

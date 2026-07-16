@@ -28,6 +28,8 @@ public class LoginController {
     private static final double CHANGE_EVENT_TIME = 0.32;
     private static final double CAMERA_Z = -400.0;
     private static final double CAMERA_TRAVEL_DISTANCE = 3400.0;
+    private static final double START_DOT_Y_OFFSET = 28.0;
+    private static final double VIEW_ZOOM = 100.0;
     private static final double LOOP_SECONDS = 15.0;
     private static final int NUMBER_OF_STARS = 5000;
     private static final int TRAIL_LENGTH = 80;
@@ -212,91 +214,241 @@ public class LoginController {
 
     // ===== Star animation =====
     private void createStars() {
-        SeededRandom r = new SeededRandom(1234L);
+        SeededRandom random = new SeededRandom(1234L);
         for (int i = 0; i < NUMBER_OF_STARS; i++) {
-            angle[i] = r.next() * Math.PI * 2.0;
-            distance[i] = 30.0 * r.next() + 15.0;
-            rotationDirection[i] = r.next() > 0.5 ? 1.0 : -1.0;
-            expansionRate[i] = 1.2 + r.next() * 0.8;
-            finalScale[i] = 0.7 + r.next() * 0.6;
+            angle[i] = random.next() * Math.PI * 2.0;
+            distance[i] = 30.0 * random.next() + 15.0;
+            rotationDirection[i] = random.next() > 0.5 ? 1.0 : -1.0;
+            expansionRate[i] = 1.2 + random.next() * 0.8;
+            finalScale[i] = 0.7 + random.next() * 0.6;
+
             dx[i] = distance[i] * Math.cos(angle[i]);
             dy[i] = distance[i] * Math.sin(angle[i]);
-            spiralLocation[i] = (1.0 - Math.pow(1.0 - r.next(), 3.0)) / 1.3;
-            z[i] = r(-200.0, CAMERA_TRAVEL_DISTANCE + CAMERA_Z, r);
-            z[i] = l(z[i], CAMERA_TRAVEL_DISTANCE / 2.0, 0.3 * spiralLocation[i]);
-            strokeWeightFactor[i] = Math.pow(r.next(), 2.0);
+            spiralLocation[i] = (1.0 - Math.pow(1.0 - random.next(), 3.0)) / 1.3;
+            z[i] = random(-200.0, CAMERA_TRAVEL_DISTANCE + CAMERA_Z, random);
+            z[i] = lerp(z[i], CAMERA_TRAVEL_DISTANCE / 2.0,
+                    0.3 * spiralLocation[i]);
+            strokeWeightFactor[i] = Math.pow(random.next(), 2.0);
         }
     }
+
     private void startStarAnimation() {
-        if (starTimer != null) return;
         starStartNanos = System.nanoTime();
-        starTimer = new AnimationTimer() {
-            public void handle(long now) {
-                double e = (now - starStartNanos) / 1_000_000_000.0;
-                render((e % LOOP_SECONDS) / LOOP_SECONDS);
-            }
-        };
+        render(0.0);
+        if (starTimer == null) {
+            starTimer = new AnimationTimer() {
+                @Override
+                public void handle(long now) {
+                    double elapsedSeconds =
+                            (now - starStartNanos) / 1_000_000_000.0;
+                    render((elapsedSeconds % LOOP_SECONDS) / LOOP_SECONDS);
+                }
+            };
+        }
         starTimer.start();
     }
-    private void render(double t) {
-        double w = starCanvas.getWidth(), h = starCanvas.getHeight();
-        if (w < 2 || h < 2) return;
-        GraphicsContext c = starCanvas.getGraphicsContext2D();
-        c.setGlobalAlpha(1.0);
-        c.setFill(Color.BLACK); c.fillRect(0, 0, w, h);
-        double s = Math.max(w, h);
-        double t1 = con(map(t, 0, CHANGE_EVENT_TIME + 0.25, 0, 1), 0, 1);
-        double t2 = con(map(t, CHANGE_EVENT_TIME, 1, 0, 1), 0, 1);
-        c.save(); c.translate(w / 2, h / 2); c.scale(w / s, h / s);
-        c.rotate(Math.toDegrees(-Math.PI * e(t2, 2.7)));
-        drawTrail(c, t1, t);
-        c.setFill(Color.WHITE);
-        for (int i = 0; i < NUMBER_OF_STARS; i++) drawStar(c, i, t1, t2);
-        c.restore();
+
+    private void render(double time) {
+        double width = starCanvas.getWidth();
+        double height = starCanvas.getHeight();
+        if (width < 2.0 || height < 2.0) return;
+
+        GraphicsContext ctx = starCanvas.getGraphicsContext2D();
+        ctx.setGlobalAlpha(1.0);
+        ctx.setFill(Color.BLACK);
+        ctx.fillRect(0.0, 0.0, width, height);
+
+        double size = Math.max(width, height);
+        double t1 = constrain(map(time, 0.0, CHANGE_EVENT_TIME + 0.25,
+                0.0, 1.0), 0.0, 1.0);
+        double t2 = constrain(map(time, CHANGE_EVENT_TIME, 1.0,
+                0.0, 1.0), 0.0, 1.0);
+
+        ctx.save();
+        ctx.translate(width / 2.0, height / 2.0);
+        ctx.scale(width / size, height / size);
+        ctx.rotate(Math.toDegrees(-Math.PI * ease(t2, 2.7)));
+        drawTrail(ctx, t1, time);
+        ctx.setFill(Color.WHITE);
+        for (int i = 0; i < NUMBER_OF_STARS; i++) {
+            drawStar(ctx, i, t1, t2);
+        }
+        drawStartDot(ctx, time, t2);
+        ctx.restore();
     }
-    private void drawTrail(GraphicsContext c, double t1, double t) {
-        c.setFill(Color.WHITE);
+
+    private void drawTrail(GraphicsContext ctx, double t1, double time) {
+        ctx.setFill(Color.WHITE);
         for (int i = 0; i < TRAIL_LENGTH; i++) {
-            double f = map(i, 0, TRAIL_LENGTH, 1.1, 0.1);
-            double sw = (1.3 * (1 - t1) + 3 * Math.sin(Math.PI * t1)) * f;
-            double pt = t1 - 0.00015 * i;
-            double x = spiralX(pt), y = spiralY(pt);
-            double rp = Math.sin(t * Math.PI * 2) * 0.5 + 0.5;
-            double[] ro = rot(x, y, x + 5, y + 5, rp, i % 2 == 0);
-            c.fillOval(ro[0] - sw / 2, ro[1] - sw / 2, sw, sw);
+            double factor = map(i, 0.0, TRAIL_LENGTH, 1.1, 0.1);
+            double strokeWidth =
+                    (1.3 * (1.0 - t1) + 3.0 * Math.sin(Math.PI * t1)) * factor;
+            double pathTime = t1 - 0.00015 * i;
+            double x = spiralX(pathTime);
+            double y = spiralY(pathTime);
+            double rotateProgress = Math.sin(time * Math.PI * 2.0) * 0.5 + 0.5;
+            double[] rotated = rotate(x, y, x + 5.0, y + 5.0,
+                    rotateProgress, i % 2 == 0);
+            ctx.fillOval(rotated[0] - strokeWidth / 2.0,
+                    rotated[1] - strokeWidth / 2.0, strokeWidth, strokeWidth);
         }
     }
-    private void drawStar(GraphicsContext c, int i, double p, double t2) {
-        double q = p - spiralLocation[i]; if (q <= 0) return;
-        double dp = con(4 * q, 0, 1);
-        double easing = dp < 0.3 ? l(dp, dp * dp, dp / 0.3) : dp < 0.7 ? l(dp * dp, eo(dp), (dp - 0.3) / 0.4) : eo(dp);
-        double px = spiralX(spiralLocation[i]), py = spiralY(spiralLocation[i]);
-        double x0 = px + dx[i] * easing * finalScale[i], y0 = py + dy[i] * easing * finalScale[i];
-        c.setFill(Color.WHITE);
-        double hw = (0.5 + dp * 1.2) * strokeWeightFactor[i];
-        c.fillOval(x0 - hw, y0 - hw, hw * 2, hw * 2);
-    }
-    private double spiralX(double t) { return (1 - t) * Math.cos(-3 * Math.PI * t - 0.8) * (20 + t * 45); }
-    private double spiralY(double t) { return (1 - t) * Math.sin(-3 * Math.PI * t - 0.8) * (20 + t * 45); }
 
-    private static double l(double a, double b, double t) { return a + (b - a) * t; }
-    private static double map(double v, double a, double b, double c, double d) { return c + (d - c) * (v - a) / (b - a); }
-    private static double con(double v, double lo, double hi) { return Math.max(lo, Math.min(hi, v)); }
-    private static double e(double t, double p) { return Math.pow(t, p); }
-    private static double eo(double t) {
-        if (t <= 0 || t >= 1) return t;
-        return Math.pow(2, -10 * t) * Math.sin((t - 0.075) * (2 * Math.PI) / 0.3) + 1;
-    }
-    private static double[] rot(double x, double y, double cx, double cy, double a, boolean cw) {
-        double ar = (cw ? a * 2 * Math.PI : -a * 2 * Math.PI);
-        double cos = Math.cos(ar), sin = Math.sin(ar);
-        return new double[]{cx + (x - cx) * cos - (y - cy) * sin, cy + (x - cx) * sin + (y - cy) * cos};
-    }
-    private static double r(double lo, double hi, SeededRandom sr) { return lo + sr.next() * (hi - lo); }
+    private void drawStar(GraphicsContext ctx, int i, double progress, double t2) {
+        double q = progress - spiralLocation[i];
+        if (q <= 0.0) return;
 
-    private static class SeededRandom {
+        double displacementProgress = constrain(4.0 * q, 0.0, 1.0);
+        double linearEasing = displacementProgress;
+        double elasticEasing = easeOutElastic(displacementProgress);
+        double powerEasing = Math.pow(displacementProgress, 2.0);
+        double easing;
+        if (displacementProgress < 0.3) {
+            easing = lerp(linearEasing, powerEasing,
+                    displacementProgress / 0.3);
+        } else if (displacementProgress < 0.7) {
+            easing = lerp(powerEasing, elasticEasing,
+                    (displacementProgress - 0.3) / 0.4);
+        } else {
+            easing = elasticEasing;
+        }
+
+        double pathX = spiralX(spiralLocation[i]);
+        double pathY = spiralY(spiralLocation[i]);
+        double screenX;
+        double screenY;
+        if (displacementProgress < 0.3) {
+            screenX = lerp(pathX, pathX + dx[i] * 0.3, easing / 0.3);
+            screenY = lerp(pathY, pathY + dy[i] * 0.3, easing / 0.3);
+        } else if (displacementProgress < 0.7) {
+            double midProgress = (displacementProgress - 0.3) / 0.4;
+            double curveStrength =
+                    Math.sin(midProgress * Math.PI) * rotationDirection[i] * 1.5;
+            double baseX = pathX + dx[i] * 0.3;
+            double baseY = pathY + dy[i] * 0.3;
+            double targetX = pathX + dx[i] * 0.7;
+            double targetY = pathY + dy[i] * 0.7;
+            double perpendicularX = -dy[i] * 0.4 * curveStrength;
+            double perpendicularY = dx[i] * 0.4 * curveStrength;
+            screenX = lerp(baseX, targetX, midProgress)
+                    + perpendicularX * midProgress;
+            screenY = lerp(baseY, targetY, midProgress)
+                    + perpendicularY * midProgress;
+        } else {
+            double endProgress = (displacementProgress - 0.7) / 0.3;
+            double baseX = pathX + dx[i] * 0.7;
+            double baseY = pathY + dy[i] * 0.7;
+            double targetDistance = distance[i] * expansionRate[i] * 1.5;
+            double spiralAngle = angle[i]
+                    + 1.2 * rotationDirection[i] * endProgress * Math.PI;
+            double targetX = pathX + targetDistance * Math.cos(spiralAngle);
+            double targetY = pathY + targetDistance * Math.sin(spiralAngle);
+            screenX = lerp(baseX, targetX, endProgress);
+            screenY = lerp(baseY, targetY, endProgress);
+        }
+
+        double vx = (z[i] - CAMERA_Z) * screenX / VIEW_ZOOM;
+        double vy = (z[i] - CAMERA_Z) * screenY / VIEW_ZOOM;
+        double sizeMultiplier;
+        if (displacementProgress < 0.6) {
+            sizeMultiplier = 1.0 + displacementProgress * 0.2;
+        } else {
+            double scaleProgress = (displacementProgress - 0.6) / 0.4;
+            sizeMultiplier = 1.2 * (1.0 - scaleProgress)
+                    + finalScale[i] * scaleProgress;
+        }
+        double dotSize = 8.5 * strokeWeightFactor[i] * sizeMultiplier;
+        showProjectedDot(ctx, vx, vy, z[i], dotSize, t2);
+    }
+
+    private void drawStartDot(GraphicsContext ctx, double time, double t2) {
+        if (time <= CHANGE_EVENT_TIME) return;
+        double y = CAMERA_Z * START_DOT_Y_OFFSET / VIEW_ZOOM;
+        showProjectedDot(ctx, 0.0, y, CAMERA_TRAVEL_DISTANCE, 2.5, t2);
+    }
+
+    private void showProjectedDot(GraphicsContext ctx, double x, double y,
+                                  double pointZ, double sizeFactor, double t2) {
+        double newCameraZ = CAMERA_Z
+                + ease(Math.pow(t2, 1.2), 1.8) * CAMERA_TRAVEL_DISTANCE;
+        if (pointZ <= newCameraZ) return;
+
+        double depth = pointZ - newCameraZ;
+        double projectedX = VIEW_ZOOM * x / depth;
+        double projectedY = VIEW_ZOOM * y / depth;
+        ctx.setLineWidth(400.0 * sizeFactor / depth);
+        ctx.fillOval(projectedX - 0.5, projectedY - 0.5, 1.0, 1.0);
+    }
+
+    private static double[] rotate(double x1, double y1, double x2, double y2,
+                                   double progress, boolean orientation) {
+        double middleX = (x1 + x2) / 2.0;
+        double middleY = (y1 + y2) / 2.0;
+        double deltaX = x1 - middleX;
+        double deltaY = y1 - middleY;
+        double angle = Math.atan2(deltaY, deltaX);
+        double direction = orientation ? -1.0 : 1.0;
+        double radius = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+        double bounce = Math.sin(progress * Math.PI) * 0.05 * (1.0 - progress);
+        double rotation = direction * Math.PI * easeOutElastic(progress);
+        return new double[]{
+                middleX + radius * (1.0 + bounce) * Math.cos(angle + rotation),
+                middleY + radius * (1.0 + bounce) * Math.sin(angle + rotation)
+        };
+    }
+
+    private static double spiralX(double value) {
+        double p = ease(constrain(1.2 * value, 0.0, 1.0), 1.8);
+        double theta = 2.0 * Math.PI * 6.0 * Math.sqrt(p);
+        return 170.0 * Math.sqrt(p) * Math.cos(theta);
+    }
+
+    private static double spiralY(double value) {
+        double p = ease(constrain(1.2 * value, 0.0, 1.0), 1.8);
+        double theta = 2.0 * Math.PI * 6.0 * Math.sqrt(p);
+        return 170.0 * Math.sqrt(p) * Math.sin(theta) + START_DOT_Y_OFFSET;
+    }
+
+    private static double ease(double p, double power) {
+        if (p < 0.5) return 0.5 * Math.pow(2.0 * p, power);
+        return 1.0 - 0.5 * Math.pow(2.0 * (1.0 - p), power);
+    }
+
+    private static double easeOutElastic(double value) {
+        if (value <= 0.0 || value >= 1.0) return value;
+        double c4 = 2.0 * Math.PI / 4.5;
+        return Math.pow(2.0, -8.0 * value)
+                * Math.sin((value * 8.0 - 0.75) * c4) + 1.0;
+    }
+
+    private static double map(double value, double start1, double stop1,
+                              double start2, double stop2) {
+        return start2 + (stop2 - start2)
+                * ((value - start1) / (stop1 - start1));
+    }
+
+    private static double constrain(double value, double min, double max) {
+        return Math.min(Math.max(value, min), max);
+    }
+
+    private static double lerp(double start, double end, double progress) {
+        return start * (1.0 - progress) + end * progress;
+    }
+
+    private static double random(double min, double max, SeededRandom random) {
+        return min + random.next() * (max - min);
+    }
+
+    private static final class SeededRandom {
         private long seed;
-        SeededRandom(long s) { seed = s; }
-        double next() { seed = (seed * 1103515245L + 12345L) & 0x7fffffffL; return seed / (double) 0x7fffffffL; }
+
+        private SeededRandom(long seed) {
+            this.seed = seed;
+        }
+
+        private double next() {
+            seed = (seed * 9301L + 49297L) % 233280L;
+            return (double) seed / 233280.0;
+        }
     }
 }

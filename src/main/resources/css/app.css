@@ -653,3 +653,82 @@
     -fx-padding: 6 18 6 18;
     -fx-text-alignment: center;
 }
+
+.tarot-question-overlay {
+    -fx-background-color: transparent;
+}
+
+.tarot-question-scrim {
+    -fx-background-color: rgba(2, 2, 7, 0.92);
+}
+
+.tarot-question-card {
+    -fx-padding: 46 56 48 56;
+    -fx-background-color: linear-gradient(to bottom right, rgba(31, 13, 47, 0.98), rgba(6, 5, 13, 0.98));
+    -fx-background-radius: 30;
+    -fx-border-color: rgba(225, 185, 105, 0.62), rgba(142, 92, 200, 0.30);
+    -fx-border-width: 1.4, 7;
+    -fx-border-insets: 0, 9;
+    -fx-border-radius: 30, 23;
+    -fx-effect: dropshadow(gaussian, rgba(122, 66, 170, 0.32), 52, 0.28, 0, 14);
+}
+
+.tarot-question-eyebrow {
+    -fx-text-fill: #d8a24b;
+    -fx-font-family: "Georgia";
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+}
+
+.tarot-question-title {
+    -fx-text-fill: #fff3df;
+    -fx-font-family: "Microsoft YaHei UI";
+    -fx-font-size: 31px;
+    -fx-font-weight: bold;
+    -fx-text-alignment: center;
+}
+
+.tarot-question-copy {
+    -fx-text-fill: rgba(224, 207, 232, 0.72);
+    -fx-font-family: "Microsoft YaHei UI";
+    -fx-font-size: 15px;
+    -fx-text-alignment: center;
+}
+
+.tarot-question-field {
+    -fx-pref-height: 58;
+    -fx-max-width: 600;
+    -fx-padding: 0 20 0 20;
+    -fx-background-color: rgba(3, 3, 9, 0.86);
+    -fx-background-radius: 16;
+    -fx-border-color: rgba(216, 162, 75, 0.42);
+    -fx-border-width: 1.2;
+    -fx-border-radius: 16;
+    -fx-text-fill: #fff8ea;
+    -fx-prompt-text-fill: rgba(216, 201, 226, 0.42);
+    -fx-font-family: "Microsoft YaHei UI";
+    -fx-font-size: 17px;
+}
+
+.tarot-question-field:focused {
+    -fx-border-color: #e0b866;
+    -fx-effect: dropshadow(gaussian, rgba(216, 162, 75, 0.24), 22, 0.25, 0, 0);
+}
+
+.tarot-question-submit {
+    -fx-pref-width: 190;
+    -fx-pref-height: 48;
+    -fx-background-color: linear-gradient(to right, #6f3aa0, #9b5ac5);
+    -fx-background-radius: 24;
+    -fx-border-color: rgba(255, 236, 194, 0.42);
+    -fx-border-radius: 24;
+    -fx-text-fill: #fff8e8;
+    -fx-font-family: "Microsoft YaHei UI";
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+    -fx-cursor: hand;
+}
+
+.tarot-question-submit:hover {
+    -fx-background-color: linear-gradient(to right, #8450b4, #b26bd6);
+}

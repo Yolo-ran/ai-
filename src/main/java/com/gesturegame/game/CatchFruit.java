@@ -251,17 +251,7 @@ public class CatchFruit implements GameInterface {
         gc.fillRoundRect(basketX, basketY, basketWidth, BASKET_HEIGHT, 10, 10);
         gc.strokeRoundRect(basketX, basketY, basketWidth, BASKET_HEIGHT, 10, 10);
 
-        // 4. 画HUD补充信息（标题/分数框由FXML处理）
-        // 左上：生命（游戏名标签下方）
-        gc.setFill(Color.rgb(255, 255, 255, 0.8));
-        gc.setFont(javafx.scene.text.Font.font(15));
-        gc.fillText("❤ x " + lives, 28, 86);
-        // 右上：目标分数（分数标签下方，无尽模式无目标）
-        if (targetScore > 0) {
-            gc.setFill(Color.rgb(255, 255, 255, 0.6));
-            gc.setFont(javafx.scene.text.Font.font(13));
-            gc.fillText("目标 " + targetScore, canvasWidth - 80, 88);
-        }
+        drawGameHud(gc);
 
         // 游戏结束遮罩
         if (over) {
@@ -289,6 +279,31 @@ public class CatchFruit implements GameInterface {
             gc.setFont(javafx.scene.text.Font.font(14));
             gc.fillText("✊重玩 | 👆返回", canvasWidth / 2.0 - 55, canvasHeight / 2.0 + 75);
         }
+    }
+
+    private void drawGameHud(GraphicsContext gc) {
+        gc.setFill(Color.color(0.02, 0.09, 0.14, 0.82));
+        gc.fillRoundRect(22, 18, 220, 70, 18, 18);
+        gc.setStroke(Color.color(0.29, 0.90, 0.72, 0.34));
+        gc.setLineWidth(1.2);
+        gc.strokeRoundRect(22, 18, 220, 70, 18, 18);
+        gc.setFill(Color.web("#bbf7d0"));
+        gc.setFont(javafx.scene.text.Font.font("Microsoft YaHei UI", 20));
+        gc.fillText("🍎  接水果", 40, 46);
+        gc.setFill(Color.web("#94a3b8"));
+        gc.setFont(javafx.scene.text.Font.font("Microsoft YaHei UI", 13));
+        gc.fillText("生命  ❤ × " + lives, 40, 72);
+
+        gc.setTextAlign(javafx.scene.text.TextAlignment.RIGHT);
+        gc.setFill(Color.web("#f8fafc"));
+        gc.setFont(javafx.scene.text.Font.font("Microsoft YaHei UI", 20));
+        gc.fillText("得分  " + score, canvasWidth - 28, 43);
+        gc.setFill(Color.web("#94a3b8"));
+        gc.setFont(javafx.scene.text.Font.font("Microsoft YaHei UI", 13));
+        gc.fillText(targetScore > 0 ? "目标  " + targetScore : "无尽模式", canvasWidth - 28, 69);
+        gc.setFill(Color.color(0.73, 0.97, 0.84, 0.68));
+        gc.fillText("左右移动手掌控制篮子", canvasWidth - 28, canvasHeight - 24);
+        gc.setTextAlign(javafx.scene.text.TextAlignment.LEFT);
     }
 
     @Override
