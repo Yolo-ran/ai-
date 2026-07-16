@@ -15,27 +15,33 @@
            xmlns:fx="http://javafx.com/fxml/1"
            fx:controller="com.gesturegame.ui.LoginController">
     <children>
-        <!-- 视频帧动画背景 -->
         <ImageView fx:id="bgImage" fitWidth="1280.0" fitHeight="720.0" preserveRatio="false" />
-
-        <!-- 50% 黑色遮罩 -->
         <StackPane style="-fx-background-color: rgba(0,0,0,0.5);" mouseTransparent="true" />
 
-        <!-- 玻璃态登录卡片（居中，不拉伸） -->
-        <VBox fx:id="loginCard" alignment="CENTER" maxWidth="360" maxHeight="300" spacing="14"
+        <!-- 登录/注册卡片 -->
+        <VBox fx:id="loginCard" alignment="CENTER" maxWidth="360" maxHeight="460"
+              spacing="14"
               StackPane.alignment="CENTER"
               style="-fx-background-color: rgba(255,255,255,0.04); -fx-background-radius: 16; -fx-border-radius: 16; -fx-border-color: rgba(255,255,255,0.1); -fx-border-width: 0.5;">
-            <padding><Insets top="32" right="28" bottom="32" left="28" /></padding>
+            <padding><Insets top="28" right="28" bottom="28" left="28" /></padding>
             <children>
-                <Label text="Welcome Back" style="-fx-text-fill: white; -fx-font-size: 24px; -fx-font-weight: bold;" />
-                <Label text="Sign in to continue" style="-fx-text-fill: rgba(255,255,255,0.5); -fx-font-size: 13px;" />
+                <Label fx:id="cardTitle" text="Welcome Back" style="-fx-text-fill: white; -fx-font-size: 24px; -fx-font-weight: bold;" />
+                <Label fx:id="cardSubtitle" text="Sign in to continue" style="-fx-text-fill: rgba(255,255,255,0.5); -fx-font-size: 13px;" />
                 <TextField fx:id="usernameField" promptText="Username" maxWidth="280"
                            style="-fx-background-color: rgba(255,255,255,0.06); -fx-text-fill: white; -fx-prompt-text-fill: rgba(255,255,255,0.35); -fx-background-radius: 999; -fx-padding: 10 16; -fx-border-color: rgba(255,255,255,0.1); -fx-border-radius: 999; -fx-border-width: 0.5;" />
                 <PasswordField fx:id="passwordField" promptText="Password" maxWidth="280"
                                style="-fx-background-color: rgba(255,255,255,0.06); -fx-text-fill: white; -fx-prompt-text-fill: rgba(255,255,255,0.35); -fx-background-radius: 999; -fx-padding: 10 16; -fx-border-color: rgba(255,255,255,0.1); -fx-border-radius: 999; -fx-border-width: 0.5;" />
+                <!-- 确认密码（注册模式才显示） -->
+                <PasswordField fx:id="confirmField" promptText="Confirm Password" maxWidth="280" visible="false" managed="false"
+                               style="-fx-background-color: rgba(255,255,255,0.06); -fx-text-fill: white; -fx-prompt-text-fill: rgba(255,255,255,0.35); -fx-background-radius: 999; -fx-padding: 10 16; -fx-border-color: rgba(255,255,255,0.1); -fx-border-radius: 999; -fx-border-width: 0.5;" />
                 <Label fx:id="loginStatus" text="" style="-fx-text-fill: #ff6b6b; -fx-font-size: 12px;" />
+                <!-- 提交按钮 -->
                 <StackPane fx:id="loginBtn" maxWidth="280" style="-fx-background-color: white; -fx-background-radius: 999; -fx-padding: 10 0; -fx-cursor: hand;" onMouseClicked="#onLoginClick">
                     <Label fx:id="loginBtnText" text="Sign In" style="-fx-text-fill: black; -fx-font-size: 14px; -fx-font-weight: bold;" />
+                </StackPane>
+                <!-- 切换链接 -->
+                <StackPane maxWidth="280" alignment="CENTER" style="-fx-cursor: hand;" onMouseClicked="#onToggleMode">
+                    <Label fx:id="toggleLabel" text="Don't have an account? Sign up" style="-fx-text-fill: rgba(255,255,255,0.5); -fx-font-size: 11px;" />
                 </StackPane>
             </children>
         </VBox>
