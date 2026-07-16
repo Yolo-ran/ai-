@@ -18,3 +18,5 @@ Thumbs.db
 /frontend/node_modules/
 /frontend/dist/
 *.tsbuildinfo
+data/
+logs/
