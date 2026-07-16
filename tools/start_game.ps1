@@ -7,11 +7,7 @@ $fastBuildScript = Join-Path $PSScriptRoot "prepare_fast_launch.ps1"
 $appJar = Join-Path $root "target\gesture-game-hall-1.0-SNAPSHOT.jar"
 $runtimeLib = Join-Path $root "target\runtime-lib"
 $gestureProcess = $null
-$logRoot = if ($env:LOCALAPPDATA) {
-    Join-Path $env:LOCALAPPDATA "AIGestureGame\logs"
-} else {
-    Join-Path $root "logs"
-}
+$logRoot = Join-Path $root "logs"
 $gestureStdOutLog = Join-Path $logRoot "gesture_engine.log"
 $gestureStdErrLog = Join-Path $logRoot "gesture_engine.err.log"
 

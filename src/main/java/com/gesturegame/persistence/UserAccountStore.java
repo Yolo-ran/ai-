@@ -174,8 +174,8 @@ public final class UserAccountStore {
         } else {
             String localAppData = System.getenv("LOCALAPPDATA");
             dataDirectory = localAppData != null && !localAppData.isBlank()
-                    ? Path.of(localAppData, "AIGestureGame", "data")
-                    : Path.of(System.getProperty("user.home"), ".ai-gesture-game", "data");
+                    ? Path.of(System.getProperty("user.dir"), "data")
+                    : Path.of(System.getProperty("user.dir"), "data");
         }
         return dataDirectory.resolve("users.db");
     }

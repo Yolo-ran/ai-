@@ -148,10 +148,9 @@ public final class RpsCsvStatsStore {
         String localAppData = System.getenv("LOCALAPPDATA");
         Path baseDirectory;
         if (localAppData != null && !localAppData.isBlank()) {
-            baseDirectory = Path.of(localAppData, "AIGestureGame", "data");
+            baseDirectory = Path.of(System.getProperty("user.dir"), "data");
         } else {
-            baseDirectory = Path.of(System.getProperty("user.home"),
-                    ".ai-gesture-game", "data");
+            baseDirectory = Path.of(System.getProperty("user.dir"), "data");
         }
         return baseDirectory.resolve("rps_records.csv");
     }
