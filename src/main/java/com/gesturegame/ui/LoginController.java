@@ -41,9 +41,13 @@ public class LoginController {
     @FXML private VBox loginCard;
     @FXML private TextField usernameField;
     @FXML private PasswordField passwordField;
+    @FXML private PasswordField confirmField;
     @FXML private Label loginStatus;
     @FXML private StackPane loginBtn;
     @FXML private Label loginBtnText;
+    @FXML private Label cardTitle;
+    @FXML private Label cardSubtitle;
+    @FXML private Label toggleLabel;
 
     private AppStateManager appStateManager;
     private AnimationTimer starTimer;
@@ -54,6 +58,9 @@ public class LoginController {
     private boolean entering;
     private boolean loggedIn;
     private boolean active;
+    private boolean registerMode; // false=登录, true=注册
+    private static final java.util.Map<String, String> accounts = new java.util.HashMap<>();
+    static { accounts.put("admin", "123456"); }
 
     // Star arrays
     private final double[] dx = new double[NUMBER_OF_STARS];
@@ -114,6 +121,27 @@ public class LoginController {
     @FXML
     private void onLoginClick() { tryLogin(); }
 
+    @FXML
+    private void onToggleMode() {
+        registerMode = !registerMode;
+        if (registerMode) {
+            cardTitle.setText("Create Account");
+            cardSubtitle.setText("Sign up to get started");
+            loginBtnText.setText("Sign Up");
+            toggleLabel.setText("Already have an account? Sign in");
+            confirmField.setVisible(true);
+            confirmField.setManaged(true);
+        } else {
+            cardTitle.setText("Welcome Back");
+            cardSubtitle.setText("Sign in to continue");
+            loginBtnText.setText("Sign In");
+            toggleLabel.setText("Don't have an account? Sign up");
+            confirmField.setVisible(false);
+            confirmField.setManaged(false);
+        }
+        loginStatus.setText("");
+    }
+
     public void bindStateManager(AppStateManager asm) { this.appStateManager = asm; }
 
     public void activate() {
@@ -140,17 +168,35 @@ public class LoginController {
         String u = usernameField.getText().trim();
         String p = passwordField.getText();
         if (u.isEmpty()) { loginStatus.setText("Please enter username"); return; }
-        if (VALID_USER.equals(u) && VALID_PASS.equals(p)) {
-            loggedIn = true;
-            loginStatus.setText("");
-            loginBtnText.setText("✓");
-            FadeTransition ft = new FadeTransition(Duration.millis(600), loginCard);
-            ft.setFromValue(1); ft.setToValue(0);
-            ft.setOnFinished(e -> { loginCard.setVisible(false); showStarField(); });
-            ft.play();
+        if (registerMode) {
+            // 注册模式
+            String cp = confirmField.getText();
+            if (p.isEmpty() || !p.equals(cp)) {
+                loginStatus.setText("Passwords do not match"); return;
+            }
+            if (accounts.containsKey(u)) {
+                loginStatus.setText("Username already exists"); return;
+            }
+            accounts.put(u, p);
+            loginStatus.setTextFill(Color.LIME);
+            loginStatus.setText("Account created! Please sign in.");
+            onToggleMode(); // 切回登录
         } else {
-            loginStatus.setText("Invalid username or password");
-            passwordField.clear();
+            // 登录模式
+            String stored = accounts.get(u);
+            if (stored != null && stored.equals(p)) {
+                loggedIn = true;
+                loginStatus.setTextFill(Color.LIME);
+                loginBtnText.setText("✓");
+                FadeTransition ft = new FadeTransition(Duration.millis(600), loginCard);
+                ft.setFromValue(1); ft.setToValue(0);
+                ft.setOnFinished(e -> { loginCard.setVisible(false); showStarField(); });
+                ft.play();
+            } else {
+                loginStatus.setTextFill(Color.web("#ff6b6b"));
+                loginStatus.setText("Invalid username or password");
+                passwordField.clear();
+            }
         }
     }
 
