@@ -527,25 +527,50 @@ public class TarotGame implements GameInterface {
         double centerX = fanCenterX() + Math.copySign(xRem * unit * entry, relative);
         double centerY = fanCenterY() + yRem * unit * entry + (1.0 - entry) * canvasHeight * 0.34;
         double angle = relative * 7.0 * entry;
-        boolean activeCard = meaning == lockedMeaning && activeSelection != null
+        boolean activeReveal = meaning == lockedMeaning && activeSelection != null
                 && (interaction.is(TarotGestureStateMachine.Phase.REVEALING)
                 || interaction.is(TarotGestureStateMachine.Phase.AWAITING_OPEN));
+        boolean isCenterHover = Math.abs(relative) < 0.5 && interaction.is(TarotGestureStateMachine.Phase.ROTATING);
 
         gc.save();
         gc.setGlobalAlpha(alpha * clamp(fanEntryProgress * 1.8, 0.0, 1.0));
         gc.translate(centerX, centerY);
         gc.rotate(angle);
         double entryScale = 0.5 + 0.5 * clamp(entry, 0.0, 1.08);
+        
+        // 激活卡牌特效：靠近中心时放大
+        if (isCenterHover || activeReveal) {
+            scale *= 1.15;
+        }
+        
         gc.scale(scale * entryScale, scale * entryScale);
+        
+        // 紫金色交织发光 (box-shadow)
+        if (isCenterHover || activeReveal) {
+            javafx.scene.effect.DropShadow shadow = new javafx.scene.effect.DropShadow();
+            shadow.setColor(Color.web("#ba68c8", 0.8));
+            shadow.setRadius(25);
+            
+            javafx.scene.effect.DropShadow shadow2 = new javafx.scene.effect.DropShadow();
+            shadow2.setColor(Color.web("#d4af37", 0.4));
+            shadow2.setRadius(50);
+            shadow.setInput(shadow2);
+            
+            gc.setEffect(shadow);
+        }
+
         gc.setFill(Color.web("#000000", 0.34));
         gc.fillRoundRect(-cardWidth / 2.0 + 7, -cardHeight / 2.0 + 11, cardWidth, cardHeight, 20, 20);
-        if (activeCard) {
+        
+        // 绘制卡牌
+        if (activeReveal) {
             drawFlipCard(gc, -cardWidth / 2.0, -cardHeight / 2.0, cardWidth, cardHeight,
                     activeSelection, revealProgress);
         } else {
             cardRenderer.drawCardBack(gc, -cardWidth / 2.0, -cardHeight / 2.0, cardWidth, cardHeight,
-                    clamp(1.0 - abs / 3.0, 0.0, 1.0), abs < 0.55);
+                    clamp(1.0 - abs / 3.0, 0.0, 1.0), isCenterHover);
         }
+        gc.setEffect(null);
         gc.restore();
     }
 
@@ -570,24 +595,40 @@ public class TarotGame implements GameInterface {
         for (int i = 0; i < 3; i++) {
             double x = spreadSlotX(i);
             double y = spreadSlotY();
-            gc.setFill(new LinearGradient(0, 0, 0, 1, true, CycleMethod.NO_CYCLE,
-                    new Stop(0, Color.web("#191126", 0.70)),
-                    new Stop(1, Color.web("#080912", 0.76))));
+
+            // 落地脉冲光环效果 (Pulse glow)
+            if (interaction.is(TarotGestureStateMachine.Phase.FLYING) && i == cards.size()) {
+                if (flyProgress > 0.8) {
+                    double pulseRadius = (flyProgress - 0.8) * 5.0 * 20; // 向外扩散
+                    double pulseAlpha = 1.0 - (flyProgress - 0.8) * 5.0; // 渐隐
+                    gc.setStroke(Color.web("#d4af37", Math.max(0, pulseAlpha)));
+                    gc.setLineWidth(3.0);
+                    gc.strokeRoundRect(x - pulseRadius, y - pulseRadius, slotW + pulseRadius * 2, slotH + pulseRadius * 2, 13, 13);
+                }
+            }
+
+            // 复古石质卡槽 + 凹陷阴影 (Inset shadow)
+            gc.setFill(Color.web("#1c1a1a")); 
             gc.fillRoundRect(x, y, slotW, slotH, 13, 13);
-            gc.setStroke(Color.web(i < cards.size() ? "#9cecdf" : "#a764df",
-                    i < cards.size() ? 0.48 : 0.30));
-            gc.setLineWidth(1.0);
-            gc.setLineDashes(5, 7);
-            gc.strokeRoundRect(x, y, slotW, slotH, 13, 13);
-            gc.setLineDashes();
+            
+            javafx.scene.effect.InnerShadow insetShadow = new javafx.scene.effect.InnerShadow();
+            insetShadow.setRadius(15);
+            insetShadow.setColor(Color.web("#000000", 0.9));
+            gc.setEffect(insetShadow);
+            gc.setFill(Color.web("#221f1f"));
+            gc.fillRoundRect(x, y, slotW, slotH, 13, 13);
+            gc.setEffect(null);
+
             if (i < cards.size()) {
                 cardRenderer.drawCardBack(gc, x, y, slotW, slotH, 0.25, false);
             }
+            
             gc.setTextAlign(TextAlignment.CENTER);
-            gc.setFill(Color.web(i < cards.size() ? "#c9fff7" : "#b78bda",
-                    i < cards.size() ? 0.90 : 0.52));
-            gc.setFont(Font.font("Georgia", FontWeight.SEMI_BOLD, 10));
-            gc.fillText(SLOT_LABELS[i], x + slotW / 2.0, y + slotH + 8);
+            gc.setFill(Color.web("#d4af37")); // 暗金色
+            // 使用衬线体模拟 Cinzel
+            gc.setFont(Font.font("Times New Roman", FontWeight.BOLD, 11));
+            gc.fillText(SLOT_LABELS[i], x + slotW / 2.0, y - 10);
+            gc.fillText(SLOT_NOTES[i], x + slotW / 2.0, y + slotH + 16);
         }
         gc.setTextAlign(TextAlignment.LEFT);
     }
@@ -696,16 +737,31 @@ public class TarotGame implements GameInterface {
         if (activeSelection == null) {
             return;
         }
-        double p = easeInOut(clamp(flyProgress, 0.0, 1.0));
+        
+        // 贝塞尔曲线平滑飞行轨迹
+        double rawP = clamp(flyProgress, 0.0, 1.0);
+        // 使用更具动感的缓动
+        double p = rawP < 0.5 ? 2 * rawP * rawP : 1 - Math.pow(-2 * rawP + 2, 2) / 2;
+        
         int targetIndex = Math.min(cards.size(), 2);
         double startW = centerCardWidth();
         double startH = startW * CARD_ASPECT;
         double targetW = spreadCardWidth();
         double targetH = targetW * CARD_ASPECT;
+        
         double startX = flyStartX - startW / 2.0;
         double startY = flyStartY - startH / 2.0;
-        double x = lerp(startX, spreadSlotX(targetIndex), p);
-        double y = lerp(startY, spreadSlotY(), p) - Math.sin(Math.PI * p) * canvasHeight * 0.11;
+        double endX = spreadSlotX(targetIndex);
+        double endY = spreadSlotY();
+        
+        // 二次贝塞尔曲线控制点 (产生向上抛落的抛物线弧度)
+        double ctrlX = (startX + endX) / 2.0 + (endX - startX) * 0.2;
+        double ctrlY = Math.min(startY, endY) - canvasHeight * 0.25;
+        
+        double invP = 1.0 - p;
+        double x = invP * invP * startX + 2 * invP * p * ctrlX + p * p * endX;
+        double y = invP * invP * startY + 2 * invP * p * ctrlY + p * p * endY;
+        
         double w = lerp(startW, targetW, p);
         double h = lerp(startH, targetH, p);
         double flip = clamp(p / 0.42, 0.0, 1.0);
@@ -1026,55 +1082,79 @@ public class TarotGame implements GameInterface {
 
     private void drawBackground(GraphicsContext gc) {
         renderCache.drawBackground(gc, canvasWidth, canvasHeight, this::paintStaticBackground);
+        drawAstrolabeBase(gc);
         drawDynamicNeonVeil(gc);
     }
 
-    private void paintStaticBackground(GraphicsContext gc) {
-        gc.setFill(new LinearGradient(0, 0, 1, 1, true, CycleMethod.NO_CYCLE,
-                new Stop(0, Color.web("#080713")),
-                new Stop(0.32, Color.web("#130d26")),
-                new Stop(0.64, Color.web("#090815")),
-                new Stop(1, Color.web("#03040a"))));
-        gc.fillRect(0, 0, canvasWidth, canvasHeight);
+    private void drawAstrolabeBase(GraphicsContext gc) {
+        double cx = canvasWidth * 0.5;
+        double cy = canvasHeight * 0.405; // 与扇形牌组中心一致
+        double radius = Math.min(canvasWidth, canvasHeight) * 0.35;
 
+        gc.save();
+        gc.translate(cx, cy);
+        gc.rotate(Math.toDegrees(ambientPulse * 0.15)); // 缓慢旋转
+
+        // 底部发光
+        gc.setFill(new RadialGradient(0, 0, 0, 0, radius, false, CycleMethod.NO_CYCLE,
+                new Stop(0, Color.web("#d4af37", 0.15)),
+                new Stop(0.8, Color.web("#d4af37", 0.05)),
+                new Stop(1, Color.TRANSPARENT)));
+        gc.fillOval(-radius, -radius, radius * 2, radius * 2);
+
+        // 星盘内圈和外圈
+        gc.setStroke(Color.web("#d4af37", 0.4));
+        gc.setLineWidth(1.5);
+        gc.strokeOval(-radius * 0.9, -radius * 0.9, radius * 1.8, radius * 1.8);
+        gc.setStroke(Color.web("#d4af37", 0.2));
+        gc.setLineWidth(1.0);
+        gc.strokeOval(-radius * 0.6, -radius * 0.6, radius * 1.2, radius * 1.2);
+        gc.strokeOval(-radius * 0.3, -radius * 0.3, radius * 0.6, radius * 0.6);
+
+        // 星盘刻度
+        for (int i = 0; i < 24; i++) {
+            gc.save();
+            gc.rotate(i * 15);
+            gc.setStroke(Color.web("#d4af37", 0.5));
+            gc.strokeLine(0, -radius * 0.9, 0, -radius * 0.85);
+            if (i % 2 == 0) {
+                gc.setFill(Color.web("#d4af37", 0.6));
+                gc.fillOval(-3, -radius * 0.95, 6, 6);
+            }
+            gc.restore();
+        }
+        
+        // 装饰连线
+        gc.setStroke(Color.web("#d4af37", 0.15));
+        for (int i = 0; i < 8; i++) {
+            gc.save();
+            gc.rotate(i * 45);
+            gc.strokeLine(0, -radius * 0.3, 0, -radius * 0.9);
+            gc.restore();
+        }
+
+        gc.restore();
+    }
+
+    private void paintStaticBackground(GraphicsContext gc) {
+        // 1. 深邃星空与四周暗角 (Radial Gradient Vignette)
         gc.setFill(new RadialGradient(
-                0, 0, canvasWidth * 0.50, canvasHeight * 0.46,
-                Math.max(canvasWidth, canvasHeight) * 0.48, false, CycleMethod.NO_CYCLE,
-                new Stop(0, Color.web("#8d56d8", 0.18)),
-                new Stop(0.36, Color.web("#5df3db", 0.055)),
-                new Stop(1, Color.TRANSPARENT)
+                0, 0, canvasWidth * 0.5, canvasHeight * 0.5,
+                Math.max(canvasWidth, canvasHeight) * 0.7, false, CycleMethod.NO_CYCLE,
+                new Stop(0, Color.web("#140f2d")), // 中心透出深紫微光
+                new Stop(0.6, Color.web("#0a0816")), // 过渡到深黑
+                new Stop(1, Color.web("#000000"))  // 边缘纯黑暗角
         ));
         gc.fillRect(0, 0, canvasWidth, canvasHeight);
 
-        // 牌背中的斜线分区与轻微皮革颗粒感。
-        gc.setStroke(Color.web("#a85cff", 0.14));
-        gc.setLineWidth(1.1);
-        for (int i = 0; i < 7; i++) {
-            double offset = i * 13.0;
-            gc.strokeLine(0, canvasHeight * 0.12 + offset,
-                    canvasWidth * 0.36, canvasHeight * 0.49 + offset * 0.18);
-            gc.strokeLine(canvasWidth, canvasHeight * 0.12 + offset,
-                    canvasWidth * 0.64, canvasHeight * 0.49 + offset * 0.18);
-            gc.strokeLine(0, canvasHeight * 0.88 - offset,
-                    canvasWidth * 0.36, canvasHeight * 0.54 - offset * 0.18);
-            gc.strokeLine(canvasWidth, canvasHeight * 0.88 - offset,
-                    canvasWidth * 0.64, canvasHeight * 0.54 - offset * 0.18);
-        }
-
-        gc.setFill(Color.web("#d8d1ff", 0.055));
-        for (int i = 0; i < 150; i++) {
-            double x = (i * 83L + 29) % Math.max(canvasWidth, 1);
-            double y = (i * 137L + 47) % Math.max(canvasHeight, 1);
-            double size = 0.7 + (i % 3) * 0.42;
+        // 绘制静谧星空点缀
+        gc.setFill(Color.web("#ffffff", 0.15));
+        for (int i = 0; i < 200; i++) {
+            double x = (i * 101L + 29) % Math.max(canvasWidth, 1);
+            double y = (i * 163L + 47) % Math.max(canvasHeight, 1);
+            double size = 0.5 + (i % 3) * 0.5;
             gc.fillOval(x, y, size, size);
         }
-
-        drawNeonMandalaBase(gc, canvasWidth * 0.5, canvasHeight * 0.48,
-                clamp(Math.min(canvasWidth, canvasHeight) * 0.23, 145, 225));
-        drawCornerGlyph(gc, canvasWidth * 0.08, canvasHeight * 0.20, 1);
-        drawCornerGlyph(gc, canvasWidth * 0.92, canvasHeight * 0.20, -1);
-        drawCornerGlyph(gc, canvasWidth * 0.08, canvasHeight * 0.80, 1);
-        drawCornerGlyph(gc, canvasWidth * 0.92, canvasHeight * 0.80, -1);
     }
 
     private void drawNeonMandalaBase(GraphicsContext gc, double cx, double cy, double radius) {
@@ -1735,11 +1815,38 @@ public class TarotGame implements GameInterface {
     }
 
     private void drawBottomHint(GraphicsContext gc) {
-        gc.setFill(Color.web("#d9c39a"));
-        gc.setFont(Font.font("KaiTi", FontWeight.NORMAL, 11));
+        double barW = 540;
+        double barH = 50;
+        double x = canvasWidth / 2.0 - barW / 2.0;
+        double y = canvasHeight - barH - 30; // 居中悬浮在底部
+
+        // 半透明、带有金属描边的底部提示栏
+        gc.setFill(Color.web("#0a0816", 0.85)); // 深色半透明背景
+        gc.fillRoundRect(x, y, barW, barH, 25, 25);
+        
+        // 金属质感描边
+        gc.setStroke(new LinearGradient(0, 0, 1, 0, true, CycleMethod.NO_CYCLE,
+                new Stop(0, Color.web("#8b6508", 0.8)),
+                new Stop(0.5, Color.web("#f3d79c", 0.9)),
+                new Stop(1, Color.web("#8b6508", 0.8))));
+        gc.setLineWidth(1.5);
+        gc.strokeRoundRect(x, y, barW, barH, 25, 25);
+        
+        // 内部微光
+        javafx.scene.effect.InnerShadow innerGlow = new javafx.scene.effect.InnerShadow();
+        innerGlow.setColor(Color.web("#d4af37", 0.3));
+        innerGlow.setRadius(10);
+        gc.setEffect(innerGlow);
+        gc.fillRoundRect(x, y, barW, barH, 25, 25);
+        gc.setEffect(null);
+
+        gc.setFill(Color.web("#e7cb8c"));
+        gc.setFont(Font.font("Microsoft YaHei UI", FontWeight.NORMAL, 14));
         gc.setTextAlign(TextAlignment.CENTER);
-        gc.fillText("✌ 单张 / 三张切换  ·  ✊ 握拳翻牌  ·  ✋ 当前牌阵全部揭示后张手洗牌",
-                canvasWidth / 2.0, canvasHeight - 22);
+        
+        // 使用 Emoji 作为简易的手势图标
+        String text = "✋  张开手掌：轮转 / 洗牌       |       ✊  握拳锁定：选择 / 翻牌";
+        gc.fillText(text, canvasWidth / 2.0, y + barH / 2.0 + 5);
         gc.setTextAlign(TextAlignment.LEFT);
     }
 
