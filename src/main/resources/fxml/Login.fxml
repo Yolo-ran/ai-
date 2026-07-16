@@ -19,7 +19,8 @@
         <StackPane style="-fx-background-color: rgba(0,0,0,0.5);" mouseTransparent="true" />
 
         <!-- 登录/注册卡片 -->
-        <VBox fx:id="loginCard" alignment="CENTER" maxWidth="360" maxHeight="380"
+        <VBox fx:id="loginCard" alignment="CENTER" maxWidth="360" maxHeight="460"
+              spacing="14"
               StackPane.alignment="CENTER"
               style="-fx-background-color: rgba(255,255,255,0.04); -fx-background-radius: 16; -fx-border-radius: 16; -fx-border-color: rgba(255,255,255,0.1); -fx-border-width: 0.5;">
             <padding><Insets top="28" right="28" bottom="28" left="28" /></padding>
