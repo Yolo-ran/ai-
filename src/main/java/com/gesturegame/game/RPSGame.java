@@ -101,6 +101,7 @@ public class RPSGame implements GameInterface {
     private boolean liveHandDetected;
     private double dividerPosition = 60.0;
     private double roundImpact;
+    private double countdownBeat;
     private double electricTime;
     private long lastRenderNanos;
     private long visualStartNanos;
@@ -146,6 +147,7 @@ public class RPSGame implements GameInterface {
         this.liveHandDetected = false;
         this.dividerPosition = 60.0;
         this.roundImpact = 0.0;
+        this.countdownBeat = 0.0;
         this.electricTime = 0.0;
         this.lastRenderNanos = 0L;
         this.visualStartNanos = System.nanoTime();
@@ -289,6 +291,13 @@ public class RPSGame implements GameInterface {
         lastRenderNanos = now;
         electricTime += dt;
 
+        if (beepFrame) {
+            countdownBeat = 1.0;
+            beepFrame = false;
+        } else {
+            countdownBeat *= Math.exp(-7.5 * dt);
+        }
+
         // 单回合胜负只形成短促冲击，随后回归由总比分决定的长期战线。
         roundImpact *= Math.exp(-1.15 * dt);
         if (Math.abs(roundImpact) < 0.02) {
@@ -318,12 +327,6 @@ public class RPSGame implements GameInterface {
             drawElectricDivider(gc);
             drawTopHud(gc);
             drawCenterState(gc);
-
-            if (beepFrame) {
-                gc.setFill(Color.rgb(220, 241, 255, 0.075));
-                gc.fillRect(0, 0, canvasWidth, canvasHeight);
-                beepFrame = false;
-            }
 
             if (over) {
                 drawMatchFinishedOverlay(gc);
@@ -763,7 +766,8 @@ public class RPSGame implements GameInterface {
     private void drawCenterState(GraphicsContext gc) {
         double scale = uiScale();
         double y = canvasHeight * 0.51;
-        double x = dividerAt(y);
+        // 中央信息跟随电弧的平滑中轴，不再绑定每帧抖动的波形点。
+        double x = dividerBaseAt(y);
 
         if (state == RPSState.COUNTDOWN) {
             int segment = Math.max(1, initialCountdown / 3);
@@ -778,8 +782,19 @@ public class RPSGame implements GameInterface {
             gc.setStroke(Color.rgb(225, 242, 255, 0.94));
             gc.setLineWidth(3.2 * scale);
             gc.strokeArc(x - r, y - r, r * 2, r * 2, 90, -360 * progress, ArcType.OPEN);
+
+            if (countdownBeat > 0.01) {
+                double beatProgress = 1.0 - countdownBeat;
+                double beatRadius = r + (5.0 + beatProgress * 15.0) * scale;
+                gc.setStroke(Color.rgb(178, 224, 255, 0.42 * countdownBeat));
+                gc.setLineWidth((1.0 + countdownBeat * 1.4) * scale);
+                gc.strokeOval(x - beatRadius, y - beatRadius,
+                        beatRadius * 2.0, beatRadius * 2.0);
+            }
+
             gc.setFill(Color.WHITE);
-            gc.setFont(Font.font("Arial", FontWeight.BOLD, 70 * scale));
+            gc.setFont(Font.font("Arial", FontWeight.BOLD,
+                    70 * scale * (1.0 + countdownBeat * 0.035)));
             gc.fillText(String.valueOf(number), x, y - 4 * scale);
             gc.setFill(Color.rgb(205, 216, 235, 0.64));
             gc.setFont(Font.font("Arial", FontWeight.BOLD, 9 * scale));
@@ -902,12 +917,12 @@ public class RPSGame implements GameInterface {
         }
     }
 
-    private double dividerAt(double y) {
+    private double dividerBaseAt(double y) {
         if (canvasHeight <= 0) return canvasWidth * 0.5;
-        double p = clamp(y / canvasHeight, 0, 1) * ELECTRIC_SEGMENTS;
-        int index = Math.min(ELECTRIC_SEGMENTS - 1, (int) Math.floor(p));
-        double local = p - index;
-        return dividerX[index] * (1.0 - local) + dividerX[index + 1] * local;
+        double t = clamp(y / canvasHeight, 0.0, 1.0);
+        double topX = clamp(dividerPosition, 0, 100) * canvasWidth / 100.0;
+        double bottomX = clamp(dividerPosition - 25.0, 0, 100) * canvasWidth / 100.0;
+        return topX * (1.0 - t) + bottomX * t;
     }
 
     private double getDividerTarget() {

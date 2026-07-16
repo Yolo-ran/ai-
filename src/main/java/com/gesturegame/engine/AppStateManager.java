@@ -7,6 +7,7 @@ import javafx.stage.Stage;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
@@ -27,6 +28,7 @@ public class AppStateManager {
     private static final Logger LOGGER = Logger.getLogger(AppStateManager.class.getName());
 
     private final Map<String, Scene> scenes = new HashMap<>();
+    private final Map<String, Runnable> stateActivationHandlers = new HashMap<>();
     private Stage primaryStage;
     private volatile String currentState = STATE_AUTH;
     private volatile GameInterface activeGame;
@@ -53,6 +55,15 @@ public class AppStateManager {
         scenes.put(name, scene);
     }
 
+    /** 注册场景真正显示后的回调，避免隐藏场景在应用启动时提前播放动画。 */
+    public void registerStateActivationHandler(String name, Runnable handler) {
+        if (handler == null) {
+            stateActivationHandlers.remove(name);
+        } else {
+            stateActivationHandlers.put(name, handler);
+        }
+    }
+
     public void switchState(String newState) {
         String targetState = STATE_LOGIN.equals(newState) && authenticated
                 ? STATE_LOBBY : newState;
@@ -62,6 +73,14 @@ public class AppStateManager {
             if (primaryStage != null && targetScene != null) {
                 primaryStage.setScene(targetScene);
                 LOGGER.info(() -> "[Agent 状态机] 切换至状态: " + targetState);
+                Runnable handler = stateActivationHandlers.get(targetState);
+                if (handler != null) {
+                    try {
+                        handler.run();
+                    } catch (RuntimeException error) {
+                        LOGGER.log(Level.WARNING, "场景激活回调执行失败: " + targetState, error);
+                    }
+                }
             }
         });
     }

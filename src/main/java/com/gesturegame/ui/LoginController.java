@@ -46,7 +46,8 @@ public class LoginController {
     private AppStateManager appStateManager;
     private AnimationTimer animationTimer;
     private long animationStartNanos;
-    private boolean entering;
+    private volatile boolean entering;
+    private volatile boolean active;
 
     @FXML
     public void initialize() {
@@ -57,11 +58,23 @@ public class LoginController {
 
     public void bindStateManager(AppStateManager appStateManager) {
         this.appStateManager = appStateManager;
-        Platform.runLater(this::startAnimation);
+    }
+
+    /** 只在 ENTER 场景真正显示后从第一帧开始播放。 */
+    public void activate() {
+        if (!Platform.isFxApplicationThread()) {
+            Platform.runLater(this::activate);
+            return;
+        }
+        active = true;
+        entering = false;
+        startAnimation();
     }
 
     public void handleAgentCommand(GestureCommand command, double confidence, String hand) {
-        if (command != GestureCommand.CONFIRM || entering) {
+        if (command != GestureCommand.CONFIRM || entering || !active
+                || !AppStateManager.STATE_LOGIN.equals(
+                        AppStateManager.getInstance().getCurrentState())) {
             return;
         }
 
@@ -73,6 +86,7 @@ public class LoginController {
             if (animationTimer != null) {
                 animationTimer.stop();
             }
+            active = false;
             if (appStateManager != null) {
                 appStateManager.markAuthenticated();
                 appStateManager.switchState(AppStateManager.STATE_LOBBY);
@@ -109,17 +123,17 @@ public class LoginController {
     }
 
     private void startAnimation() {
-        if (animationTimer != null) {
-            return;
-        }
         animationStartNanos = System.nanoTime();
-        animationTimer = new AnimationTimer() {
-            @Override
-            public void handle(long now) {
-                double elapsedSeconds = (now - animationStartNanos) / 1_000_000_000.0;
-                render((elapsedSeconds % LOOP_SECONDS) / LOOP_SECONDS);
-            }
-        };
+        render(0.0);
+        if (animationTimer == null) {
+            animationTimer = new AnimationTimer() {
+                @Override
+                public void handle(long now) {
+                    double elapsedSeconds = (now - animationStartNanos) / 1_000_000_000.0;
+                    render((elapsedSeconds % LOOP_SECONDS) / LOOP_SECONDS);
+                }
+            };
+        }
         animationTimer.start();
     }
 

@@ -74,6 +74,8 @@ public class MainApp extends Application {
         appStateManager.registerScene(AppStateManager.STATE_LOBBY, lobbyScene);
         appStateManager.registerScene(AppStateManager.STATE_GAME, gameScene);
         appStateManager.registerScene(AppStateManager.STATE_DIFFICULTY, gameScene);
+        appStateManager.registerStateActivationHandler(
+                AppStateManager.STATE_LOGIN, loginController::activate);
 
         authController.bindStateManager(appStateManager);
         loginController.bindStateManager(appStateManager);
