@@ -80,12 +80,13 @@ public class MainApp extends Application {
         appStateManager.switchState(AppStateManager.STATE_LOGIN);
         primaryStage.show();
 
-        startGameLoop();
-
         LOGGER.info("当前以混合模式启动：停用 Java 本地摄像头链路，等待 Python 端通过 WebSocket 推送手势数据");
         gestureStreamServer = new GestureStreamServer(SERVER_PORT, loginController, lobbyController, gameRenderer);
         gestureStreamServer.start();
         LOGGER.info(() -> "手势图像串流服务已启动，端口: " + SERVER_PORT);
+
+        // 服务先完成赋值再开启逐帧读取，避免首帧早于 WebSocket 初始化导致空指针。
+        startGameLoop();
 
         // 一键启动器会提前预热 Python、模型和摄像头；此时 Java 只负责接收数据。
         // 从 IDE 单独运行 MainApp 时仍立即自动启动视觉引擎，不再固定等待 1.5 秒。

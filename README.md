@@ -14,6 +14,17 @@
 2. 双击 `安装手势引擎.bat`，等待依赖和双手模型验证完成。
 3. 以后直接双击 `启动.bat`。
 
+`启动.bat` 采用快速启动：第一次运行或拉取到新的 Java 源码后，会自动执行一次构建并把
+运行依赖准备到 `target/runtime-lib`；之后双击会直接运行本地 JAR，不再启动 Maven，离线也能
+正常打开。只有 `src/main` 或 `pom.xml` 发生变化时才会重新构建。需要手动强制刷新时可运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/prepare_fast_launch.ps1 -Force
+```
+
+启动日志仍保存在仓库根目录的 `startup.log`。Maven 首次构建在 Windows 上使用系统根证书，
+避免部分 JDK 证书库异常导致的 `trustAnchors parameter must be non-empty`。
+
 识别环境统一为 Python 3.10–3.13、MediaPipe 0.10.35、OpenCV 5.0.0.93、websockets 16.0。
 仓库中的 `python/gesture_server.py` 是唯一正式引擎，已配置 `num_hands=2`。旧入口
 `tools/python/gesture_stream_client.py` 会自动转到正式引擎，不再运行旧的单手识别代码。
