@@ -1,3 +1,4 @@
 mediapipe==0.10.35
 opencv-contrib-python==5.0.0.93
 websockets==16.0
+edge-tts>=6.0

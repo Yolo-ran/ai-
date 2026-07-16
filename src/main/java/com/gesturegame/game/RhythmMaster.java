@@ -5,7 +5,7 @@ import com.gesturegame.common.GameInterface;
 import com.gesturegame.common.GestureData;
 import com.gesturegame.common.GestureType;
 import javafx.scene.canvas.GraphicsContext;
-import javafx.scene.paint.Color;
+import javafx.scene.paint.*;
 import javafx.scene.text.Font;
 import javafx.scene.text.TextAlignment;
 
@@ -90,6 +90,8 @@ public class RhythmMaster implements GameInterface {
     private int noteIntervalMin;
     private int noteIntervalMax;
     private int gameDurationFrames;
+    private double[][] stars;
+    private String performanceComment; // 演奏评语
 
     @Override
     public String getName() {
@@ -130,6 +132,16 @@ public class RhythmMaster implements GameInterface {
 
         applyDifficulty();
         generateBeatMap();
+        initStars();
+    }
+
+    private void initStars() {
+        stars = new double[100][3];
+        for (int i = 0; i < 100; i++) {
+            stars[i][0] = RANDOM.nextDouble() * canvasWidth;
+            stars[i][1] = RANDOM.nextDouble() * canvasHeight;
+            stars[i][2] = 0.3 + RANDOM.nextDouble() * 0.7;
+        }
     }
 
     @Override
@@ -267,18 +279,31 @@ public class RhythmMaster implements GameInterface {
 
         if (frameCount >= gameDurationFrames) {
             over = true;
+            performanceComment = generatePerformanceComment();
         }
     }
 
     @Override
     public void render(GraphicsContext gc) {
-        // 清空画布
-        gc.setFill(Color.web("#0f172a"));
+        // 深空背景
+        gc.setFill(Color.web("#05051a"));
         gc.fillRect(0, 0, canvasWidth, canvasHeight);
+        // 星空
+        if (stars != null) {
+            for (double[] s : stars) {
+                gc.setFill(Color.rgb(180, 200, 255, s[2] * 0.5));
+                gc.fillOval(s[0], s[1], 1.2, 1.2);
+            }
+        }
 
-        // ===== 1. 画轨道背景 =====
-        gc.setStroke(Color.rgb(255, 255, 255, 0.08));
-        gc.setLineWidth(2);
+        // ===== 1. 轨道（星云光束）=====
+        gc.setStroke(new LinearGradient(0, 0, 0, 1, true, CycleMethod.NO_CYCLE,
+                new Stop(0, Color.TRANSPARENT),
+                new Stop(0.3, Color.rgb(100, 80, 200, 0.12)),
+                new Stop(0.5, Color.rgb(130, 90, 220, 0.22)),
+                new Stop(0.7, Color.rgb(100, 80, 200, 0.12)),
+                new Stop(1, Color.TRANSPARENT)));
+        gc.setLineWidth(3);
         gc.strokeLine(judgeCircleX, canvasHeight, judgeCircleX, 0);
 
         // ===== 2. 画判定圈 =====
@@ -290,17 +315,20 @@ public class RhythmMaster implements GameInterface {
             }
         }
         if (noteNearby) {
-            gc.setStroke(Color.web("#deff9a"));
+            gc.setStroke(Color.web("#ff69b4"));
             gc.setLineWidth(5);
+            gc.setFill(Color.rgb(200, 100, 255, 0.06));
+            gc.fillOval(judgeCircleX - judgeCircleR - 10, judgeCircleY - judgeCircleR - 10,
+                    (judgeCircleR + 10) * 2, (judgeCircleR + 10) * 2);
         } else {
-            gc.setStroke(Color.web("#deff9a").deriveColor(0, 1, 1, 0.5));
-            gc.setLineWidth(4);
+            gc.setStroke(Color.web("#a78bfa").deriveColor(0, 1, 1, 0.45));
+            gc.setLineWidth(3);
         }
         gc.strokeOval(judgeCircleX - judgeCircleR, judgeCircleY - judgeCircleR,
                 judgeCircleR * 2, judgeCircleR * 2);
-        gc.setFill(Color.WHITE.deriveColor(0, 1, 1, 0.6));
+        gc.setFill(Color.rgb(200, 180, 255, 0.55));
         gc.setFont(Font.font(14));
-        gc.fillText("做手势！", judgeCircleX - 28, judgeCircleY + 5);
+        gc.fillText("⚡", judgeCircleX - 8, judgeCircleY + 5);
 
         // ===== 3. 画所有音符 =====
         double noteX = judgeCircleX;
@@ -308,25 +336,22 @@ public class RhythmMaster implements GameInterface {
             Color noteColor;
             String emoji;
             if (note.gestureType == GestureType.FIST) {
-                noteColor = Color.web("#ef4444");
-                emoji = "✊";
+                noteColor = Color.web("#ff4477"); emoji = "✊";
             } else if (note.gestureType == GestureType.OPEN) {
-                noteColor = Color.web("#3b82f6");
-                emoji = "✋";
+                noteColor = Color.web("#7c3aed"); emoji = "✋";
             } else {
-                noteColor = Color.web("#22c55e");
-                emoji = "✌";
+                noteColor = Color.web("#06b6d4"); emoji = "✌";
             }
-
-            // 离判定圈越近越大
             double distToJudge = Math.abs(note.y - judgeCircleY);
             double scale = 1.0;
             double nearby = noteSpeed * greatWindow * 3;
             if (distToJudge < nearby) {
                 scale = 1.0 + 0.3 * (1.0 - distToJudge / nearby);
             }
-
             double r = 30 * scale;
+            // 发光层
+            gc.setFill(noteColor.deriveColor(0, 1, 1, 0.18));
+            gc.fillOval(noteX - r - 6, note.y - r - 6, (r + 6) * 2, (r + 6) * 2);
             gc.setFill(noteColor);
             gc.fillOval(noteX - r, note.y - r, r * 2, r * 2);
             gc.setFill(Color.WHITE);
@@ -413,12 +438,12 @@ public class RhythmMaster implements GameInterface {
 
         // ===== 7. 进度条 + 倒计时（顶部）=====
         double progress = (double) frameCount / gameDurationFrames;
-        gc.setFill(Color.web("#deff9a"));
+        gc.setFill(Color.web("#7c3aed"));
         gc.fillRect(0, 0, canvasWidth * progress, 3);
         int remainingSecs = Math.max(0, (gameDurationFrames - frameCount) / 60);
-        gc.setFill(Color.web("#deff9a"));
-        gc.setFont(Font.font(16));
-        gc.fillText("⏱ " + remainingSecs + "s", canvasWidth / 2.0 - 25, 86);
+        gc.setFill(Color.rgb(200, 180, 255));
+        gc.setFont(Font.font(14));
+        gc.fillText("⏱ " + remainingSecs + "s", canvasWidth / 2.0 - 22, 86);
 
         // ===== 游戏结束画面 =====
         if (over) {
@@ -438,6 +463,12 @@ public class RhythmMaster implements GameInterface {
             gc.fillText("Perfect:" + perfectCount + "  Great:" + greatCount + "  Miss:" + missCount,
                     canvasWidth / 2.0, canvasHeight / 2.0 + 70);
 
+            if (performanceComment != null) {
+                gc.setFill(Color.web("#fbbf24"));
+                gc.setFont(Font.font("Microsoft YaHei", 18));
+                gc.fillText(performanceComment, canvasWidth / 2.0, canvasHeight / 2.0 + 105);
+            }
+
             gc.setFont(Font.font("Microsoft YaHei", 18));
             gc.fillText("✊握拳 重新开始 | ✋张开 返回大厅",
                     canvasWidth / 2.0, canvasHeight / 2.0 + 120);
@@ -453,6 +484,19 @@ public class RhythmMaster implements GameInterface {
     @Override
     public int getScore() {
         return score;
+    }
+
+    private String generatePerformanceComment() {
+        double accuracy = perfectCount + greatCount + missCount > 0
+                ? (perfectCount * 1.0 + greatCount * 0.5) / (perfectCount + greatCount + missCount)
+                : 0;
+        if (accuracy >= 0.9 && maxCombo >= 50)
+            return "🌟 银河级演奏！你是星际最强的节奏大师！";
+        if (accuracy >= 0.7 && maxCombo >= 20)
+            return "🚀 不错的表演，宇宙已经听到了你的节拍！";
+        if (accuracy >= 0.4)
+            return "🌍 还行，再多练练就能飞出银河系了...";
+        return "💫 再接再厉，星辰大海等你征服！";
     }
 
     @Override
