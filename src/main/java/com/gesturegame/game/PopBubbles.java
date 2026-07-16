@@ -234,15 +234,7 @@ public class PopBubbles implements GameInterface {
             gc.strokeLine(handCanvasX, handCanvasY - 15, handCanvasX, handCanvasY + 15);
         }
 
-        // 3. HUD（左上生命，游戏名/分数由 FXML 显示）
-        gc.setFill(Color.rgb(255, 255, 255, 0.8));
-        gc.setFont(javafx.scene.text.Font.font(15));
-        gc.fillText("❤ x " + lives, 28, 86);
-        if (targetScore > 0) {
-            gc.setFill(Color.rgb(255, 255, 255, 0.6));
-            gc.setFont(javafx.scene.text.Font.font(13));
-            gc.fillText("目标 " + targetScore, canvasWidth - 80, 88);
-        }
+        drawGameHud(gc);
 
         if (over) {
             gc.setFill(Color.rgb(0, 0, 0, 0.75));
@@ -268,6 +260,31 @@ public class PopBubbles implements GameInterface {
             gc.setFont(javafx.scene.text.Font.font(14));
             gc.fillText("✊重玩 | 👆返回", canvasWidth / 2.0 - 55, canvasHeight / 2.0 + 75);
         }
+    }
+
+    private void drawGameHud(GraphicsContext gc) {
+        gc.setFill(Color.color(0.01, 0.10, 0.17, 0.80));
+        gc.fillRoundRect(22, 18, 220, 70, 18, 18);
+        gc.setStroke(Color.color(0.25, 0.84, 1.0, 0.38));
+        gc.setLineWidth(1.2);
+        gc.strokeRoundRect(22, 18, 220, 70, 18, 18);
+        gc.setFill(Color.web("#bae6fd"));
+        gc.setFont(javafx.scene.text.Font.font("Microsoft YaHei UI", 20));
+        gc.fillText("🫧  戳泡泡", 40, 46);
+        gc.setFill(Color.web("#94a3b8"));
+        gc.setFont(javafx.scene.text.Font.font("Microsoft YaHei UI", 13));
+        gc.fillText("生命  ❤ × " + lives, 40, 72);
+
+        gc.setTextAlign(javafx.scene.text.TextAlignment.RIGHT);
+        gc.setFill(Color.web("#f8fafc"));
+        gc.setFont(javafx.scene.text.Font.font("Microsoft YaHei UI", 20));
+        gc.fillText("得分  " + score, canvasWidth - 28, 43);
+        gc.setFill(Color.web("#94a3b8"));
+        gc.setFont(javafx.scene.text.Font.font("Microsoft YaHei UI", 13));
+        gc.fillText(targetScore > 0 ? "目标  " + targetScore : "无尽模式", canvasWidth - 28, 69);
+        gc.setFill(Color.color(0.73, 0.91, 1.0, 0.70));
+        gc.fillText("移动手掌触碰泡泡", canvasWidth - 28, canvasHeight - 24);
+        gc.setTextAlign(javafx.scene.text.TextAlignment.LEFT);
     }
 
     @Override

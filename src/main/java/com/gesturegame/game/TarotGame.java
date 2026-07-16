@@ -1,9 +1,11 @@
 package com.gesturegame.game;
 
+import com.gesturegame.ai.TarotReadingService;
 import com.gesturegame.common.Difficulty;
 import com.gesturegame.common.GameInterface;
 import com.gesturegame.common.GestureData;
 import com.gesturegame.common.GestureType;
+import javafx.application.Platform;
 import javafx.geometry.VPos;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.paint.*;
@@ -415,6 +417,33 @@ public class TarotGame implements GameInterface {
     private boolean over;
     private int modeSwitchCooldown;
 
+    private final List<TarotMeaning> selectionDeck = new ArrayList<>();
+    private ReadingPhase readingPhase = ReadingPhase.ROTATING;
+    private String readingQuestion = "我此刻最需要看清的是什么？";
+    private String combinedInterpretation = "";
+    private String combinedAdvice = "";
+    private String readingSource = "本地牌义";
+    private double carouselPosition;
+    private int lockedDeckIndex = -1;
+    private TarotMeaning lockedMeaning;
+    private Card activeSelection;
+    private int fistHoldFrames;
+    private int fistDropoutFrames;
+    private int meaningDwellFrames;
+    private double revealProgress;
+    private double flyProgress;
+    private double flyStartX;
+    private double flyStartY;
+    private double finalRevealProgress;
+    private double fanShift;
+    private double fanEntryProgress;
+    private long readingGenerationId;
+
+    private static final int SELECTION_HOLD_FRAMES = 66;
+    private static final int SELECTION_DROPOUT_FRAMES = 8;
+    private static final int MEANING_DWELL_FRAMES = 36;
+    private static final double CAROUSEL_SPEED = 0.026;
+
     @Override
     public String getName() {
         return "塔罗牌";
@@ -428,6 +457,12 @@ public class TarotGame implements GameInterface {
     @Override
     public String getIcon() {
         return "🔮";
+    }
+
+    public void setQuestion(String question) {
+        if (question != null && !question.isBlank()) {
+            readingQuestion = question.strip();
+        }
     }
 
     @Override
@@ -444,71 +479,63 @@ public class TarotGame implements GameInterface {
         this.ambientPulse = 0.0;
         this.handDetected = false;
         this.modeSwitchCooldown = 0;
-        rebuildSpread();
+        this.readingPhase = ReadingPhase.ROTATING;
+        this.carouselPosition = 0.0;
+        this.lockedDeckIndex = -1;
+        this.lockedMeaning = null;
+        this.activeSelection = null;
+        this.fistHoldFrames = 0;
+        this.fistDropoutFrames = 0;
+        this.meaningDwellFrames = 0;
+        this.revealProgress = 0.0;
+        this.flyProgress = 0.0;
+        this.finalRevealProgress = 0.0;
+        this.fanShift = 0.0;
+        this.fanEntryProgress = 0.0;
+        this.readingGenerationId++;
+        this.combinedInterpretation = "";
+        this.combinedAdvice = "";
+        this.readingSource = "本地牌义";
+        cards.clear();
+        selectionDeck.clear();
+        selectionDeck.addAll(TAROT_DECK);
+        Collections.shuffle(selectionDeck, RANDOM);
     }
 
     @Override
     public void update(GestureData gesture) {
-        if (gesture == null || over) {
+        if (over) {
             return;
-        }
-
-        if (modeSwitchCooldown > 0) {
-            modeSwitchCooldown--;
         }
 
         ambientPulse += 0.045;
         if (ambientPulse > Math.PI * 2) {
             ambientPulse -= Math.PI * 2;
         }
+        fanEntryProgress = Math.min(1.0, fanEntryProgress + 0.018);
 
-        if (gesture.isHandDetected()) {
+        GestureType gestureType = null;
+        if (gesture != null && gesture.isHandDetected()) {
             handDetected = true;
             handCanvasX = gesture.getHandX() * canvasWidth;
             handCanvasY = gesture.getHandY() * canvasHeight;
-            selectedIndex = findHoveredCardIndex();
-            if (selectedIndex >= 0) {
-                detailIndex = selectedIndex;
-            }
+            gestureType = gesture.getGesture();
         } else {
             handDetected = false;
-            selectedIndex = -1;
         }
 
-        double targetPulse = selectedIndex >= 0 ? 1.0 : 0.0;
-        hoverPulse += (targetPulse - hoverPulse) * 0.18;
+        double shiftTarget = readingPhase == ReadingPhase.REVEALING
+                || readingPhase == ReadingPhase.AWAITING_OPEN ? -canvasWidth * 0.115 : 0.0;
+        fanShift += (shiftTarget - fanShift) * 0.09;
 
-        if (flippingIndex >= 0) {
-            flipProgress += 0.065;
-            Card flipping = cards.get(flippingIndex);
-            if (flipProgress >= 0.5 && !flipping.revealed) {
-                flipping.revealed = true;
-                detailIndex = flippingIndex;
-            }
-            if (flipProgress >= 1.0) {
-                flipProgress = 0.0;
-                flippingIndex = -1;
-            }
-        }
-
-        if (flippingIndex < 0 && modeSwitchCooldown == 0 && gesture.getGesture() == GestureType.PEACE) {
-            cycleSpreadMode();
-            modeSwitchCooldown = 18;
-            return;
-        }
-
-        if (flippingIndex < 0
-                && gesture.getGesture() == GestureType.FIST
-                && selectedIndex >= 0
-                && !cards.get(selectedIndex).revealed) {
-            flippingIndex = selectedIndex;
-            flipProgress = 0.0;
-        }
-
-        if (flippingIndex < 0 && gesture.getGesture() == GestureType.OPEN && getRevealedCount() == cards.size()) {
-            rebuildSpread();
-            selectedIndex = -1;
-            detailIndex = -1;
+        switch (readingPhase) {
+            case ROTATING -> updateRotating(gestureType);
+            case HOLDING -> updateHolding(gestureType);
+            case REVEALING -> updateRevealing();
+            case AWAITING_OPEN -> updateAwaitingOpen(gestureType);
+            case FLYING -> updateFlying(gestureType);
+            case FINAL_REVEAL -> updateFinalReveal();
+            case COMPLETE -> { }
         }
     }
 
@@ -518,12 +545,23 @@ public class TarotGame implements GameInterface {
         gc.setTextBaseline(VPos.TOP);
 
         drawBackground(gc);
-        drawTopBar(gc);
-        drawDeckPanel(gc);
-        drawSpreadPanel(gc);
-        drawDetailPanel(gc);
-        drawReadingNotes(gc);
-        drawBottomHint(gc);
+        drawReadingHeader(gc);
+        if (readingPhase == ReadingPhase.FINAL_REVEAL || readingPhase == ReadingPhase.COMPLETE) {
+            drawFinalReading(gc);
+        } else {
+            drawFanCarousel(gc);
+            drawChosenSlots(gc);
+            if (readingPhase == ReadingPhase.REVEALING
+                    || readingPhase == ReadingPhase.AWAITING_OPEN
+                    || readingPhase == ReadingPhase.FLYING) {
+                drawSingleMeaning(gc);
+            }
+            if (readingPhase == ReadingPhase.FLYING) {
+                drawFlyingSelection(gc);
+            }
+            drawSelectionProgress(gc);
+            drawReadingHint(gc);
+        }
         drawHandCursor(gc);
     }
 
@@ -546,6 +584,631 @@ public class TarotGame implements GameInterface {
     @Override
     public void reset() {
         init(canvasWidth, canvasHeight);
+    }
+
+    private void updateRotating(GestureType gestureType) {
+        if (selectionDeck.isEmpty()) {
+            return;
+        }
+        if (gestureType == GestureType.OPEN) {
+            carouselPosition = wrapCarousel(carouselPosition + CAROUSEL_SPEED);
+        } else if (gestureType == GestureType.FIST) {
+            lockedDeckIndex = Math.floorMod((int) Math.round(carouselPosition), selectionDeck.size());
+            carouselPosition = lockedDeckIndex;
+            lockedMeaning = selectionDeck.get(lockedDeckIndex);
+            fistHoldFrames = 1;
+            fistDropoutFrames = 0;
+            readingPhase = ReadingPhase.HOLDING;
+        }
+    }
+
+    private void updateHolding(GestureType gestureType) {
+        if (gestureType == GestureType.FIST) {
+            fistDropoutFrames = 0;
+            fistHoldFrames++;
+        } else if (!handDetected) {
+            fistDropoutFrames++;
+            if (fistDropoutFrames > SELECTION_DROPOUT_FRAMES) {
+                cancelHold();
+            }
+        } else {
+            cancelHold();
+        }
+
+        if (readingPhase == ReadingPhase.HOLDING && fistHoldFrames >= SELECTION_HOLD_FRAMES) {
+            confirmLockedCard();
+        }
+    }
+
+    private void cancelHold() {
+        fistHoldFrames = 0;
+        fistDropoutFrames = 0;
+        lockedDeckIndex = -1;
+        lockedMeaning = null;
+        readingPhase = ReadingPhase.ROTATING;
+    }
+
+    private void confirmLockedCard() {
+        int slotIndex = Math.min(cards.size(), SLOT_LABELS.length - 1);
+        double cardWidth = centerCardWidth();
+        activeSelection = new Card(
+                0, 0, cardWidth, cardWidth * 1.68,
+                SLOT_LABELS[slotIndex], SLOT_NOTES[slotIndex],
+                lockedMeaning, RANDOM.nextDouble() < 0.35, false
+        );
+        activeSelection.revealed = true;
+        revealProgress = 0.0;
+        meaningDwellFrames = 0;
+        readingPhase = ReadingPhase.REVEALING;
+    }
+
+    private void updateRevealing() {
+        revealProgress = Math.min(1.0, revealProgress + 0.046);
+        if (revealProgress >= 1.0) {
+            readingPhase = ReadingPhase.AWAITING_OPEN;
+            meaningDwellFrames = 0;
+        }
+    }
+
+    private void updateAwaitingOpen(GestureType gestureType) {
+        meaningDwellFrames++;
+        if (gestureType == GestureType.OPEN && meaningDwellFrames >= MEANING_DWELL_FRAMES) {
+            flyProgress = 0.0;
+            flyStartX = fanCenterX();
+            flyStartY = fanCenterY();
+            readingPhase = ReadingPhase.FLYING;
+        }
+    }
+
+    private void updateFlying(GestureType gestureType) {
+        if (gestureType == GestureType.OPEN) {
+            carouselPosition = wrapCarousel(carouselPosition + CAROUSEL_SPEED * 0.76);
+        }
+        flyProgress = Math.min(1.0, flyProgress + 0.032);
+        if (flyProgress < 1.0) {
+            return;
+        }
+
+        activeSelection.revealed = false;
+        cards.add(activeSelection);
+        selectionDeck.remove(lockedMeaning);
+        carouselPosition = wrapCarousel(carouselPosition);
+        activeSelection = null;
+        lockedMeaning = null;
+        lockedDeckIndex = -1;
+        fistHoldFrames = 0;
+        fistDropoutFrames = 0;
+        revealProgress = 0.0;
+
+        if (cards.size() >= 3) {
+            finalRevealProgress = 0.0;
+            readingPhase = ReadingPhase.FINAL_REVEAL;
+        } else {
+            readingPhase = ReadingPhase.ROTATING;
+        }
+    }
+
+    private void updateFinalReveal() {
+        finalRevealProgress = Math.min(1.0, finalRevealProgress + 0.009);
+        for (int i = 0; i < cards.size(); i++) {
+            cards.get(i).revealed = finalCardProgress(i) >= 0.5;
+        }
+        if (finalRevealProgress >= 1.0) {
+            for (Card card : cards) {
+                card.revealed = true;
+            }
+            buildCombinedReading();
+            readingPhase = ReadingPhase.COMPLETE;
+        }
+    }
+
+    private double finalCardProgress(int index) {
+        if (readingPhase == ReadingPhase.COMPLETE) {
+            return 1.0;
+        }
+        return clamp(finalRevealProgress * 3.0 - index * 0.68, 0.0, 1.0);
+    }
+
+    private void buildCombinedReading() {
+        if (cards.size() < 3) {
+            return;
+        }
+        Card past = cards.get(0);
+        Card present = cards.get(1);
+        Card future = cards.get(2);
+        combinedInterpretation = String.format(
+                "过去由“%s”的%s能量奠定背景；现在“%s”指出你需要正视%s；未来“%s”提示局势将朝着%s展开。三张牌共同强调：先理解来处，再调整当下，未来才会出现可选择的空间。",
+                past.meaning.title, primaryKeyword(past), present.meaning.title, primaryKeyword(present),
+                future.meaning.title, primaryKeyword(future));
+        combinedAdvice = "1. " + past.meaning.advice
+                + "\n2. " + present.meaning.advice
+                + "\n3. " + future.meaning.advice;
+        readingSource = "本地牌义";
+
+        StringBuilder context = new StringBuilder();
+        for (int i = 0; i < cards.size(); i++) {
+            Card card = cards.get(i);
+            String meaning = card.reversed ? card.meaning.reversedMeaning : card.meaning.uprightMeaning;
+            context.append(slotChinese(i)).append("：")
+                    .append(card.meaning.title).append(card.reversed ? "（逆位）" : "（正位）")
+                    .append("；关键词：").append(String.join("、", card.meaning.keywords))
+                    .append("；牌义：").append(meaning)
+                    .append("；原始建议：").append(card.meaning.advice).append('\n');
+        }
+
+        long requestId = ++readingGenerationId;
+        String fallbackInterpretation = combinedInterpretation;
+        String fallbackAdvice = combinedAdvice;
+        TarotReadingService.generate(readingQuestion, context.toString(),
+                        fallbackInterpretation, fallbackAdvice)
+                .thenAccept(result -> Platform.runLater(() -> {
+                    if (requestId != readingGenerationId || readingPhase != ReadingPhase.COMPLETE) {
+                        return;
+                    }
+                    combinedInterpretation = result.interpretation();
+                    combinedAdvice = normalizeAdvice(result.advice());
+                    readingSource = result.source();
+                }));
+    }
+
+    private String normalizeAdvice(String advice) {
+        String cleaned = advice == null ? "" : advice.strip();
+        if (cleaned.isEmpty()) {
+            return combinedAdvice;
+        }
+        String[] lines = cleaned.split("\\R+");
+        StringBuilder normalized = new StringBuilder();
+        for (int i = 0; i < lines.length; i++) {
+            String line = lines[i].strip().replaceFirst("^[1-3][.、\\s]+", "");
+            if (line.isEmpty()) continue;
+            if (normalized.length() > 0) normalized.append('\n');
+            normalized.append(i + 1).append(". ").append(line);
+        }
+        return normalized.length() == 0 ? combinedAdvice : normalized.toString();
+    }
+
+    private String primaryKeyword(Card card) {
+        if (card.meaning.keywords.length == 0) {
+            return card.reversed ? "需要重新审视的" : "正在展开的";
+        }
+        return card.meaning.keywords[0];
+    }
+
+    private double wrapCarousel(double value) {
+        if (selectionDeck.isEmpty()) {
+            return 0.0;
+        }
+        double size = selectionDeck.size();
+        double wrapped = value % size;
+        return wrapped < 0 ? wrapped + size : wrapped;
+    }
+
+    private void drawReadingHeader(GraphicsContext gc) {
+        gc.setTextAlign(TextAlignment.CENTER);
+        gc.setFill(Color.web("#d8a24b", 0.88));
+        gc.setFont(Font.font("Georgia", FontWeight.BOLD, clamp(canvasWidth * 0.010, 12, 16)));
+        gc.fillText("THREE CARD READING", canvasWidth * 0.5, canvasHeight * 0.035);
+
+        gc.setFill(Color.web("#fff3df"));
+        gc.setFont(Font.font("Microsoft YaHei UI", FontWeight.SEMI_BOLD,
+                clamp(canvasWidth * 0.017, 18, 28)));
+        drawWrappedTextCentered(gc, "“" + readingQuestion + "”", canvasWidth * 0.5,
+                canvasHeight * 0.072, canvasWidth * 0.62, 29, 2);
+
+        gc.setFill(Color.web("#c9addb", 0.64));
+        gc.setFont(Font.font("Microsoft YaHei UI", FontWeight.NORMAL, 13));
+        gc.fillText(String.format("已选择  %d / 3", cards.size()), canvasWidth * 0.88, canvasHeight * 0.055);
+        gc.setTextAlign(TextAlignment.LEFT);
+    }
+
+    private void drawFanCarousel(GraphicsContext gc) {
+        if (selectionDeck.isEmpty()) {
+            return;
+        }
+        int base = (int) Math.floor(carouselPosition);
+        for (int band = 4; band >= 0; band--) {
+            for (int virtualIndex = base - 4; virtualIndex <= base + 5; virtualIndex++) {
+                double relative = virtualIndex - carouselPosition;
+                int currentBand = Math.min(4, (int) Math.floor(Math.abs(relative) + 0.5));
+                if (currentBand != band || Math.abs(relative) > 3.65) {
+                    continue;
+                }
+                TarotMeaning meaning = selectionDeck.get(Math.floorMod(virtualIndex, selectionDeck.size()));
+                if (readingPhase == ReadingPhase.FLYING && meaning == lockedMeaning) {
+                    continue;
+                }
+                drawFanCard(gc, relative, meaning);
+            }
+        }
+    }
+
+    private void drawFanCard(GraphicsContext gc, double relative, TarotMeaning meaning) {
+        double abs = Math.abs(relative);
+        double unit = clamp(Math.min(canvasWidth / 1600.0, canvasHeight / 900.0) * 16.0, 9.0, 18.0);
+        double xRem = interpolateFan(abs, new double[]{0.0, 11.0, 22.0, 30.0, 39.0});
+        double yRem = interpolateFan(abs, new double[]{0.0, 1.3, 4.0, 7.3, 10.8});
+        double scale = interpolateFan(abs, new double[]{1.0, 0.9346, 0.8498, 0.7756, 0.62});
+        double alpha = abs <= 3.0 ? 1.0 : clamp(1.0 - (abs - 3.0) / 0.65, 0.0, 1.0);
+        double cardWidth = centerCardWidth();
+        double cardHeight = cardWidth * 1.68;
+        double entry = easeOutBack(fanEntryProgress);
+        double centerX = fanCenterX() + Math.copySign(xRem * unit * entry, relative);
+        double centerY = fanCenterY() + yRem * unit * entry + (1.0 - entry) * canvasHeight * 0.34;
+        double angle = relative * 7.0 * entry;
+        boolean activeCard = meaning == lockedMeaning && activeSelection != null
+                && (readingPhase == ReadingPhase.REVEALING || readingPhase == ReadingPhase.AWAITING_OPEN);
+
+        gc.save();
+        gc.setGlobalAlpha(alpha * clamp(fanEntryProgress * 1.8, 0.0, 1.0));
+        gc.translate(centerX, centerY);
+        gc.rotate(angle);
+        double entryScale = 0.5 + 0.5 * clamp(entry, 0.0, 1.08);
+        gc.scale(scale * entryScale, scale * entryScale);
+        gc.setFill(Color.web("#000000", 0.34));
+        gc.fillRoundRect(-cardWidth / 2.0 + 7, -cardHeight / 2.0 + 11, cardWidth, cardHeight, 20, 20);
+        if (activeCard) {
+            drawFlipCard(gc, -cardWidth / 2.0, -cardHeight / 2.0, cardWidth, cardHeight,
+                    activeSelection, revealProgress);
+        } else {
+            drawCardBack(gc, -cardWidth / 2.0, -cardHeight / 2.0, cardWidth, cardHeight,
+                    clamp(1.0 - abs / 3.0, 0.0, 1.0), abs < 0.55);
+        }
+        gc.restore();
+    }
+
+    private double easeOutBack(double progress) {
+        double t = clamp(progress, 0.0, 1.0) - 1.0;
+        double c1 = 1.18;
+        double c3 = c1 + 1.0;
+        return 1.0 + c3 * t * t * t + c1 * t * t;
+    }
+
+    private double interpolateFan(double absolutePosition, double[] values) {
+        double clamped = clamp(absolutePosition, 0.0, values.length - 1.0001);
+        int low = (int) Math.floor(clamped);
+        int high = Math.min(values.length - 1, low + 1);
+        double t = clamped - low;
+        return values[low] + (values[high] - values[low]) * t;
+    }
+
+    private void drawChosenSlots(GraphicsContext gc) {
+        double slotW = spreadCardWidth();
+        double slotH = slotW * 1.68;
+        for (int i = 0; i < 3; i++) {
+            double x = spreadSlotX(i);
+            double y = spreadSlotY();
+            gc.setFill(Color.web("#100817", 0.46));
+            gc.fillRoundRect(x, y, slotW, slotH, 13, 13);
+            gc.setStroke(Color.web("#d8a24b", 0.25));
+            gc.setLineWidth(1.0);
+            gc.setLineDashes(5, 7);
+            gc.strokeRoundRect(x, y, slotW, slotH, 13, 13);
+            gc.setLineDashes();
+            if (i < cards.size()) {
+                drawCardBack(gc, x, y, slotW, slotH, 0.25, false);
+            }
+            gc.setTextAlign(TextAlignment.CENTER);
+            gc.setFill(Color.web("#e5c682", i < cards.size() ? 0.9 : 0.45));
+            gc.setFont(Font.font("Georgia", FontWeight.SEMI_BOLD, 10));
+            gc.fillText(SLOT_LABELS[i], x + slotW / 2.0, y + slotH + 8);
+        }
+        gc.setTextAlign(TextAlignment.LEFT);
+    }
+
+    private void drawSingleMeaning(GraphicsContext gc) {
+        if (activeSelection == null) {
+            return;
+        }
+        double alpha = readingPhase == ReadingPhase.FLYING
+                ? clamp(1.0 - flyProgress * 1.45, 0.0, 1.0) : clamp(revealProgress * 1.4, 0.0, 1.0);
+        if (alpha <= 0.01) {
+            return;
+        }
+        double x = canvasWidth * 0.695;
+        double y = canvasHeight * 0.15;
+        double w = canvasWidth * 0.265;
+        double h = canvasHeight * 0.60;
+        gc.save();
+        gc.setGlobalAlpha(alpha);
+        gc.setFill(Color.web("#07060c", 0.89));
+        gc.fillRoundRect(x, y, w, h, 24, 24);
+        gc.setStroke(Color.web("#d8a24b", 0.42));
+        gc.setLineWidth(1.2);
+        gc.strokeRoundRect(x, y, w, h, 24, 24);
+
+        int slot = Math.min(cards.size(), 2);
+        gc.setFill(Color.web("#b78add"));
+        gc.setFont(Font.font("Microsoft YaHei UI", FontWeight.SEMI_BOLD, 12));
+        gc.fillText("第 " + (slot + 1) + " 张 · " + slotChinese(slot), x + 24, y + 22);
+        gc.setFill(Color.web("#fff3df"));
+        gc.setFont(Font.font("Microsoft YaHei UI", FontWeight.BOLD, clamp(w * 0.074, 20, 27)));
+        gc.fillText(activeSelection.meaning.title, x + 24, y + 50);
+        gc.setFill(activeSelection.reversed ? Color.web("#ef8b62") : Color.web("#e0b866"));
+        gc.setFont(Font.font("Microsoft YaHei UI", FontWeight.SEMI_BOLD, 13));
+        gc.fillText(activeSelection.reversed ? "逆位" : "正位", x + 24, y + 88);
+
+        gc.setFill(Color.web("#cbb1dd", 0.84));
+        gc.setFont(Font.font("Microsoft YaHei UI", FontWeight.NORMAL, 13));
+        gc.fillText(String.join("  ·  ", activeSelection.meaning.keywords), x + 24, y + 116);
+
+        gc.setFill(Color.web("#eadff0", 0.88));
+        gc.setFont(Font.font("Microsoft YaHei UI", FontWeight.NORMAL, 14));
+        String meaning = activeSelection.reversed
+                ? activeSelection.meaning.reversedMeaning : activeSelection.meaning.uprightMeaning;
+        double nextY = drawWrappedText(gc, meaning, x + 24, y + 151, w - 48, 23, 6, 14);
+
+        gc.setFill(Color.web("#d8a24b"));
+        gc.setFont(Font.font("Microsoft YaHei UI", FontWeight.BOLD, 13));
+        gc.fillText("行动提示", x + 24, nextY + 8);
+        gc.setFill(Color.web("#f3e7cf", 0.82));
+        gc.setFont(Font.font("Microsoft YaHei UI", FontWeight.NORMAL, 13));
+        drawWrappedText(gc, activeSelection.meaning.advice, x + 24, nextY + 34, w - 48, 21, 3, 13);
+        gc.restore();
+    }
+
+    private void drawSelectionProgress(GraphicsContext gc) {
+        if (readingPhase != ReadingPhase.HOLDING) {
+            return;
+        }
+        double progress = clamp(fistHoldFrames / (double) SELECTION_HOLD_FRAMES, 0.0, 1.0);
+        double radius = centerCardWidth() * 0.68;
+        double x = fanCenterX();
+        double y = fanCenterY();
+        gc.setStroke(Color.web("#ffffff", 0.12));
+        gc.setLineWidth(5);
+        gc.strokeOval(x - radius, y - radius, radius * 2, radius * 2);
+        gc.setStroke(Color.web("#e0b866", 0.92));
+        gc.setLineCap(StrokeLineCap.ROUND);
+        gc.strokeArc(x - radius, y - radius, radius * 2, radius * 2,
+                90, -360 * progress, javafx.scene.shape.ArcType.OPEN);
+        gc.setLineCap(StrokeLineCap.BUTT);
+        gc.setTextAlign(TextAlignment.CENTER);
+        gc.setFill(Color.web("#fff3df"));
+        gc.setFont(Font.font("Microsoft YaHei UI", FontWeight.BOLD, 14));
+        gc.fillText("保持握拳  " + (int) Math.round(progress * 100) + "%", x, y + radius + 17);
+        gc.setTextAlign(TextAlignment.LEFT);
+    }
+
+    private void drawReadingHint(GraphicsContext gc) {
+        String hint = switch (readingPhase) {
+            case ROTATING -> "张开手掌 · 牌组自动轮转     握拳 · 锁定中心牌";
+            case HOLDING -> "保持握拳，完成选择";
+            case REVEALING -> "牌面正在显现";
+            case AWAITING_OPEN -> "阅读牌义后，张开手掌将牌送入牌阵";
+            case FLYING -> "卡牌归位，牌组继续流转";
+            default -> "";
+        };
+        gc.setTextAlign(TextAlignment.CENTER);
+        gc.setFill(Color.web("#d9c6e5", 0.66));
+        gc.setFont(Font.font("Microsoft YaHei UI", FontWeight.NORMAL, 13));
+        gc.fillText(hint, canvasWidth * 0.5, canvasHeight * 0.955);
+        gc.setTextAlign(TextAlignment.LEFT);
+    }
+
+    private void drawFlyingSelection(GraphicsContext gc) {
+        if (activeSelection == null) {
+            return;
+        }
+        double p = easeInOut(clamp(flyProgress, 0.0, 1.0));
+        int targetIndex = Math.min(cards.size(), 2);
+        double startW = centerCardWidth();
+        double startH = startW * 1.68;
+        double targetW = spreadCardWidth();
+        double targetH = targetW * 1.68;
+        double startX = flyStartX - startW / 2.0;
+        double startY = flyStartY - startH / 2.0;
+        double x = lerp(startX, spreadSlotX(targetIndex), p);
+        double y = lerp(startY, spreadSlotY(), p) - Math.sin(Math.PI * p) * canvasHeight * 0.11;
+        double w = lerp(startW, targetW, p);
+        double h = lerp(startH, targetH, p);
+        double flip = clamp(p / 0.42, 0.0, 1.0);
+        double scaleX = Math.max(0.035, Math.abs(Math.cos(Math.PI * flip)));
+
+        gc.save();
+        gc.translate(x + w / 2.0, y + h / 2.0);
+        gc.rotate(lerp(-3.0, 8.0, Math.sin(Math.PI * p)));
+        gc.scale(scaleX, 1.0);
+        if (flip < 0.5) {
+            drawCardFront(gc, -w / 2.0, -h / 2.0, w, h, activeSelection, true);
+        } else {
+            drawCardBack(gc, -w / 2.0, -h / 2.0, w, h, 0.35, false);
+        }
+        gc.restore();
+    }
+
+    private void drawFinalReading(GraphicsContext gc) {
+        double cardW = clamp(canvasWidth * 0.082, 92, 124);
+        double cardH = cardW * 1.68;
+        double gap = cardW * 0.36;
+        double groupW = cardW * 3 + gap * 2;
+        double startX = canvasWidth * 0.29 - groupW / 2.0;
+        double y = canvasHeight * 0.255;
+
+        for (int i = 0; i < cards.size(); i++) {
+            Card card = cards.get(i);
+            double x = startX + i * (cardW + gap);
+            gc.setTextAlign(TextAlignment.CENTER);
+            gc.setFill(Color.web("#d8a24b", 0.88));
+            gc.setFont(Font.font("Georgia", FontWeight.BOLD, 11));
+            gc.fillText(SLOT_LABELS[i], x + cardW / 2.0, y - 28);
+            drawFlipCard(gc, x, y, cardW, cardH, card, finalCardProgress(i));
+            if (finalCardProgress(i) > 0.58) {
+                gc.setFill(Color.web("#f2e3c9", 0.78));
+                gc.setFont(Font.font("Microsoft YaHei UI", FontWeight.NORMAL, 12));
+                gc.fillText(primaryKeyword(card), x + cardW / 2.0, y + cardH + 14);
+            }
+        }
+        gc.setTextAlign(TextAlignment.LEFT);
+
+        double panelX = canvasWidth * 0.55;
+        double panelY = canvasHeight * 0.16;
+        double panelW = canvasWidth * 0.39;
+        double panelH = canvasHeight * 0.75;
+        gc.setFill(Color.web("#07060c", 0.90));
+        gc.fillRoundRect(panelX, panelY, panelW, panelH, 28, 28);
+        gc.setStroke(Color.web("#d8a24b", 0.38));
+        gc.setLineWidth(1.2);
+        gc.strokeRoundRect(panelX, panelY, panelW, panelH, 28, 28);
+
+        gc.setFill(Color.web("#b88add"));
+        gc.setFont(Font.font("Georgia", FontWeight.BOLD, 13));
+        gc.fillText("YOUR READING", panelX + 28, panelY + 25);
+        if (readingPhase == ReadingPhase.COMPLETE) {
+            gc.setTextAlign(TextAlignment.RIGHT);
+            gc.setFill(Color.web("#bda8c9", 0.54));
+            gc.setFont(Font.font("Microsoft YaHei UI", FontWeight.NORMAL, 11));
+            gc.fillText(readingSource, panelX + panelW - 28, panelY + 27);
+            gc.setTextAlign(TextAlignment.LEFT);
+        }
+        gc.setFill(Color.web("#fff3df"));
+        gc.setFont(Font.font("Microsoft YaHei UI", FontWeight.BOLD, 25));
+        gc.fillText(readingPhase == ReadingPhase.COMPLETE ? "三牌综合解读" : "牌阵正在展开", panelX + 28, panelY + 53);
+
+        if (readingPhase != ReadingPhase.COMPLETE) {
+            gc.setFill(Color.web("#d6c4df", 0.68));
+            gc.setFont(Font.font("Microsoft YaHei UI", FontWeight.NORMAL, 15));
+            gc.fillText("三张牌将依次翻开，请等待牌阵完整显现。", panelX + 28, panelY + 103);
+            return;
+        }
+
+        drawAdaptiveReadingContent(gc, panelX + 28, panelY + 99,
+                panelW - 56, panelY + panelH - 22);
+    }
+
+    /**
+     * 完整绘制 AI 解读。根据真实行数逐级调整字号和行距，不再使用固定
+     * maxLines 截断，因此 DeepSeek 偶尔返回较长文本时也能完整落在面板内。
+     */
+    private void drawAdaptiveReadingContent(GraphicsContext gc, double x, double y,
+                                            double width, double bottomY) {
+        double fontSize = 14.0;
+        double lineHeight = 21.0;
+        List<String> interpretationLines = List.of();
+        List<String> adviceLines = List.of();
+        double requiredHeight = Double.MAX_VALUE;
+        double availableHeight = Math.max(100.0, bottomY - y);
+
+        while (fontSize >= 8.0) {
+            int charsPerLine = Math.max(12, (int) (width / Math.max(7.0, fontSize * 0.96)));
+            interpretationLines = wrapTextAll(combinedInterpretation, charsPerLine);
+            adviceLines = wrapTextAll(combinedAdvice, charsPerLine);
+            lineHeight = fontSize + 7.0;
+            requiredHeight = (interpretationLines.size() + adviceLines.size()) * lineHeight + 39.0;
+            if (requiredHeight <= availableHeight) {
+                break;
+            }
+            fontSize -= 0.5;
+        }
+
+        if (requiredHeight > availableHeight) {
+            int totalLines = Math.max(1, interpretationLines.size() + adviceLines.size());
+            lineHeight = Math.max(9.0, (availableHeight - 34.0) / totalLines);
+            fontSize = Math.max(7.0, lineHeight - 3.5);
+        }
+
+        gc.setFill(Color.web("#eadff0", 0.88));
+        gc.setFont(Font.font("Microsoft YaHei UI", FontWeight.NORMAL, fontSize));
+        double currentY = drawTextLines(gc, interpretationLines, x, y, lineHeight);
+
+        currentY += Math.max(12.0, fontSize + 2.0);
+        gc.setFill(Color.web("#d8a24b"));
+        gc.setFont(Font.font("Microsoft YaHei UI", FontWeight.BOLD, Math.max(11.0, fontSize + 1.0)));
+        gc.fillText("行动建议", x, currentY);
+
+        currentY += Math.max(22.0, fontSize + 11.0);
+        gc.setFill(Color.web("#f2e5ce", 0.84));
+        gc.setFont(Font.font("Microsoft YaHei UI", FontWeight.NORMAL, fontSize));
+        drawTextLines(gc, adviceLines, x, currentY, lineHeight);
+    }
+
+    private double drawTextLines(GraphicsContext gc, List<String> lines,
+                                 double x, double y, double lineHeight) {
+        double currentY = y;
+        for (String line : lines) {
+            gc.fillText(line, x, currentY);
+            currentY += lineHeight;
+        }
+        return currentY;
+    }
+
+    private List<String> wrapTextAll(String text, int charsPerLine) {
+        List<String> lines = new ArrayList<>();
+        if (text == null || text.isBlank()) {
+            lines.add("");
+            return lines;
+        }
+
+        String[] paragraphs = text.replace("\r", "").split("\n");
+        for (String paragraph : paragraphs) {
+            String cleaned = paragraph.strip();
+            if (cleaned.isEmpty()) {
+                continue;
+            }
+            int start = 0;
+            while (start < cleaned.length()) {
+                int end = Math.min(cleaned.length(), start + charsPerLine);
+                lines.add(cleaned.substring(start, end));
+                start = end;
+            }
+        }
+        if (lines.isEmpty()) {
+            lines.add("");
+        }
+        return lines;
+    }
+
+    private void drawFlipCard(GraphicsContext gc, double x, double y, double w, double h,
+                              Card card, double progress) {
+        double p = clamp(progress, 0.0, 1.0);
+        double scaleX = Math.max(0.035, Math.abs(Math.cos(Math.PI * p)));
+        gc.save();
+        gc.translate(x + w / 2.0, y + h / 2.0);
+        gc.scale(scaleX, 1.0);
+        if (p < 0.5) {
+            drawCardBack(gc, -w / 2.0, -h / 2.0, w, h, 0.8, true);
+        } else {
+            drawCardFront(gc, -w / 2.0, -h / 2.0, w, h, card, true);
+        }
+        gc.restore();
+    }
+
+    private double centerCardWidth() {
+        return clamp(canvasWidth * 0.102, 112, 154);
+    }
+
+    private double fanCenterX() {
+        return canvasWidth * 0.5 + fanShift;
+    }
+
+    private double fanCenterY() {
+        return canvasHeight * 0.405;
+    }
+
+    private double spreadCardWidth() {
+        return clamp(canvasWidth * 0.052, 58, 78);
+    }
+
+    private double spreadSlotX(int index) {
+        double slotW = spreadCardWidth();
+        double gap = slotW * 0.42;
+        double groupW = slotW * 3 + gap * 2;
+        return canvasWidth * 0.5 - groupW / 2.0 + index * (slotW + gap);
+    }
+
+    private double spreadSlotY() {
+        return canvasHeight * 0.735;
+    }
+
+    private String slotChinese(int index) {
+        return switch (index) {
+            case 0 -> "过去";
+            case 1 -> "现在";
+            default -> "未来";
+        };
+    }
+
+    private double lerp(double from, double to, double t) {
+        return from + (to - from) * t;
     }
 
     private void rebuildSpread() {
@@ -3637,6 +4300,16 @@ public class TarotGame implements GameInterface {
     private enum SpreadMode {
         SINGLE_CARD,
         THREE_CARD
+    }
+
+    private enum ReadingPhase {
+        ROTATING,
+        HOLDING,
+        REVEALING,
+        AWAITING_OPEN,
+        FLYING,
+        FINAL_REVEAL,
+        COMPLETE
     }
 
     /**

@@ -5,6 +5,7 @@ import com.gesturegame.common.GameInterface;
 import com.gesturegame.common.GestureData;
 import com.gesturegame.common.GestureType;
 import com.gesturegame.engine.AppStateManager;
+import com.gesturegame.game.TarotGame;
 import com.gesturegame.network.GestureCommand;
 import com.gesturegame.network.GestureStreamServer.DualHandState;
 import javafx.application.Platform;
@@ -13,11 +14,13 @@ import javafx.scene.SnapshotParameters;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.Label;
+import javafx.scene.control.TextField;
 import javafx.scene.image.PixelReader;
 import javafx.scene.image.PixelFormat;
 import javafx.scene.image.PixelWriter;
 import javafx.scene.image.WritableImage;
 import javafx.scene.layout.Pane;
+import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
 import javafx.scene.paint.CycleMethod;
 import javafx.scene.paint.LinearGradient;
@@ -59,6 +62,12 @@ public class GameRenderer {
 
     @FXML
     private Label statusLabel;
+
+    @FXML
+    private StackPane tarotQuestionOverlay;
+
+    @FXML
+    private TextField tarotQuestionField;
 
     private AppStateManager appStateManager;
     private GraphicsContext gc;
@@ -135,7 +144,9 @@ public class GameRenderer {
         }
 
         String state = AppStateManager.getInstance().getCurrentState();
-        setGameHudVisible(true);
+        // 游戏内的标题、分数和操作提示由各游戏自行绘制，避免统一 HUD
+        // 把塔罗的紫金样式叠到所有游戏上。
+        setGameHudVisible(false);
         if (AppStateManager.STATE_GAME_OVER.equals(state)) {
             setGameHudVisible(false);
             updateExitHold(dualHands);
@@ -180,7 +191,7 @@ public class GameRenderer {
         // 单手基础手势完整交给游戏；双手系统模式只屏蔽输入，不暂停游戏动画。
         game.update(dualHands.captured() ? new GestureData() : gesture);
         game.render(gc);
-        drawExitTarget(gc, gameCanvas.getWidth(), gameCanvas.getHeight());
+        // 保留全局退出判定及确认进度，但不再绘制统一文字提示。
         drawExitProgress(gesture, dualHands);
 
         boolean tarotMode = "塔罗牌".equals(game.getName());
@@ -249,6 +260,7 @@ public class GameRenderer {
     }
 
     private void exitToDifficulty() {
+        hideTarotQuestionPrompt();
         exitHoldFrames = 0;
         compactHoldFrames = 0;
         openHoldFrames = 0;
@@ -265,6 +277,7 @@ public class GameRenderer {
     }
 
     private void exitToLobby() {
+        hideTarotQuestionPrompt();
         exitHoldFrames = 0;
         compactHoldFrames = 0;
         openHoldFrames = 0;
@@ -800,8 +813,12 @@ public class GameRenderer {
 
     private void drawTarotEntryScreen(GraphicsContext g, GestureData gesture, DualHandState dualHands,
                                       double w, double h, GameInterface activeGame) {
-        updateExitHold(dualHands);
-        boolean isFist = gesture != null && gesture.getGesture() == GestureType.FIST && !dualHands.captured();
+        boolean questionOpen = tarotQuestionOverlay != null && tarotQuestionOverlay.isVisible();
+        if (!questionOpen) {
+            updateExitHold(dualHands);
+        }
+        boolean isFist = !questionOpen && gesture != null
+                && gesture.getGesture() == GestureType.FIST && !dualHands.captured();
 
         if (isFist) {
             compactHoldFrames++;
@@ -811,9 +828,7 @@ public class GameRenderer {
 
         if (compactHoldFrames >= HOLD_FRAMES) {
             compactHoldFrames = 0;
-            currentGame = null;
-            LOGGER.info("塔罗牌跳过难度选择，直接进入自定义占读模式");
-            AppStateManager.getInstance().switchState(AppStateManager.STATE_GAME);
+            showTarotQuestionPrompt(activeGame);
             return;
         }
 
@@ -863,6 +878,41 @@ public class GameRenderer {
 
         drawExitTarget(g, w, h);
         drawExitProgress(gesture, dualHands);
+    }
+
+    private void showTarotQuestionPrompt(GameInterface activeGame) {
+        if (!(activeGame instanceof TarotGame) || tarotQuestionOverlay == null || tarotQuestionField == null) {
+            return;
+        }
+        tarotQuestionField.clear();
+        tarotQuestionOverlay.setManaged(true);
+        tarotQuestionOverlay.setVisible(true);
+        Platform.runLater(tarotQuestionField::requestFocus);
+    }
+
+    private void hideTarotQuestionPrompt() {
+        if (tarotQuestionOverlay != null) {
+            tarotQuestionOverlay.setVisible(false);
+            tarotQuestionOverlay.setManaged(false);
+        }
+    }
+
+    @FXML
+    private void submitTarotQuestion() {
+        GameInterface activeGame = AppStateManager.getInstance().getActiveGame();
+        if (!(activeGame instanceof TarotGame tarotGame)) {
+            hideTarotQuestionPrompt();
+            return;
+        }
+        String question = tarotQuestionField == null ? "" : tarotQuestionField.getText().trim();
+        if (question.isEmpty()) {
+            question = "我此刻最需要看清的是什么？";
+        }
+        tarotGame.setQuestion(question);
+        hideTarotQuestionPrompt();
+        currentGame = null;
+        LOGGER.info("塔罗问题已确认，进入三牌占读");
+        AppStateManager.getInstance().switchState(AppStateManager.STATE_GAME);
     }
 
     /** Circuit-board settlement screen with a particle-built GAME OVER title. */
