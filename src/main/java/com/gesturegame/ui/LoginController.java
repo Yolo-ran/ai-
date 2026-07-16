@@ -60,9 +60,9 @@ public class LoginController {
     private boolean entering;
     private boolean loggedIn;
     private boolean active;
-    private boolean registerMode; // false=登录, true=注册
-    private static final java.util.Map<String, String> accounts = new java.util.HashMap<>();
-    static { accounts.put("admin", "123456"); }
+    private boolean registerMode;
+    private final com.gesturegame.persistence.UserAccountStore accountStore =
+            new com.gesturegame.persistence.UserAccountStore();
 
     // Star arrays
     private final double[] dx = new double[NUMBER_OF_STARS];
@@ -171,22 +171,22 @@ public class LoginController {
         String p = passwordField.getText();
         if (u.isEmpty()) { loginStatus.setText("Please enter username"); return; }
         if (registerMode) {
-            // 注册模式
+            // 注册模式 → SQLite 持久化
             String cp = confirmField.getText();
             if (p.isEmpty() || !p.equals(cp)) {
                 loginStatus.setText("Passwords do not match"); return;
             }
-            if (accounts.containsKey(u)) {
-                loginStatus.setText("Username already exists"); return;
+            var result = accountStore.register(u, p.toCharArray());
+            if (!result.success()) {
+                loginStatus.setText(result.message());
+                return;
             }
-            accounts.put(u, p);
             loginStatus.setTextFill(Color.LIME);
             loginStatus.setText("Account created! Please sign in.");
             onToggleMode(); // 切回登录
         } else {
-            // 登录模式
-            String stored = accounts.get(u);
-            if (stored != null && stored.equals(p)) {
+            // 登录模式 → SQLite 验证
+            if (accountStore.authenticate(u, p.toCharArray())) {
                 loggedIn = true;
                 loginStatus.setTextFill(Color.LIME);
                 loginBtnText.setText("✓");
