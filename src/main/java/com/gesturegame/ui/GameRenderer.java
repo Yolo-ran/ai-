@@ -452,18 +452,31 @@ public class GameRenderer {
             double cy = gesture.getHandY() * h;
 
             if (compactHoldFrames > 0 && hoveredIndex >= 0) {
-                // PEACE 按住中：外圈光晕 + 进度环
+                // FIST确认中：金色光晕 + 进度环
                 g.setFill(Color.color(0.94, 0.79, 0.47, 0.12));
                 g.fillOval(cx - 22, cy - 22, 44, 44);
                 g.setStroke(Color.web("#f0ca79"));
                 g.setLineWidth(2.0);
                 g.strokeOval(cx - 16, cy - 16, 32, 32);
-                // 进度弧
                 double progress = (double) compactHoldFrames / HOLD_FRAMES;
                 g.setStroke(Color.web("#f0ca79"));
                 g.setLineWidth(3);
                 g.strokeArc(cx - 20, cy - 20, 40, 40,
                         90, -360 * progress, javafx.scene.shape.ArcType.OPEN);
+            }
+
+            if (exitHoldFrames > 0) {
+                // 返回中：紫色光晕 + 进度环
+                double ep = (double) exitHoldFrames / HOLD_FRAMES;
+                g.setFill(Color.color(0.55, 0.35, 0.85, 0.1));
+                g.fillOval(cx - 22, cy - 22, 44, 44);
+                g.setStroke(Color.web("#a78bfa"));
+                g.setLineWidth(2.0);
+                g.strokeOval(cx - 16, cy - 16, 32, 32);
+                g.setStroke(Color.web("#a78bfa"));
+                g.setLineWidth(3);
+                g.strokeArc(cx - 20, cy - 20, 40, 40,
+                        90, -360 * ep, javafx.scene.shape.ArcType.OPEN);
             }
 
             // 中心小点（始终显示）
