@@ -954,7 +954,7 @@ public class TarotGame implements GameInterface {
     }
 
     private double spreadCardWidth() {
-        return clamp(canvasWidth * 0.052, 58, 78);
+        return centerCardWidth() * 0.78;
     }
 
     private double spreadSlotX(int index) {
@@ -977,9 +977,11 @@ public class TarotGame implements GameInterface {
         double altarH = 110;
         double altarY = scrollY - altarH - 15;
         
-        // Y 轴稍往上提一点点，让卡牌看起来是“立在/浮在”祭坛正上方
-        double cardTargetY = altarY + altarH / 2.0 - 20; 
-        return cardTargetY - (spreadCardWidth() * CARD_ASPECT) / 2.0;
+        double placedCardHeight = spreadCardWidth() * CARD_ASPECT;
+        
+        // 往上提，立在漩涡上方
+        double placedCardTargetY = altarY + (altarH / 2.0) - (placedCardHeight / 2.0) - 30;
+        return placedCardTargetY;
     }
 
     private String slotChinese(int index) {
