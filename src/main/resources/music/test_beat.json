@@ -1,0 +1,293 @@
+{
+  "title": "测试节拍",
+  "artist": "系统内置",
+  "bpm": 120,
+  "duration": 60,
+  "notes": [
+    {
+      "time": 1.0,
+      "lane": 2,
+      "gesture": "FIST"
+    },
+    {
+      "time": 1.53,
+      "lane": 1,
+      "gesture": "FIST"
+    },
+    {
+      "time": 2.25,
+      "lane": 2,
+      "gesture": "FIST"
+    },
+    {
+      "time": 3.42,
+      "lane": 2,
+      "gesture": "FIST"
+    },
+    {
+      "time": 4.52,
+      "lane": 0,
+      "gesture": "FIST"
+    },
+    {
+      "time": 5.11,
+      "lane": 0,
+      "gesture": "PEACE"
+    },
+    {
+      "time": 6.21,
+      "lane": 2,
+      "gesture": "FIST"
+    },
+    {
+      "time": 7.43,
+      "lane": 2,
+      "gesture": "PEACE"
+    },
+    {
+      "time": 8.35,
+      "lane": 1,
+      "gesture": "PEACE"
+    },
+    {
+      "time": 9.12,
+      "lane": 0,
+      "gesture": "FIST"
+    },
+    {
+      "time": 10.32,
+      "lane": 1,
+      "gesture": "OPEN"
+    },
+    {
+      "time": 10.98,
+      "lane": 1,
+      "gesture": "FIST"
+    },
+    {
+      "time": 11.57,
+      "lane": 0,
+      "gesture": "OPEN"
+    },
+    {
+      "time": 12.92,
+      "lane": 2,
+      "gesture": "OPEN"
+    },
+    {
+      "time": 14.23,
+      "lane": 2,
+      "gesture": "OPEN"
+    },
+    {
+      "time": 15.26,
+      "lane": 1,
+      "gesture": "FIST"
+    },
+    {
+      "time": 16.31,
+      "lane": 2,
+      "gesture": "PEACE"
+    },
+    {
+      "time": 17.7,
+      "lane": 1,
+      "gesture": "PEACE"
+    },
+    {
+      "time": 18.39,
+      "lane": 0,
+      "gesture": "FIST"
+    },
+    {
+      "time": 19.55,
+      "lane": 1,
+      "gesture": "FIST"
+    },
+    {
+      "time": 20.91,
+      "lane": 0,
+      "gesture": "OPEN"
+    },
+    {
+      "time": 21.69,
+      "lane": 2,
+      "gesture": "OPEN"
+    },
+    {
+      "time": 22.35,
+      "lane": 1,
+      "gesture": "FIST"
+    },
+    {
+      "time": 23.52,
+      "lane": 2,
+      "gesture": "PEACE"
+    },
+    {
+      "time": 24.67,
+      "lane": 2,
+      "gesture": "PEACE"
+    },
+    {
+      "time": 25.34,
+      "lane": 2,
+      "gesture": "FIST"
+    },
+    {
+      "time": 26.0,
+      "lane": 1,
+      "gesture": "OPEN"
+    },
+    {
+      "time": 27.49,
+      "lane": 2,
+      "gesture": "PEACE"
+    },
+    {
+      "time": 28.55,
+      "lane": 2,
+      "gesture": "OPEN"
+    },
+    {
+      "time": 29.89,
+      "lane": 0,
+      "gesture": "FIST"
+    },
+    {
+      "time": 31.21,
+      "lane": 1,
+      "gesture": "OPEN"
+    },
+    {
+      "time": 31.98,
+      "lane": 0,
+      "gesture": "PEACE"
+    },
+    {
+      "time": 33.36,
+      "lane": 1,
+      "gesture": "FIST"
+    },
+    {
+      "time": 34.51,
+      "lane": 1,
+      "gesture": "PEACE"
+    },
+    {
+      "time": 35.47,
+      "lane": 1,
+      "gesture": "FIST"
+    },
+    {
+      "time": 36.22,
+      "lane": 2,
+      "gesture": "PEACE"
+    },
+    {
+      "time": 36.98,
+      "lane": 2,
+      "gesture": "OPEN"
+    },
+    {
+      "time": 38.38,
+      "lane": 1,
+      "gesture": "OPEN"
+    },
+    {
+      "time": 39.1,
+      "lane": 0,
+      "gesture": "PEACE"
+    },
+    {
+      "time": 40.09,
+      "lane": 0,
+      "gesture": "FIST"
+    },
+    {
+      "time": 40.74,
+      "lane": 0,
+      "gesture": "PEACE"
+    },
+    {
+      "time": 41.67,
+      "lane": 0,
+      "gesture": "OPEN"
+    },
+    {
+      "time": 42.55,
+      "lane": 1,
+      "gesture": "PEACE"
+    },
+    {
+      "time": 43.3,
+      "lane": 2,
+      "gesture": "FIST"
+    },
+    {
+      "time": 44.48,
+      "lane": 0,
+      "gesture": "PEACE"
+    },
+    {
+      "time": 45.86,
+      "lane": 1,
+      "gesture": "PEACE"
+    },
+    {
+      "time": 46.7,
+      "lane": 1,
+      "gesture": "OPEN"
+    },
+    {
+      "time": 47.36,
+      "lane": 0,
+      "gesture": "PEACE"
+    },
+    {
+      "time": 48.74,
+      "lane": 1,
+      "gesture": "PEACE"
+    },
+    {
+      "time": 50.0,
+      "lane": 2,
+      "gesture": "FIST"
+    },
+    {
+      "time": 51.37,
+      "lane": 1,
+      "gesture": "PEACE"
+    },
+    {
+      "time": 52.38,
+      "lane": 0,
+      "gesture": "FIST"
+    },
+    {
+      "time": 53.25,
+      "lane": 0,
+      "gesture": "PEACE"
+    },
+    {
+      "time": 54.71,
+      "lane": 2,
+      "gesture": "FIST"
+    },
+    {
+      "time": 55.81,
+      "lane": 1,
+      "gesture": "FIST"
+    },
+    {
+      "time": 56.42,
+      "lane": 1,
+      "gesture": "OPEN"
+    },
+    {
+      "time": 57.16,
+      "lane": 0,
+      "gesture": "PEACE"
+    }
+  ]
+}

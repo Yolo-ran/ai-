@@ -9,6 +9,8 @@ import javafx.application.Platform;
 import javafx.geometry.VPos;
 import javafx.scene.control.TextInputDialog;
 import javafx.scene.canvas.GraphicsContext;
+import javafx.scene.effect.BlendMode;
+import javafx.scene.effect.DropShadow;
 import javafx.scene.paint.*;
 import javafx.scene.shape.StrokeLineCap;
 import javafx.scene.text.Font;
@@ -85,6 +87,18 @@ public class TarotGame implements GameInterface {
     private boolean aiReadingPending;
     private boolean completeFistLatched;
 
+    // 声明星体对象，用来存储每颗星星的静态物理属性，避免在循环中 new 对象
+    private static class Star {
+        double x;
+        double y;
+        double size;
+        double alpha;
+        double speed;
+        int colorType; // 0 为淡金色，1 为神秘紫色，2 为纯白色
+    }
+    private final List<Star> starField = new ArrayList<>();
+    private boolean isStarFieldInitialized = false;
+
     private static final double CAROUSEL_SPEED = 0.026;
     private static final double CARD_ASPECT = 600.0 / 350.0;
 
@@ -155,6 +169,36 @@ public class TarotGame implements GameInterface {
         } catch (Exception e) {
             System.err.println("Failed to load tarot images: " + e.getMessage());
         }
+    }
+
+    private void initStarField(double width, double height) {
+        starField.clear();
+        java.util.Random rand = new java.util.Random();
+        int totalStars = 700; // HTML 效果有大量星星（Layer1 700, Layer2 200, Layer3 100），这里用 700 颗模拟 3 层视差
+        
+        for (int i = 0; i < totalStars; i++) {
+            Star star = new Star();
+            star.x = rand.nextDouble() * width;
+            star.y = rand.nextDouble() * height;
+            
+            // 模仿 tasty-dragon-12 的 3 层视差向上滚动效果
+            if (i < 400) { // Layer 1: 最远、最小、最密、最快 (1px)
+                star.size = 1.0;
+                star.speed = 0.8; 
+                star.alpha = 0.8;
+            } else if (i < 600) { // Layer 2: 中等距离 (2px)
+                star.size = 2.0;
+                star.speed = 0.4;
+                star.alpha = 0.9;
+            } else { // Layer 3: 最近、最大、最稀疏、最慢 (3px)
+                star.size = 3.0;
+                star.speed = 0.2;
+                star.alpha = 1.0;
+            }
+            
+            starField.add(star);
+        }
+        isStarFieldInitialized = true;
     }
 
     @Override
@@ -546,27 +590,41 @@ public class TarotGame implements GameInterface {
         gc.setGlobalAlpha(alpha * clamp(fanEntryProgress * 1.8, 0.0, 1.0));
         gc.translate(centerX, centerY);
         gc.rotate(angle);
+        
+        // --- 核心升级：中心激活卡牌特效 (.active 级高光) ---
         double entryScale = 0.5 + 0.5 * clamp(entry, 0.0, 1.08);
-        
-        // 激活卡牌特效：靠近中心时放大
         if (isCenterHover || activeReveal) {
-            scale *= 1.15;
-        }
-        
-        gc.scale(scale * entryScale, scale * entryScale);
-        
-        // 紫金色交织发光 (box-shadow)
-        if (isCenterHover || activeReveal) {
-            javafx.scene.effect.DropShadow shadow = new javafx.scene.effect.DropShadow();
-            shadow.setColor(Color.web("#ba68c8", 0.8));
-            shadow.setRadius(25);
+            // 1. 放缩与浮空：scale(1.15) 和 Y轴上移
+            gc.scale(scale * entryScale * 1.15, scale * entryScale * 1.15);
+            gc.translate(0, -30);
             
-            javafx.scene.effect.DropShadow shadow2 = new javafx.scene.effect.DropShadow();
-            shadow2.setColor(Color.web("#d4af37", 0.4));
-            shadow2.setRadius(50);
-            shadow.setInput(shadow2);
+            // 2. 底层爆发现场：BlendMode.ADD 绘制极其绚丽的辐射光晕
+            gc.save();
+            gc.setGlobalBlendMode(BlendMode.ADD);
+            double breath = (Math.sin(ambientPulse * 2.0) + 1.0) / 2.0; // 0.0 ~ 1.0
+            Paint auraGlow = new RadialGradient(
+                    0, 0, 0, 0, cardWidth * 1.2, false, CycleMethod.NO_CYCLE,
+                    new Stop(0, Color.web("#d4af37", 0.6 + 0.3 * breath)), // 中心耀眼金光
+                    new Stop(0.4, Color.web("#ba68c8", 0.5 + 0.2 * breath)), // 中层神秘紫光
+                    new Stop(1, Color.TRANSPARENT)
+            );
+            gc.setFill(auraGlow);
+            gc.fillOval(-cardWidth * 1.2, -cardHeight * 1.2, cardWidth * 2.4, cardHeight * 2.4);
+            gc.restore();
             
-            gc.setEffect(shadow);
+            // 3. 牌背本身发光：双层 DropShadow 模拟 box-shadow 叠加
+            DropShadow purpleGlow = new DropShadow();
+            purpleGlow.setRadius(25 + 10 * breath);
+            purpleGlow.setColor(Color.web("#ba68c8", 0.8));
+            
+            DropShadow goldGlow = new DropShadow();
+            goldGlow.setRadius(50 + 15 * breath);
+            goldGlow.setColor(Color.web("#d4af37", 0.6));
+            
+            goldGlow.setInput(purpleGlow);
+            gc.setEffect(goldGlow);
+        } else {
+            gc.scale(scale * entryScale, scale * entryScale);
         }
 
         gc.setFill(Color.web("#000000", 0.34));
@@ -1182,6 +1240,40 @@ public class TarotGame implements GameInterface {
 
     private void drawBackground(GraphicsContext gc) {
         renderCache.drawBackground(gc, canvasWidth, canvasHeight, this::paintStaticBackground);
+        
+        // 1. 确保星空已被初始化（自适应 Canvas 宽高）
+        if (!isStarFieldInitialized) {
+            initStarField(canvasWidth, canvasHeight);
+        }
+
+        // 2. 绘制星空（遍历静态数组，纯数值增量计算，GPU 极其友好）
+        gc.save();
+        gc.setGlobalBlendMode(BlendMode.ADD); // 增加发光质感
+        
+        for (Star star : starField) {
+            // 向上滚动视差效果
+            star.y -= star.speed;
+            
+            // 无缝循环：超出顶部则回到屏幕最下方
+            if (star.y < 0) {
+                star.y = canvasHeight;
+            }
+            
+            gc.setGlobalAlpha(star.alpha);
+            gc.setFill(Color.WHITE); // tasty-dragon-12 使用纯白星光
+            gc.fillOval(star.x, star.y, star.size, star.size);
+            
+            // 给大星星加上微微的辉光（可选）
+            if (star.size >= 3.0) {
+                gc.setGlobalAlpha(star.alpha * 0.3);
+                gc.fillOval(star.x - 1.5, star.y - 1.5, star.size + 3, star.size + 3);
+            }
+        }
+        gc.restore();
+
+        // 3. 必须恢复全局透明度，避免影响后续卡牌和星盘的绘制！
+        gc.setGlobalAlpha(1.0);
+
         drawAstrolabeBase(gc);
         drawDynamicNeonVeil(gc);
     }
@@ -1237,24 +1329,14 @@ public class TarotGame implements GameInterface {
     }
 
     private void paintStaticBackground(GraphicsContext gc) {
-        // 1. 深邃星空与四周暗角 (Radial Gradient Vignette)
+        // 1. 深邃星空与四周暗角 (Radial Gradient Vignette matching tasty-dragon-12)
         gc.setFill(new RadialGradient(
-                0, 0, canvasWidth * 0.5, canvasHeight * 0.5,
-                Math.max(canvasWidth, canvasHeight) * 0.7, false, CycleMethod.NO_CYCLE,
-                new Stop(0, Color.web("#140f2d")), // 中心透出深紫微光
-                new Stop(0.6, Color.web("#0a0816")), // 过渡到深黑
-                new Stop(1, Color.web("#000000"))  // 边缘纯黑暗角
+                0, 0, canvasWidth * 0.5, canvasHeight, // ellipse at bottom
+                Math.max(canvasWidth, canvasHeight) * 0.8, false, CycleMethod.NO_CYCLE,
+                new Stop(0, Color.web("#1b2735")), // 底部偏蓝深灰
+                new Stop(1, Color.web("#090a0f"))  // 边缘纯黑
         ));
         gc.fillRect(0, 0, canvasWidth, canvasHeight);
-
-        // 绘制静谧星空点缀
-        gc.setFill(Color.web("#ffffff", 0.15));
-        for (int i = 0; i < 200; i++) {
-            double x = (i * 101L + 29) % Math.max(canvasWidth, 1);
-            double y = (i * 163L + 47) % Math.max(canvasHeight, 1);
-            double size = 0.5 + (i % 3) * 0.5;
-            gc.fillOval(x, y, size, size);
-        }
     }
 
     private void drawNeonMandalaBase(GraphicsContext gc, double cx, double cy, double radius) {
