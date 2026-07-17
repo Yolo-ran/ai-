@@ -954,7 +954,8 @@ public class TarotGame implements GameInterface {
     }
 
     private double spreadCardWidth() {
-        return centerCardWidth() * 0.78;
+        // 1. 强制缩小 0.75 倍，否则绝对会挡住底座！
+        return centerCardWidth() * 0.75;
     }
 
     private double spreadSlotX(int index) {
@@ -963,11 +964,12 @@ public class TarotGame implements GameInterface {
         double altarW = 180;
         double altarGap = 50;
         double firstAltarX = centerX - (altarW * 1.5 + altarGap);
-        double altarX = firstAltarX + index * (altarW + altarGap);
+        double currentAltarX = firstAltarX + index * (altarW + altarGap);
         
-        // 卡牌在祭坛上的目标中心位置公式：
-        double cardTargetX = altarX + altarW / 2.0;
-        return cardTargetX - spreadCardWidth() / 2.0;
+        double finalCardWidth = spreadCardWidth();
+        
+        // 3. 它的 X 坐标必须精准对齐对应祭坛的中心：
+        return currentAltarX + (altarW / 2.0) - (finalCardWidth / 2.0);
     }
 
     private double spreadSlotY() {
@@ -977,11 +979,12 @@ public class TarotGame implements GameInterface {
         double altarH = 110;
         double altarY = scrollY - altarH - 15;
         
-        double placedCardHeight = spreadCardWidth() * CARD_ASPECT;
+        double finalCardWidth = spreadCardWidth();
+        double finalCardHeight = finalCardWidth * CARD_ASPECT;
         
-        // 往上提，立在漩涡上方
-        double placedCardTargetY = altarY + (altarH / 2.0) - (placedCardHeight / 2.0) - 30;
-        return placedCardTargetY;
+        // 2. 强制将 Y 轴大幅度上提！
+        // 祭坛顶部Y - 卡牌高度 + 10像素的嵌入感
+        return altarY - finalCardHeight + 10;
     }
 
     private String slotChinese(int index) {
