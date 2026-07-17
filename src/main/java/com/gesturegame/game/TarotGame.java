@@ -600,18 +600,19 @@ public class TarotGame implements GameInterface {
     }
 
     private void drawChosenSlots(GraphicsContext gc) {
+        double baseScale = canvasHeight / 1080.0;
         double canvasW = canvasWidth;
         double canvasH = canvasHeight;
         double centerX = canvasW / 2;
 
-        double scrollW = 800;
-        double scrollH = 85;
-        double scrollY = canvasH - scrollH - 10;
+        double scrollW = 850.0 * baseScale;
+        double scrollH = 90.0 * baseScale;
+        double scrollY = canvasH - scrollH - (10.0 * baseScale);
 
-        double altarW = 180;
-        double altarH = 110;
-        double altarGap = 50;
-        double altarY = scrollY - altarH - 15;
+        double altarW = 180.0 * baseScale;
+        double altarH = 110.0 * baseScale;
+        double altarGap = 50.0 * baseScale;
+        double altarY = scrollY - altarH - (15.0 * baseScale);
 
         double firstAltarX = centerX - (altarW * 1.5 + altarGap);
         double[] altarXCoords = new double[3];
@@ -628,38 +629,38 @@ public class TarotGame implements GameInterface {
                 gc.drawImage(altarImage, altarXCoords[i], altarY, altarW, altarH);
 
                 gc.setFill(Color.web("#d4af37"));
-                gc.setFont(Font.font("Times New Roman", 14));
+                gc.setFont(Font.font("Times New Roman", 14 * baseScale));
                 gc.setTextAlign(TextAlignment.CENTER);
                 String label = (i == 0) ? "PAST" : (i == 1) ? "PRESENT" : "FUTURE";
-                gc.fillText(label, altarXCoords[i] + altarW / 2, altarY + altarH + 15);
+                gc.fillText(label, altarXCoords[i] + altarW / 2, altarY + altarH + (15.0 * baseScale));
             } else {
                 // 复古石质卡槽 + 凹陷阴影 (Inset shadow)
                 gc.setFill(Color.web("#1c1a1a"));
-                gc.fillRoundRect(x, y, slotW, slotH, 13, 13);
+                gc.fillRoundRect(x, y, slotW, slotH, 13 * baseScale, 13 * baseScale);
 
                 javafx.scene.effect.InnerShadow insetShadow = new javafx.scene.effect.InnerShadow();
-                insetShadow.setRadius(15);
+                insetShadow.setRadius(15 * baseScale);
                 insetShadow.setColor(Color.web("#000000", 0.9));
                 gc.setEffect(insetShadow);
                 gc.setFill(Color.web("#221f1f"));
-                gc.fillRoundRect(x, y, slotW, slotH, 13, 13);
+                gc.fillRoundRect(x, y, slotW, slotH, 13 * baseScale, 13 * baseScale);
                 gc.setEffect(null);
                 
                 gc.setTextAlign(TextAlignment.CENTER);
                 gc.setFill(Color.web("#d4af37"));
-                gc.setFont(Font.font("Times New Roman", FontWeight.BOLD, 11));
-                gc.fillText(SLOT_LABELS[i], x + slotW / 2.0, y - 10);
-                gc.fillText(SLOT_NOTES[i], x + slotW / 2.0, y + slotH + 16);
+                gc.setFont(Font.font("Times New Roman", FontWeight.BOLD, 11 * baseScale));
+                gc.fillText(SLOT_LABELS[i], x + slotW / 2.0, y - (10 * baseScale));
+                gc.fillText(SLOT_NOTES[i], x + slotW / 2.0, y + slotH + (16 * baseScale));
             }
 
             // 落地脉冲光环效果 (Pulse glow)
             if (interaction.is(TarotGestureStateMachine.Phase.FLYING) && i == cards.size()) {
                 if (flyProgress > 0.8) {
-                    double pulseRadius = (flyProgress - 0.8) * 5.0 * 20; // 向外扩散
+                    double pulseRadius = (flyProgress - 0.8) * 5.0 * (20 * baseScale); // 向外扩散
                     double pulseAlpha = 1.0 - (flyProgress - 0.8) * 5.0; // 渐隐
                     gc.setStroke(Color.web("#d4af37", Math.max(0, pulseAlpha)));
-                    gc.setLineWidth(3.0);
-                    gc.strokeRoundRect(x - pulseRadius, y - pulseRadius, slotW + pulseRadius * 2, slotH + pulseRadius * 2, 13, 13);
+                    gc.setLineWidth(3.0 * baseScale);
+                    gc.strokeRoundRect(x - pulseRadius, y - pulseRadius, slotW + pulseRadius * 2, slotH + pulseRadius * 2, 13 * baseScale, 13 * baseScale);
                 }
             }
 
@@ -942,7 +943,8 @@ public class TarotGame implements GameInterface {
     }
 
     private double centerCardWidth() {
-        return clamp(canvasWidth * 0.102, 112, 154);
+        double baseScale = canvasHeight / 1080.0;
+        return 180.0 * baseScale;
     }
 
     private double fanCenterX() {
@@ -954,15 +956,17 @@ public class TarotGame implements GameInterface {
     }
 
     private double spreadCardWidth() {
-        // 1. 强制缩小 0.75 倍，否则绝对会挡住底座！
-        return centerCardWidth() * 0.75;
+        double baseScale = canvasHeight / 1080.0;
+        double altarW = 180.0 * baseScale;
+        return altarW * 0.85;
     }
 
     private double spreadSlotX(int index) {
+        double baseScale = canvasHeight / 1080.0;
         double canvasW = canvasWidth;
         double centerX = canvasW / 2;
-        double altarW = 180;
-        double altarGap = 50;
+        double altarW = 180.0 * baseScale;
+        double altarGap = 50.0 * baseScale;
         double firstAltarX = centerX - (altarW * 1.5 + altarGap);
         double currentAltarX = firstAltarX + index * (altarW + altarGap);
         
@@ -973,18 +977,18 @@ public class TarotGame implements GameInterface {
     }
 
     private double spreadSlotY() {
+        double baseScale = canvasHeight / 1080.0;
         double canvasH = canvasHeight;
-        double scrollH = 85;
-        double scrollY = canvasH - scrollH - 10;
-        double altarH = 110;
-        double altarY = scrollY - altarH - 15;
+        double scrollH = 90.0 * baseScale;
+        double scrollY = canvasH - scrollH - (10.0 * baseScale);
+        double altarH = 110.0 * baseScale;
+        double altarY = scrollY - altarH - (15.0 * baseScale);
         
-        double finalCardWidth = spreadCardWidth();
-        double finalCardHeight = finalCardWidth * CARD_ASPECT;
+        double finalCardHeight = spreadCardWidth() * CARD_ASPECT;
         
         // 2. 强制将 Y 轴大幅度上提！
         // 祭坛顶部Y - 卡牌高度 + 10像素的嵌入感
-        return altarY - finalCardHeight + 10;
+        return altarY - finalCardHeight + (10.0 * baseScale);
     }
 
     private String slotChinese(int index) {
@@ -1872,23 +1876,24 @@ public class TarotGame implements GameInterface {
 
     private void drawBottomHint(GraphicsContext gc) {
         if (scrollImage != null) {
+            double baseScale = canvasHeight / 1080.0;
             double canvasW = canvasWidth;
             double canvasH = canvasHeight;
             double centerX = canvasW / 2;
 
-            double scrollW = 800; 
-            double scrollH = 85;  
+            double scrollW = 850.0 * baseScale; 
+            double scrollH = 90.0 * baseScale;  
             double scrollX = centerX - scrollW / 2;
-            double scrollY = canvasH - scrollH - 10;
+            double scrollY = canvasH - scrollH - (10.0 * baseScale);
 
             // 绘制羊皮卷
             gc.drawImage(scrollImage, scrollX, scrollY, scrollW, scrollH);
 
             // 在羊皮卷正中央绘制引导文字
-            gc.setFont(Font.font("Times New Roman", FontWeight.BOLD, 15));
+            gc.setFont(Font.font("Times New Roman", FontWeight.BOLD, 15 * baseScale));
             gc.setFill(Color.web("#2a1a08")); // 复古深褐色
             gc.setTextAlign(TextAlignment.CENTER);
-            gc.fillText("张开手掌 · 牌组自动轮转    |    握拳 · 锁定中心牌", centerX, scrollY + scrollH / 2 + 5);
+            gc.fillText("张开手掌 · 牌组自动轮转    |    握拳 · 锁定中心牌", centerX, scrollY + scrollH / 2 + (5.0 * baseScale));
             gc.setTextAlign(TextAlignment.LEFT);
             return;
         }
