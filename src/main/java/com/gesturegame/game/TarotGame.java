@@ -87,18 +87,6 @@ public class TarotGame implements GameInterface {
     private boolean aiReadingPending;
     private boolean completeFistLatched;
 
-    // 声明星体对象，用来存储每颗星星的静态物理属性，避免在循环中 new 对象
-    private static class Star {
-        double x;
-        double y;
-        double size;
-        double alpha;
-        double speed;
-        int colorType; // 0 为淡金色，1 为神秘紫色，2 为纯白色
-    }
-    private final List<Star> starField = new ArrayList<>();
-    private boolean isStarFieldInitialized = false;
-
     private static final double CAROUSEL_SPEED = 0.026;
     private static final double CARD_ASPECT = 600.0 / 350.0;
 
@@ -169,36 +157,6 @@ public class TarotGame implements GameInterface {
         } catch (Exception e) {
             System.err.println("Failed to load tarot images: " + e.getMessage());
         }
-    }
-
-    private void initStarField(double width, double height) {
-        starField.clear();
-        java.util.Random rand = new java.util.Random();
-        int totalStars = 700; // HTML 效果有大量星星（Layer1 700, Layer2 200, Layer3 100），这里用 700 颗模拟 3 层视差
-        
-        for (int i = 0; i < totalStars; i++) {
-            Star star = new Star();
-            star.x = rand.nextDouble() * width;
-            star.y = rand.nextDouble() * height;
-            
-            // 模仿 tasty-dragon-12 的 3 层视差向上滚动效果
-            if (i < 400) { // Layer 1: 最远、最小、最密、最快 (1px)
-                star.size = 1.0;
-                star.speed = 0.8; 
-                star.alpha = 0.8;
-            } else if (i < 600) { // Layer 2: 中等距离 (2px)
-                star.size = 2.0;
-                star.speed = 0.4;
-                star.alpha = 0.9;
-            } else { // Layer 3: 最近、最大、最稀疏、最慢 (3px)
-                star.size = 3.0;
-                star.speed = 0.2;
-                star.alpha = 1.0;
-            }
-            
-            starField.add(star);
-        }
-        isStarFieldInitialized = true;
     }
 
     @Override
@@ -1240,42 +1198,54 @@ public class TarotGame implements GameInterface {
 
     private void drawBackground(GraphicsContext gc) {
         renderCache.drawBackground(gc, canvasWidth, canvasHeight, this::paintStaticBackground);
-        
-        // 1. 确保星空已被初始化（自适应 Canvas 宽高）
-        if (!isStarFieldInitialized) {
-            initStarField(canvasWidth, canvasHeight);
-        }
-
-        // 2. 绘制星空（遍历静态数组，纯数值增量计算，GPU 极其友好）
-        gc.save();
-        gc.setGlobalBlendMode(BlendMode.ADD); // 增加发光质感
-        
-        for (Star star : starField) {
-            // 向上滚动视差效果
-            star.y -= star.speed;
-            
-            // 无缝循环：超出顶部则回到屏幕最下方
-            if (star.y < 0) {
-                star.y = canvasHeight;
-            }
-            
-            gc.setGlobalAlpha(star.alpha);
-            gc.setFill(Color.WHITE); // tasty-dragon-12 使用纯白星光
-            gc.fillOval(star.x, star.y, star.size, star.size);
-            
-            // 给大星星加上微微的辉光（可选）
-            if (star.size >= 3.0) {
-                gc.setGlobalAlpha(star.alpha * 0.3);
-                gc.fillOval(star.x - 1.5, star.y - 1.5, star.size + 3, star.size + 3);
-            }
-        }
-        gc.restore();
-
-        // 3. 必须恢复全局透明度，避免影响后续卡牌和星盘的绘制！
-        gc.setGlobalAlpha(1.0);
-
+        drawDynamicStarfield(gc);
         drawAstrolabeBase(gc);
         drawDynamicNeonVeil(gc);
+    }
+
+    private void drawDynamicStarfield(GraphicsContext gc) {
+        long now = System.nanoTime();
+        double canvasW = canvasWidth;
+        double canvasH = canvasHeight;
+        
+        gc.save();
+        gc.setFill(Color.WHITE);
+        
+        // 层级1：小星星，最快 (700颗，50秒一周期)
+        gc.setGlobalAlpha(0.5);
+        drawStarLayer(gc, 700, 1.0, 50.0, now, canvasW, canvasH, 313L, 401L);
+        
+        // 层级2：中等星星，中速 (200颗，100秒一周期)
+        gc.setGlobalAlpha(0.8);
+        drawStarLayer(gc, 200, 2.0, 100.0, now, canvasW, canvasH, 523L, 607L);
+        
+        // 层级3：大星星，最慢 (100颗，150秒一周期)
+        gc.setGlobalAlpha(1.0);
+        drawStarLayer(gc, 100, 3.0, 150.0, now, canvasW, canvasH, 701L, 811L);
+        
+        gc.restore();
+    }
+
+    private void drawStarLayer(GraphicsContext gc, int count, double size, double speedDurationSec, long now, double canvasW, double canvasH, long primeX, long primeY) {
+        double elapsedSec = now / 1_000_000_000.0;
+        // CSS特效中：2000px 每 speedDurationSec 秒
+        double speed = 2000.0 / speedDurationSec; 
+        double baseScale = canvasH / 1080.0;
+        
+        double actualSize = Math.max(1.0, size * baseScale);
+        double actualYOffset = elapsedSec * speed * baseScale;
+        
+        for (int i = 0; i < count; i++) {
+            // 使用质数生成均匀分布的伪随机坐标，避免在循环内分配对象
+            double startX = ((i * primeX + 17) % 997) / 997.0 * canvasW;
+            double startY = ((i * primeY + 31) % 991) / 991.0 * canvasH;
+            
+            // 向上移动并循环
+            double currentY = startY - actualYOffset;
+            currentY = (currentY % canvasH + canvasH) % canvasH;
+            
+            gc.fillOval(startX, currentY, actualSize, actualSize);
+        }
     }
 
     private void drawAstrolabeBase(GraphicsContext gc) {
