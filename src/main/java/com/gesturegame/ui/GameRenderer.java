@@ -91,6 +91,14 @@ public class GameRenderer {
     private double difficultyFade;
     private long settlementStartedNanos;
     private final List<SettlementParticle> settlementParticles = new ArrayList<>();
+
+    // 选歌阶段
+    private boolean songSelectPhase;
+    private int songSelectIdx;
+    private int songSelectFrames;       // 帧计数器
+    private static final int SONG_SELECT_DEBOUNCE = 45; // 前45帧（~0.75秒）忽略握拳
+    private double mouseY = -1;         // 鼠标Y坐标，-1=鼠标不在画布上
+    private boolean mouseClicked;       // 本帧有点击
     private double settlementParticleWidth = -1;
     private double settlementParticleHeight = -1;
     private WritableImage cssRainImage;
@@ -113,6 +121,11 @@ public class GameRenderer {
         }
         gameCanvas.widthProperty().addListener((obs, oldW, newW) -> reinitOnResize());
         gameCanvas.heightProperty().addListener((obs, oldH, newH) -> reinitOnResize());
+
+        // 鼠标支持（选歌界面用）
+        gameCanvas.setOnMouseMoved(e -> mouseY = e.getY());
+        gameCanvas.setOnMouseClicked(e -> { mouseY = e.getY(); mouseClicked = true; });
+        gameCanvas.setOnMouseExited(e -> mouseY = -1);
         clearCanvas();
     }
 
@@ -265,6 +278,8 @@ public class GameRenderer {
         compactHoldFrames = 0;
         openHoldFrames = 0;
         settlementStartedNanos = 0;
+        songSelectPhase = false;
+        mouseY = -1;
         currentGame = null;
         gameOverHandled = false;
         settling = false;
@@ -337,6 +352,79 @@ public class GameRenderer {
         GraphicsContext g = gameCanvas.getGraphicsContext2D();
         double w = gameCanvas.getWidth();
         double h = gameCanvas.getHeight();
+
+        // === 选歌阶段 ===
+        if (songSelectPhase) {
+            songSelectFrames++;
+            GameInterface game = AppStateManager.getInstance().getActiveGame();
+            if (game == null) return;
+
+            // 鼠标 → 悬停选歌，点击确认
+            GestureType effectiveGesture = GestureType.NONE;
+            boolean effectiveHand = false;
+            double effectiveHandY = 0.5;
+            double effectiveHandX = 0.5;
+
+            if (mouseY >= 0) {
+                effectiveHandY = mouseY / gameCanvas.getHeight();
+                effectiveHandX = 0.5;
+                effectiveHand = true;
+            } else if (gesture != null && gesture.isHandDetected()) {
+                // 手势选歌
+                effectiveHandY = gesture.getHandY();
+                effectiveHandX = gesture.getHandX();
+                effectiveHand = true;
+                effectiveGesture = gesture.getGesture();
+            }
+
+            // 防抖
+            if (songSelectFrames < SONG_SELECT_DEBOUNCE && effectiveGesture == GestureType.FIST) {
+                effectiveGesture = GestureType.NONE;
+            }
+
+            GestureData safeGesture = new GestureData(
+                    effectiveHandX, effectiveHandY,
+                    effectiveHandX, effectiveHandY,
+                    0, 0,
+                    effectiveGesture, 1.0, effectiveHand);
+
+            game.update(safeGesture);
+
+            // 鼠标点击 → 选歌确认 或 BPM校准打拍
+            if (mouseClicked && songSelectFrames >= SONG_SELECT_DEBOUNCE) {
+                mouseClicked = false;
+                if (game instanceof com.gesturegame.game.RhythmMaster) {
+                    com.gesturegame.game.RhythmMaster rm = (com.gesturegame.game.RhythmMaster) game;
+                    if (rm.isSongConfirmed()) {
+                        // 已确认，忽略
+                    } else if (rm.isCalibrating()) {
+                        // 校准阶段 → 点击算打拍
+                        rm.tapFromMouse();
+                    } else {
+                        // 选歌阶段 → 点击确认
+                        rm.clickConfirmSong();
+                    }
+                }
+            }
+
+            // 背景 + 游戏自己画选歌 UI
+            g.setFill(Color.web("#05051a"));
+            g.fillRect(0, 0, w, h);
+            game.render(g);
+
+            // 确认后切换到 GAME
+            if (game instanceof com.gesturegame.game.RhythmMaster) {
+                com.gesturegame.game.RhythmMaster rm = (com.gesturegame.game.RhythmMaster) game;
+                if (rm.isSongConfirmed()) {
+                    songSelectPhase = false;
+                    mouseY = -1;
+                    currentGame = game;
+                    AppStateManager.getInstance().switchState(AppStateManager.STATE_GAME);
+                }
+            }
+            return;
+        }
+
         g.setFill(Color.web("#120718"));
         g.fillRect(0, 0, w, h);
 
@@ -394,13 +482,20 @@ public class GameRenderer {
             diffDropoutFrames = 0;
         }
 
-        // PEACE确认(1.2s) → 进入游戏
+        // 握拳确认(1.2s) → 进入选歌（节奏大师）或游戏
         if (compactHoldFrames >= HOLD_FRAMES) {
             compactHoldFrames = 0;
             GameInterface game = AppStateManager.getInstance().getActiveGame();
             if (game != null) {
                 game.setDifficulty(selectedDifficulty);
                 LOGGER.info("难度选择确认: " + selectedDifficulty.getLabel() + " → " + game.getName());
+                // 节奏大师：先进选歌界面
+                if (game instanceof com.gesturegame.game.RhythmMaster) {
+                    initGame(game);
+                    songSelectPhase = true;
+                    songSelectFrames = 0;
+                    return;
+                }
             }
             currentGame = null;
             AppStateManager.getInstance().switchState(AppStateManager.STATE_GAME);
