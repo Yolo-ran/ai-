@@ -952,13 +952,17 @@ public class TarotGame implements GameInterface {
     }
 
     private double fanCenterY() {
-        return canvasHeight * 0.405;
+        // ====== 【核心修改 3：阻断旋转牌组向下渗透】 ======
+        // 将上方抽卡池的圆心往上提，绝对保证即使窗口变小，它的底部也不会撞到下方的祭坛卡牌
+        return canvasHeight * 0.30;
     }
 
     private double spreadCardWidth() {
         double baseScale = canvasHeight / 1080.0;
         double altarW = 180.0 * baseScale;
-        return altarW * 0.85;
+        // ====== 【核心修改 1：让卡牌的尺寸绝对受限于祭坛底座的尺寸】 ======
+        // 无论窗口怎么缩放，祭坛上的卡牌宽度【绝对不允许】超过当前底座精度的 0.8 倍
+        return altarW * 0.8;
     }
 
     private double spreadSlotX(int index) {
@@ -984,11 +988,14 @@ public class TarotGame implements GameInterface {
         double altarH = 110.0 * baseScale;
         double altarY = scrollY - altarH - (15.0 * baseScale);
         
-        double finalCardHeight = spreadCardWidth() * CARD_ASPECT;
+        double placedCardW = spreadCardWidth();
+        // 强制保持塔罗牌的标准比例
+        double placedCardH = placedCardW * CARD_ASPECT;
         
-        // 2. 强制将 Y 轴大幅度上提！
-        // 祭坛顶部Y - 卡牌高度 + 10像素的嵌入感
-        return altarY - finalCardHeight + (10.0 * baseScale);
+        // ====== 【核心修改 2：重新计算 Y 轴绝对安全距离】 ======
+        // 祭坛顶部Y - 卡牌高度 + (altarH * 0.15) 产生轻微陷入祭坛的立体感
+        double drawY = altarY - placedCardH + (altarH * 0.15);
+        return drawY;
     }
 
     private String slotChinese(int index) {
@@ -1148,7 +1155,7 @@ public class TarotGame implements GameInterface {
 
     private void drawAstrolabeBase(GraphicsContext gc) {
         double cx = canvasWidth * 0.5;
-        double cy = canvasHeight * 0.405; // 与扇形牌组中心一致
+        double cy = fanCenterY(); // 跟随扇形中心
         double radius = Math.min(canvasWidth, canvasHeight) * 0.35;
 
         gc.save();
