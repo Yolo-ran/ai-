@@ -612,7 +612,10 @@ public class TarotGame implements GameInterface {
         double altarW = 180.0 * baseScale;
         double altarH = 110.0 * baseScale;
         double altarGap = 50.0 * baseScale;
-        double altarY = scrollY - altarH - (15.0 * baseScale);
+        
+        long now = System.nanoTime();
+        double floatOffset = Math.cos(now / 200_000_000.0) * 3.0 * baseScale;
+        double altarY = scrollY - altarH - (15.0 * baseScale) + floatOffset;
 
         double firstAltarX = centerX - (altarW * 1.5 + altarGap);
         double[] altarXCoords = new double[3];
@@ -620,19 +623,46 @@ public class TarotGame implements GameInterface {
         double slotW = spreadCardWidth();
         double slotH = slotW * CARD_ASPECT;
 
+        double glowPulse = Math.sin(now / 150_000_000.0) * 0.5 + 0.5; // 范围 0.0 ~ 1.0
+        double shadowRadius = 15.0 + (20.0 * glowPulse); // 发光半径动态变大变小
+
         for (int i = 0; i < 3; i++) {
             altarXCoords[i] = firstAltarX + i * (altarW + altarGap);
             double x = spreadSlotX(i);
             double y = spreadSlotY();
 
             if (altarImage != null) {
-                gc.drawImage(altarImage, altarXCoords[i], altarY, altarW, altarH);
+                double ax = altarXCoords[i];
+                
+                // 1. 注入 3D 外发光特效（DropShadow）
+                javafx.scene.effect.DropShadow altarGlow = new javafx.scene.effect.DropShadow();
+                altarGlow.setColor(Color.web("#ba68c8")); // 祭坛神秘紫发光
+                altarGlow.setRadius(shadowRadius);
+                altarGlow.setSpread(0.3);
+
+                gc.setEffect(altarGlow); // 挂载特效
+                gc.drawImage(altarImage, ax, altarY, altarW, altarH);
+                gc.setEffect(null); // 画完立刻解除滤镜，防止污染后续元素
+
+                // 2. 引入【能量加色混合层】（BlendMode.ADD）
+                gc.setGlobalBlendMode(javafx.scene.effect.BlendMode.ADD); 
+
+                RadialGradient energyGrad = new RadialGradient(
+                    0, 0, ax + altarW/2, altarY + altarH/2 + (10 * baseScale), altarW * 0.25, false, CycleMethod.NO_CYCLE,
+                    new Stop(0, Color.web("#ba68c8", 0.6 + (0.3 * glowPulse))), // 中心极亮
+                    new Stop(0.5, Color.web("#7b1fa2", 0.2)),
+                    new Stop(1, Color.TRANSPARENT)
+                );
+                gc.setFill(energyGrad);
+                gc.fillOval(ax + altarW/2 - (altarW * 0.25), altarY + altarH/2 + (10 * baseScale) - (altarW * 0.25), altarW * 0.5, altarW * 0.5);
+
+                gc.setGlobalBlendMode(javafx.scene.effect.BlendMode.SRC_OVER); // 必须恢复正常的混合模式！
 
                 gc.setFill(Color.web("#d4af37"));
                 gc.setFont(Font.font("Times New Roman", 14 * baseScale));
                 gc.setTextAlign(TextAlignment.CENTER);
                 String label = (i == 0) ? "PAST" : (i == 1) ? "PRESENT" : "FUTURE";
-                gc.fillText(label, altarXCoords[i] + altarW / 2, altarY + altarH + (15.0 * baseScale));
+                gc.fillText(label, ax + altarW / 2, altarY + altarH + (15.0 * baseScale));
             } else {
                 // 复古石质卡槽 + 凹陷阴影 (Inset shadow)
                 gc.setFill(Color.web("#1c1a1a"));
@@ -986,7 +1016,10 @@ public class TarotGame implements GameInterface {
         double scrollH = 90.0 * baseScale;
         double scrollY = canvasH - scrollH - (10.0 * baseScale);
         double altarH = 110.0 * baseScale;
-        double altarY = scrollY - altarH - (15.0 * baseScale);
+        
+        long now = System.nanoTime();
+        double floatOffset = Math.cos(now / 200_000_000.0) * 3.0 * baseScale;
+        double altarY = scrollY - altarH - (15.0 * baseScale) + floatOffset;
         
         double placedCardW = spreadCardWidth();
         // 强制保持塔罗牌的标准比例
