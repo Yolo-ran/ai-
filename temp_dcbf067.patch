@@ -1,0 +1,107 @@
+﻿commit dcbf067422940234c11ec477a9251cdcb90bbcf5
+Author: qlwlin <1443181262@qq.com>
+Date:   Thu Jul 16 21:10:53 2026 +0800
+
+    fix: perfectly align and scale tarot pedestals and bottom scroll to match UI design
+
+diff --git a/src/main/java/com/gesturegame/game/TarotGame.java b/src/main/java/com/gesturegame/game/TarotGame.java
+index eef2b8e..29d1a99 100644
+--- a/src/main/java/com/gesturegame/game/TarotGame.java
++++ b/src/main/java/com/gesturegame/game/TarotGame.java
+@@ -617,9 +617,8 @@ public class TarotGame implements GameInterface {
+         double slotW = spreadCardWidth();
+         double slotH = slotW * CARD_ASPECT;
+         
+-        // 祭坛尺寸比卡牌稍大，且比例不同
+-        double pedestalW = slotW * 1.8;
+-        double pedestalH = pedestalW * 0.55; 
++        // 祭坛尺寸比卡牌稍大，统一物理宽度以保证视觉大小一致
++        double targetW = slotW * 2.5; 
+ 
+         for (int i = 0; i < 3; i++) {
+             double x = spreadSlotX(i);
+@@ -629,20 +628,26 @@ public class TarotGame implements GameInterface {
+             javafx.scene.image.Image pedImage = i == 0 ? pedestalLeftImage : (i == 1 ? pedestalCenterImage : pedestalRightImage);
+             
+             if (pedImage != null) {
+-                double px = x + slotW / 2.0 - pedestalW / 2.0;
+-                double py = y + slotH - pedestalH * 0.3; // 让祭坛底部对齐卡槽下方
++                double imgW = pedImage.getWidth();
++                double imgH = pedImage.getHeight();
++                double drawW = targetW;
++                double drawH = drawW * (imgH / imgW);
+                 
+-                gc.setGlobalBlendMode(javafx.scene.effect.BlendMode.SCREEN); // 滤色去除黑底
++                // 居中对齐，并让祭坛顶部托住卡牌
++                double px = x + slotW / 2.0 - drawW / 2.0;
++                double py = y + slotH - drawH * 0.45; // 根据视觉微调
+                 
+-                // 祭坛本身的发光
++                // 祭坛的透明像素带有微弱紫光，使用 SRC_OVER 正常绘制，不要用 SCREEN 否则会变透明
++                gc.setGlobalBlendMode(javafx.scene.effect.BlendMode.SRC_OVER); 
++                
++                // 祭坛本身的底部阴影与发光
+                 javafx.scene.effect.DropShadow pedGlow = new javafx.scene.effect.DropShadow();
+-                pedGlow.setColor(Color.web("#ba68c8", 0.5));
+-                pedGlow.setRadius(20);
++                pedGlow.setColor(Color.web("#ba68c8", 0.3));
++                pedGlow.setRadius(25);
+                 gc.setEffect(pedGlow);
+                 
+-                gc.drawImage(pedImage, px, py, pedestalW, pedestalH);
++                gc.drawImage(pedImage, px, py, drawW, drawH);
+                 gc.setEffect(null);
+-                gc.setGlobalBlendMode(javafx.scene.effect.BlendMode.SRC_OVER);
+             } else {
+                 // 降级：复古石质卡槽 + 凹陷阴影 (Inset shadow)
+                 gc.setFill(Color.web("#1c1a1a")); 
+@@ -679,9 +684,7 @@ public class TarotGame implements GameInterface {
+             gc.setFont(Font.font("Times New Roman", FontWeight.BOLD, 11));
+             
+             if (pedImage != null) {
+-                gc.fillText(SLOT_NOTES[i], x + slotW / 2.0, y - 25);
+-                gc.setFill(Color.web("#d4af37", 0.8));
+-                gc.fillText(SLOT_LABELS[i], x + slotW / 2.0, y + slotH + pedestalH * 0.7);
++                // 不再绘制文字，因为祭坛贴图自带符文
+             } else {
+                 gc.fillText(SLOT_LABELS[i], x + slotW / 2.0, y - 10);
+                 gc.fillText(SLOT_NOTES[i], x + slotW / 2.0, y + slotH + 16);
+@@ -1892,20 +1895,31 @@ public class TarotGame implements GameInterface {
+ 
+     private void drawBottomHint(GraphicsContext gc) {
+         if (scrollImage != null) {
+-            // 使用羊皮卷轴作为底部背景
+-            double w = canvasWidth * 0.9;
+-            double h = w * (scrollImage.getHeight() / scrollImage.getWidth());
+-            double x = canvasWidth / 2.0 - w / 2.0;
+-            double y = canvasHeight - h * 0.7; // 露出上半部分
++            // 使用羊皮卷轴作为底部背景，横跨全屏，露出大部分
++            double imgW = scrollImage.getWidth();
++            double imgH = scrollImage.getHeight();
++            double w = canvasWidth;
++            double h = w * (imgH / imgW);
++            double x = 0;
++            double y = canvasHeight - h * 0.85; // 露出 85% 的高度
+ 
+             gc.setGlobalBlendMode(javafx.scene.effect.BlendMode.SRC_OVER);
++            
++            // 卷轴的投影
++            javafx.scene.effect.DropShadow scrollShadow = new javafx.scene.effect.DropShadow();
++            scrollShadow.setColor(Color.web("#000000", 0.8));
++            scrollShadow.setRadius(20);
++            scrollShadow.setOffsetY(10);
++            gc.setEffect(scrollShadow);
++            
+             gc.drawImage(scrollImage, x, y, w, h);
++            gc.setEffect(null);
+             
+             gc.setFill(Color.web("#4a2e15")); // 卷轴上的深褐色文字
+-            gc.setFont(Font.font("Microsoft YaHei UI", FontWeight.BOLD, 15));
++            gc.setFont(Font.font("Microsoft YaHei UI", FontWeight.BOLD, 18));
+             gc.setTextAlign(TextAlignment.CENTER);
+             String text = "✋ 张开手掌：轮转 / 洗牌       |       ✊ 握拳锁定：选择 / 翻牌";
+-            gc.fillText(text, canvasWidth / 2.0, y + h * 0.45);
++            gc.fillText(text, canvasWidth / 2.0, y + h * 0.5);
+             gc.setTextAlign(TextAlignment.LEFT);
+             return;
+         }
