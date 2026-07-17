@@ -30,7 +30,8 @@ public class RhythmMaster implements GameInterface {
     private static final String[] AUDIO_EXTS = {".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac",
                                                  ".MP3", ".WAV", ".FLAC", ".OGG", ".M4A", ".AAC"};
 
-    private enum State { SONG_SELECT, BPM_CALIBRATE, PLAYING, GAME_OVER }
+    private enum State { SONG_SELECT, BPM_READY, BPM_CALIBRATE, PLAYING, GAME_OVER }
+    private int bpmReadyFrames; // 说明页倒计时
     private State state = State.SONG_SELECT;
 
     // ===== 轨道 =====
@@ -226,18 +227,21 @@ public class RhythmMaster implements GameInterface {
         double beatInterval = 60.0 / defaultBpm;  // 每拍秒数
         GestureType[] gestures = {GestureType.FIST, GestureType.OPEN, GestureType.PEACE};
 
-        // 在节拍上生成音符，间隔有变化避免太单调
-        double t = beatInterval; // 从第一个节拍开始
+        // 在节拍上生成音符，单手操作保证不重叠
+        double minGap = Math.max(0.45, beatInterval * 0.6); // 最小间隔0.45秒
+        double t = beatInterval;
         while (t < duration - 2) {
             int lane = RAND.nextInt(laneCount);
             GestureType gt = gestures[RAND.nextInt(3)];
             beatmapNotes.add(new BeatmapNote(t, lane, gt));
 
-            // 节奏变化：有时半拍、一拍、一拍半
+            // 节奏变化，但保证不小于最小间隔
             double r = RAND.nextDouble();
-            if (r < 0.4) t += beatInterval * 0.5;       // 半拍
-            else if (r < 0.8) t += beatInterval;         // 一拍
-            else t += beatInterval * 1.5;                 // 一拍半
+            double gap;
+            if (r < 0.3) gap = beatInterval;             // 一拍
+            else if (r < 0.7) gap = beatInterval * 1.5;   // 一拍半
+            else gap = beatInterval * 2.0;                 // 两拍
+            t += Math.max(minGap, gap);
         }
 
         nextBeatmapIdx = 0;
@@ -288,11 +292,12 @@ public class RhythmMaster implements GameInterface {
                 musicStarted = false;
             }
 
-            // 进入BPM校准
+            // 先显示说明页，再进入BPM校准
             tapTimes = new ArrayList<>();
             prevTapGesture = false;
             tapCountdown = TAP_REQUIRED;
-            state = State.BPM_CALIBRATE;
+            bpmReadyFrames = 300; // 5秒说明
+            state = State.BPM_READY;
         } else {
             // 没歌：直接随机节拍
             noMusicFallback = true;
@@ -362,6 +367,15 @@ public class RhythmMaster implements GameInterface {
                 } else {
                     confirmSong();
                 }
+            }
+            return;
+        }
+
+        // === BPM 说明页 ===
+        if (state == State.BPM_READY) {
+            bpmReadyFrames--;
+            if (bpmReadyFrames <= 0) {
+                state = State.BPM_CALIBRATE;
             }
             return;
         }
@@ -480,6 +494,7 @@ public class RhythmMaster implements GameInterface {
         }
 
         if (state == State.SONG_SELECT) { renderSongSelect(gc); return; }
+        if (state == State.BPM_READY) { renderBpmReady(gc); return; }
         if (state == State.BPM_CALIBRATE) { renderBpmCalibrate(gc); return; }
         if (state == State.GAME_OVER) { renderGame(gc); renderGameOver(gc); return; }
         renderGame(gc);
@@ -598,6 +613,45 @@ public class RhythmMaster implements GameInterface {
                 gc.setTextAlign(TextAlignment.LEFT);
             }
         }
+    }
+
+    // ========== BPM 说明页 ==========
+    private void renderBpmReady(GraphicsContext gc) {
+        gc.setFill(Color.web("#0a0a1e"));
+        gc.fillRect(0, 0, canvasWidth, canvasHeight);
+
+        int remainSecs = bpmReadyFrames / 60 + 1;
+
+        // 标题
+        gc.setFill(new LinearGradient(0, 0, 1, 1, true, CycleMethod.NO_CYCLE,
+                new Stop(0, Color.web("#7c3aed")), new Stop(1, Color.web("#f59e0b"))));
+        gc.setFont(Font.font("Microsoft YaHei UI", 32));
+        gc.setTextAlign(TextAlignment.CENTER);
+        gc.fillText("🎯 跟着音乐打节拍", canvasWidth / 2.0, 140);
+
+        // 核心说明
+        gc.setFill(Color.rgb(220, 220, 240));
+        gc.setFont(Font.font("Microsoft YaHei UI", 20));
+        gc.fillText("音乐已开始播放", canvasWidth / 2.0, 220);
+        gc.fillText("听到节奏就 ✊ 握拳 一下", canvasWidth / 2.0, 260);
+
+        // 大图标
+        gc.setFont(Font.font(64));
+        gc.fillText("✊     ✊     ✊", canvasWidth / 2.0, 350);
+
+        // 打几次
+        gc.setFill(Color.rgb(255, 200, 120));
+        gc.setFont(Font.font("Microsoft YaHei UI", 22));
+        gc.fillText("打 " + TAP_REQUIRED + " 次就够了", canvasWidth / 2.0, 420);
+
+        // 倒计时
+        gc.setFill(Color.rgb(255, 255, 255, 0.4));
+        gc.setFont(Font.font("Microsoft YaHei UI", 36));
+        gc.fillText(String.valueOf(remainSecs), canvasWidth / 2.0, canvasHeight - 80);
+        gc.setFont(Font.font("Microsoft YaHei UI", 14));
+        gc.fillText("秒后开始", canvasWidth / 2.0, canvasHeight - 50);
+
+        gc.setTextAlign(TextAlignment.LEFT);
     }
 
     // ========== BPM 校准画面 ==========
