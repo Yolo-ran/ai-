@@ -478,11 +478,11 @@
                 const p = particles[i];
                 p.x += p.vx * delta;
                 p.y += p.vy * delta;
-                if (!p.isFlash) {
+                if (!p.isFlash && p.type !== 'blade-spark') {
                     p.vy += 0.5 * delta;
-                    p.rotation += p.rotSpeed * delta;
+                    if (p.rotSpeed) p.rotation += p.rotSpeed * delta;
                 }
-                p.life -= 0.02 * delta;
+                p.life -= (p.decay || 0.02) * delta;
 
                 if (p.life <= 0) {
                     particles.splice(i, 1);
@@ -495,6 +495,13 @@
                 
                 if (p.type === 'juice') {
                     // Draw juice droplets
+                    ctx.fillStyle = p.color;
+                    ctx.globalAlpha = p.life / p.maxLife;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, p.radius * (p.life / p.maxLife), 0, Math.PI * 2);
+                    ctx.fill();
+                } else if (p.type === 'blade-spark') {
+                    // Draw neon blade sparks
                     ctx.fillStyle = p.color;
                     ctx.globalAlpha = p.life / p.maxLife;
                     ctx.beginPath();
@@ -522,41 +529,70 @@
                 ctx.restore();
             }
 
-            // Draw Blade
+            // Draw Blade (Neon Effect with Bezier Curves)
             if (trailHistory.length >= 2) {
+                // Generate blade sparks based on head movement
+                const head = trailHistory[trailHistory.length - 1];
+                const neck = trailHistory[trailHistory.length - 2];
+                const speed = Math.hypot(head.x - neck.x, head.y - neck.y);
+                if (speed > 15 && Math.random() > 0.5) {
+                    particles.push({
+                        type: 'blade-spark',
+                        x: head.x + (Math.random()-0.5)*10,
+                        y: head.y + (Math.random()-0.5)*10,
+                        vx: (Math.random() - 0.5) * 5,
+                        vy: (Math.random() - 0.5) * 5,
+                        radius: Math.random() * 3 + 1.5,
+                        color: '#00ffff', // cyan sparks
+                        life: 0.5,
+                        maxLife: 0.5,
+                        decay: 0.05
+                    });
+                }
+
                 ctx.save();
                 ctx.lineCap = 'round';
                 ctx.lineJoin = 'round';
                 
-                // Outer glow (simulated with thick semi-transparent stroke instead of slow shadowBlur)
-                ctx.beginPath();
-                for (let i = 1; i < trailHistory.length; i++) {
-                    const p1 = trailHistory[i - 1];
-                    const p2 = trailHistory[i];
-                    const progress = i / trailHistory.length;
-                    
-                    ctx.moveTo(p1.x, p1.y);
-                    ctx.lineTo(p2.x, p2.y);
-                    ctx.lineWidth = progress * 20;
-                    ctx.strokeStyle = `rgba(0, 255, 255, ${progress * 0.4})`;
-                    ctx.stroke();
-                    ctx.beginPath(); // reset path for next segment
-                }
-                
-                // Inner core
-                ctx.beginPath();
-                for (let i = 1; i < trailHistory.length; i++) {
-                    const p1 = trailHistory[i - 1];
-                    const p2 = trailHistory[i];
-                    const progress = i / trailHistory.length;
-                    
-                    ctx.moveTo(p1.x, p1.y);
-                    ctx.lineTo(p2.x, p2.y);
-                    ctx.lineWidth = progress * 6;
-                    ctx.strokeStyle = `rgba(255, 255, 255, ${progress})`;
-                    ctx.stroke();
+                // We use 3 layers of strokes to simulate Neon Glow without heavy shadowBlur
+                const layers = [
+                    { width: 25, color: 'rgba(0, 150, 255, ', alphaMult: 0.3 }, // Outer glow
+                    { width: 12, color: 'rgba(0, 255, 255, ', alphaMult: 0.6 }, // Mid glow
+                    { width: 4,  color: 'rgba(255, 255, 255, ', alphaMult: 1.0 }  // Inner core
+                ];
+
+                layers.forEach(layer => {
                     ctx.beginPath();
-                }
+                    // Move to the first point
+                    ctx.moveTo(trailHistory[0].x, trailHistory[0].y);
+
+                    // Use quadraticCurveTo for smooth spline interpolation
+                    for (let i = 1; i < trailHistory.length - 1; i++) {
+                        const p1 = trailHistory[i];
+                        const p2 = trailHistory[i + 1];
+                        // Midpoint between p1 and p2
+                        const midX = (p1.x + p2.x) / 2;
+                        const midY = (p1.y + p2.y) / 2;
+                        
+                        ctx.quadraticCurveTo(p1.x, p1.y, midX, midY);
+                    }
+                    // Connect the last point
+                    const lastPt = trailHistory[trailHistory.length - 1];
+                    ctx.lineTo(lastPt.x, lastPt.y);
+
+                    // Gradient for fading tail
+                    const grad = ctx.createLinearGradient(
+                        trailHistory[0].x, trailHistory[0].y, 
+                        lastPt.x, lastPt.y
+                    );
+                    grad.addColorStop(0, layer.color + '0)');
+                    grad.addColorStop(1, layer.color + layer.alphaMult + ')');
+
+                    ctx.lineWidth = layer.width;
+                    ctx.strokeStyle = grad;
+                    ctx.stroke();
+                });
+                
                 ctx.restore();
             }
         }
