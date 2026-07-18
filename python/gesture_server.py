@@ -19,7 +19,7 @@ SERVER_URL = "ws://127.0.0.1:8765"
 CAMERA_INDEX = 0
 FRAME_WIDTH = 640
 FRAME_HEIGHT = 480
-SEND_FPS = 30
+SEND_FPS = 60
 IMAGE_STREAM_FPS = 12
 RECONNECT_DELAY_SECONDS = 0.25
 LOCAL_COMPAT_MODE = True
@@ -28,7 +28,7 @@ LOCAL_COMPAT_MODE = True
 #   $env:GESTURE_SERVER_SHOW_PREVIEW = "1"
 SHOW_PREVIEW = os.getenv("GESTURE_SERVER_SHOW_PREVIEW", "0") == "1"
 SEND_IMAGE_STREAM = True
-IMAGE_JPEG_QUALITY = 45
+IMAGE_JPEG_QUALITY = 30
 PRINT_PAYLOAD_SAMPLE = True
 PAYLOAD_LOG_INTERVAL_SECONDS = 1.0
 MODEL_URL = (
@@ -555,6 +555,7 @@ async def stream_gestures():
 
     cap = open_camera()
     state = GestureState()
+    last_timestamp_ms = -1
 
     try:
         with create_landmarker() as hand_landmarker:
@@ -572,12 +573,18 @@ async def stream_gestures():
                                 await asyncio.sleep(0.02)
                                 continue
 
+                            # 生成严格递增的时间戳，防止 MediaPipe 在 Windows 下因时钟精度(15ms)抛出异常导致崩溃
+                            timestamp_ms = int(time.perf_counter() * 1000)
+                            if timestamp_ms <= last_timestamp_ms:
+                                timestamp_ms = last_timestamp_ms + 1
+                            last_timestamp_ms = timestamp_ms
+
                             frame = cv2.flip(frame, 1)
                             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                             mp_image = MP_IMAGE(image_format=MP_IMAGE_FORMAT.SRGB, data=rgb)
                             result = hand_landmarker.detect_for_video(
                                 mp_image,
-                                int(now * 1000),
+                                timestamp_ms,
                             )
                             hands = extract_hands(result)
 

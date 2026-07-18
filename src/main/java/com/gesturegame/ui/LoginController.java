@@ -170,35 +170,42 @@ public class LoginController {
         String u = usernameField.getText().trim();
         String p = passwordField.getText();
         if (u.isEmpty()) { loginStatus.setText("Please enter username"); return; }
-        if (registerMode) {
-            // 注册模式 → SQLite 持久化
-            String cp = confirmField.getText();
-            if (p.isEmpty() || !p.equals(cp)) {
-                loginStatus.setText("Passwords do not match"); return;
-            }
-            var result = accountStore.register(u, p.toCharArray());
-            if (!result.success()) {
-                loginStatus.setText(result.message());
-                return;
-            }
-            loginStatus.setTextFill(Color.LIME);
-            loginStatus.setText("Account created! Please sign in.");
-            onToggleMode(); // 切回登录
-        } else {
-            // 登录模式 → SQLite 验证
-            if (accountStore.authenticate(u, p.toCharArray())) {
-                loggedIn = true;
+        
+        try {
+            if (registerMode) {
+                // 注册模式 → SQLite 持久化
+                String cp = confirmField.getText();
+                if (p.isEmpty() || !p.equals(cp)) {
+                    loginStatus.setText("Passwords do not match"); return;
+                }
+                var result = accountStore.register(u, p.toCharArray());
+                if (!result.success()) {
+                    loginStatus.setText(result.message());
+                    return;
+                }
                 loginStatus.setTextFill(Color.LIME);
-                loginBtnText.setText("✓");
-                FadeTransition ft = new FadeTransition(Duration.millis(600), loginCard);
-                ft.setFromValue(1); ft.setToValue(0);
-                ft.setOnFinished(e -> { loginCard.setVisible(false); showStarField(); });
-                ft.play();
+                loginStatus.setText("Account created! Please sign in.");
+                onToggleMode(); // 切回登录
             } else {
-                loginStatus.setTextFill(Color.web("#ff6b6b"));
-                loginStatus.setText("Invalid username or password");
-                passwordField.clear();
+                // 登录模式 → SQLite 验证
+                if (accountStore.authenticate(u, p.toCharArray())) {
+                    loggedIn = true;
+                    loginStatus.setTextFill(Color.LIME);
+                    loginBtnText.setText("✓");
+                    FadeTransition ft = new FadeTransition(Duration.millis(600), loginCard);
+                    ft.setFromValue(1); ft.setToValue(0);
+                    ft.setOnFinished(e -> { loginCard.setVisible(false); showStarField(); });
+                    ft.play();
+                } else {
+                    loginStatus.setTextFill(Color.web("#ff6b6b"));
+                    loginStatus.setText("Invalid username or password");
+                    // 移除 passwordField.clear(); 防止手势误触确认时清空用户输入
+                }
             }
+        } catch (Exception ex) {
+            loginStatus.setTextFill(Color.web("#ff6b6b"));
+            loginStatus.setText("Database Error: Please close other game windows.");
+            ex.printStackTrace();
         }
     }
 

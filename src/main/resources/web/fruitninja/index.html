@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Fruit Ninja Local</title>
+    <style>
+        body, html { margin: 0; padding: 0; overflow: hidden; background: #111 url('assets/background.jpg') no-repeat center center; background-size: cover; width: 100%; height: 100%; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+        
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            color: #fff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+        }
+        
+        .score-container {
+            position: absolute;
+            top: 30px;
+            left: 80px;
+            font-size: 40px;
+            font-weight: bold;
+            color: #f7b13f;
+            text-shadow: 2px 2px 0 #522703, -1px -1px 0 #522703, 1px -1px 0 #522703, -1px 1px 0 #522703, 1px 1px 0 #522703;
+        }
+        
+        .score-icon {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            width: 50px;
+        }
+
+        .lives-icon {
+            position: absolute;
+            top: 20px;
+            right: 30px;
+            height: 40px;
+        }
+
+        #game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 64px;
+            font-weight: bold;
+            color: red;
+            display: none;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div id="ui-layer">
+        <img src="assets/score.png" class="score-icon">
+        <div class="score-container"><span id="scoreDisplay">0</span></div>
+        <img src="assets/xxxf.png" class="lives-icon" id="livesDisplay">
+        <div id="game-over">GAME OVER<br><span style="font-size: 24px; color: white;">等待重新开始...</span></div>
+    </div>
+    
+    <script>
+        // Redirect console.log to Java if available
+        const originalLog = console.log;
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            if (window.javaBackend && window.javaBackend.log) {
+                window.javaBackend.log(args.join(' '));
+            }
+        };
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        let w = canvas.width = window.innerWidth;
+        let h = canvas.height = window.innerHeight;
+
+        const scoreDisplay = document.getElementById('scoreDisplay');
+        const livesDisplay = document.getElementById('livesDisplay');
+        const gameOverDisplay = document.getElementById('game-over');
+
+        let score = 0;
+        let lives = 3;
+        let isGameOver = false;
+
+        // --- Background ---
+        const bgImg = new Image();
+        bgImg.src = 'assets/bg.jpg';
+
+        // --- Error Capture ---
+        window.onerror = function(msg, url, line, col, err) {
+            console.log("JS Error:", msg, "Line:", line);
+            gameOverDisplay.style.display = 'block';
+            gameOverDisplay.innerHTML = `<span style="color:red;font-size:20px">前端脚本错误:<br>${msg}<br>Line: ${line}</span>`;
+        };
+
+        // --- Audio ---
+        function playSound(name) {
+            try {
+                let snd = new Audio(`assets/${name}.mp3`);
+                snd.play();
+            } catch(e) {
+                console.log("Audio play error: " + e);
+            }
+        }
+
+        // --- Game Entities ---
+        const FRUIT_TYPES = ['apple', 'banana', 'basaha', 'peach', 'sandia'];
+        const FRUIT_COLORS = {
+            'apple': '#c8e925',
+            'banana': null, // Banana doesn't splash juice in original
+            'basaha': '#c00',
+            'peach': '#e6c731',
+            'sandia': '#c00'
+        };
+        const IMAGES = {};
+        
+        // Load images
+        FRUIT_TYPES.forEach(type => {
+            IMAGES[type] = new Image(); IMAGES[type].src = `assets/${type}.png`;
+            IMAGES[type + '-1'] = new Image(); IMAGES[type + '-1'].src = `assets/${type}-1.png`;
+            IMAGES[type + '-2'] = new Image(); IMAGES[type + '-2'].src = `assets/${type}-2.png`;
+        });
+        IMAGES['boom'] = new Image(); IMAGES['boom'].src = 'assets/boom.png';
+        IMAGES['flash'] = new Image(); IMAGES['flash'].src = 'assets/flash.png';
+        IMAGES['smoke'] = new Image(); IMAGES['smoke'].src = 'assets/smoke.png';
+
+        // --- Screen Flash for Bomb ---
+        let screenFlashAlpha = 0;
+
+        const fruits = [];
+        const particles = [];
+        const trailHistory = [];
+        const juiceStains = []; // 沾染在背景上的果汁
+        const maxHistoryLength = 15;
+
+        function spawnWave() {
+            if (isGameOver) return;
+            playSound('throw');
+            const count = Math.floor(Math.random() * 3) + 2;
+            for(let i=0; i<count; i++) {
+                const isBomb = Math.random() < 0.15;
+                const type = isBomb ? 'boom' : FRUIT_TYPES[Math.floor(Math.random() * FRUIT_TYPES.length)];
+                
+                fruits.push({
+                    type: type,
+                    x: w * 0.2 + Math.random() * (w * 0.6),
+                    y: h + 100,
+                    vx: (Math.random() - 0.5) * 8,
+                    vy: -20 - Math.random() * 5,
+                    radius: 40,
+                    isBomb: isBomb,
+                    sliced: false,
+                    rotation: 0,
+                    rotSpeed: (Math.random() - 0.5) * 0.1
+                });
+            }
+            setTimeout(spawnWave, 1500 + Math.random() * 2000);
+        }
+        
+        setTimeout(spawnWave, 1000);
+
+        // --- Input Handling ---
+        let isHandDetected = false;
+        let targetHandX = -1;
+        let targetHandY = -1;
+        let currentHandX = -1;
+        let currentHandY = -1;
+
+        window.addEventListener('mousemove', (e) => {
+            if (isGameOver) return;
+            isHandDetected = true;
+            targetHandX = e.clientX;
+            targetHandY = e.clientY;
+            if (currentHandX === -1) {
+                currentHandX = targetHandX;
+                currentHandY = targetHandY;
+            }
+        });
+
+        window.updateHandPosition = function(x, y, isDetected) {
+            if (isGameOver) return;
+            isHandDetected = isDetected;
+            if (isDetected) {
+                targetHandX = x * w;
+                targetHandY = y * h;
+                if (currentHandX === -1) {
+                    currentHandX = targetHandX;
+                    currentHandY = targetHandY;
+                }
+            } else {
+                trailHistory.length = 0;
+                currentHandX = -1;
+                targetHandX = -1;
+            }
+        };
+
+        function distToSegment(px, py, vx, vy, wx, wy) {
+            const l2 = (vx - wx) ** 2 + (vy - wy) ** 2;
+            if (l2 === 0) return Math.hypot(px - vx, py - vy);
+            let t = ((px - vx) * (wx - vx) + (py - vy) * (wy - vy)) / l2;
+            t = Math.max(0, Math.min(1, t));
+            return Math.hypot(px - (vx + t * (wx - vx)), py - (vy + t * (wy - wy)));
+        }
+
+        function checkSlices() {
+            if (trailHistory.length < 2) return;
+            const p1 = trailHistory[trailHistory.length - 2];
+            const p2 = trailHistory[trailHistory.length - 1];
+            
+            const speed = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+            if (speed < 2) return; // 降低速度阈值，兼容高帧率下每帧移动距离小的情况
+
+            // 计算刀光切入角度，用于决定水果切开后两半的旋转和分离方向
+            const sliceAngle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+
+            for (let i = fruits.length - 1; i >= 0; i--) {
+                const f = fruits[i];
+                if (f.sliced) continue;
+                const d = distToSegment(f.x, f.y, p1.x, p1.y, p2.x, p2.y);
+                if (d < f.radius) {
+                    f.sliced = true;
+                    sliceFruit(f, i, sliceAngle);
+                }
+            }
+        }
+
+        function createJuice(x, y, color) {
+            if (!color) return;
+            // 创建飞溅的果汁粒子
+            for(let i=0; i<15; i++) {
+                const dir = Math.random() * Math.PI * 2;
+                const dist = Math.random() * 200 + 50;
+                const life = 1.0;
+                particles.push({
+                    type: 'juice',
+                    x: x, y: y,
+                    vx: Math.cos(dir) * 15 * Math.random(),
+                    vy: Math.sin(dir) * 15 * Math.random() - 5,
+                    radius: Math.random() * 8 + 3,
+                    color: color,
+                    life: life,
+                    maxLife: life
+                });
+            }
+            // 创建背景沾染（果汁滴）
+            juiceStains.push({
+                x: x, y: y,
+                color: color,
+                radius: Math.random() * 20 + 20,
+                alpha: 0.8,
+                time: Date.now()
+            });
+        }
+
+        function sliceFruit(f, index, sliceAngle) {
+            fruits.splice(index, 1);
+            if (f.isBomb) {
+                playSound('boom');
+                lives--;
+                updateHUD();
+                
+                // 炸弹触发全屏白光
+                screenFlashAlpha = 1.0;
+                
+                // 炸弹爆炸黑烟
+                particles.push({
+                    type: 'smoke',
+                    x: f.x, y: f.y,
+                    vx: 0, vy: 0,
+                    rotation: Math.random() * Math.PI * 2, rotSpeed: 0,
+                    life: 1.0,
+                    maxLife: 1.0,
+                    scale: 2.5,
+                    isFlash: true // won't fall down
+                });
+                
+                if (lives <= 0) endGame();
+            } else {
+                playSound('splatter');
+                score += 10;
+                updateHUD();
+                
+                // 根据刀光角度，计算垂直方向作为水果分离方向
+                const apartAngle = sliceAngle + Math.PI / 2;
+                const speedSpread = 5;
+                const spreadX = Math.cos(apartAngle) * speedSpread;
+                const spreadY = Math.sin(apartAngle) * speedSpread;
+                
+                // 左半边/上边
+                particles.push({
+                    type: f.type + '-1',
+                    x: f.x - spreadX * 3, y: f.y - spreadY * 3,
+                    vx: f.vx - spreadX, vy: f.vy - spreadY,
+                    rotation: f.rotation, rotSpeed: f.rotSpeed - 0.1,
+                    life: 2.0, maxLife: 2.0
+                });
+                // 右半边/下边
+                particles.push({
+                    type: f.type + '-2',
+                    x: f.x + spreadX * 3, y: f.y + spreadY * 3,
+                    vx: f.vx + spreadX, vy: f.vy + spreadY,
+                    rotation: f.rotation, rotSpeed: f.rotSpeed + 0.1,
+                    life: 2.0, maxLife: 2.0
+                });
+                
+                // 切击刀光特效 (flash.png)，旋转角度对齐刀光
+                particles.push({
+                    type: 'flash',
+                    x: f.x, y: f.y,
+                    vx: 0, vy: 0,
+                    rotation: sliceAngle, rotSpeed: 0,
+                    life: 0.3, maxLife: 0.3,
+                    scale: 1.0,
+                    isFlash: true
+                });
+                
+                // 生成果汁
+                createJuice(f.x, f.y, FRUIT_COLORS[f.type]);
+            }
+        }
+
+        function updateHUD() {
+            scoreDisplay.innerText = score;
+            let livesImg = 'xxxf.png';
+            if (lives === 2) livesImg = 'xxf.png';
+            if (lives === 1) livesImg = 'xf.png';
+            if (lives <= 0) livesImg = 'x.png'; // 假设 x.png 表示 0 命
+            livesDisplay.src = `assets/${livesImg}`;
+            if (window.javaBackend) window.javaBackend.updateScore(score);
+        }
+
+        function endGame() {
+            isGameOver = true;
+            playSound('over');
+            gameOverDisplay.style.display = 'block';
+            window.addEventListener('mousedown', exitGame);
+            setTimeout(exitGame, 3000);
+        }
+
+        function exitGame() {
+            if (window.javaBackend) {
+                window.javaBackend.saveScore(score);
+            }
+        }
+
+        // --- Render Loop ---
+        let lastTime = performance.now ? performance.now() : Date.now();
+        function loop(time) {
+            requestAnimationFrame(loop);
+            const currentTime = time || (performance.now ? performance.now() : Date.now());
+            const delta = (currentTime - lastTime) / 16.66; // approx 60fps multiplier
+            lastTime = currentTime;
+
+            // Clear old trail history naturally based on time
+            const now = Date.now();
+            while (trailHistory.length > 0 && now - trailHistory[0].time > 150) {
+                trailHistory.shift();
+            }
+
+            // Lerp hand position for ultra-smooth 60fps trails regardless of camera FPS
+            if (isHandDetected && currentHandX !== -1) {
+                currentHandX += (targetHandX - currentHandX) * 0.4;
+                currentHandY += (targetHandY - currentHandY) * 0.4;
+
+                if (trailHistory.length > 0) {
+                    const lastPt = trailHistory[trailHistory.length - 1];
+                    const dist = Math.hypot(currentHandX - lastPt.x, currentHandY - lastPt.y);
+                    if (dist >= 5) {
+                        trailHistory.push({ x: currentHandX, y: currentHandY, time: now });
+                        if (trailHistory.length > maxHistoryLength) trailHistory.shift();
+                        checkSlices();
+                    } else {
+                        lastPt.time = now;
+                        lastPt.x = currentHandX;
+                        lastPt.y = currentHandY;
+                    }
+                } else {
+                    trailHistory.push({ x: currentHandX, y: currentHandY, time: now });
+                }
+            }
+
+            // Clear screen
+            ctx.clearRect(0, 0, w, h);
+
+            // Draw screen flash if active (e.g., from bomb)
+            if (screenFlashAlpha > 0) {
+                ctx.save();
+                ctx.fillStyle = `rgba(255, 255, 255, ${screenFlashAlpha})`;
+                ctx.fillRect(0, 0, w, h);
+                ctx.restore();
+                screenFlashAlpha -= 0.02 * delta; // fade out slowly
+            }
+
+            // Draw juice stains on background
+            for (let i = juiceStains.length - 1; i >= 0; i--) {
+                const s = juiceStains[i];
+                const age = Date.now() - s.time;
+                if (age > 5000) {
+                    s.alpha -= 0.02 * delta;
+                }
+                if (s.alpha <= 0) {
+                    juiceStains.splice(i, 1);
+                    continue;
+                }
+                ctx.save();
+                ctx.globalAlpha = s.alpha;
+                ctx.fillStyle = s.color;
+                ctx.beginPath();
+                ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
+                ctx.fill();
+                // 绘制一些不规则的边缘模拟飞溅感
+                for(let j=0; j<5; j++) {
+                    ctx.beginPath();
+                    ctx.arc(s.x + Math.cos(j)*s.radius*0.8, s.y + Math.sin(j)*s.radius*0.8, s.radius*0.5, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.restore();
+            }
+
+            // Spawn fruitsDraw and Update Fruits
+            for (let i = fruits.length - 1; i >= 0; i--) {
+                const f = fruits[i];
+                f.vy += 0.4 * delta;
+                f.x += f.vx * delta;
+                f.y += f.vy * delta;
+                f.rotation += f.rotSpeed * delta;
+
+                if (f.y > h + 200) {
+                    if (!f.isBomb && !f.sliced && !isGameOver) {
+                        lives--;
+                        updateHUD();
+                        if (lives <= 0) endGame();
+                    }
+                    fruits.splice(i, 1);
+                    continue;
+                }
+
+                ctx.save();
+                ctx.translate(f.x, f.y);
+                ctx.rotate(f.rotation);
+                
+                let img = IMAGES[f.type];
+                if (img && img.complete && img.naturalWidth > 0) {
+                    ctx.drawImage(img, -img.width/2, -img.height/2);
+                }
+                ctx.restore();
+            }
+
+            // Draw and Update Particles
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx * delta;
+                p.y += p.vy * delta;
+                if (!p.isFlash) {
+                    p.vy += 0.5 * delta;
+                    p.rotation += p.rotSpeed * delta;
+                }
+                p.life -= 0.02 * delta;
+
+                if (p.life <= 0) {
+                    particles.splice(i, 1);
+                    continue;
+                }
+
+                ctx.save();
+                ctx.translate(p.x, p.y);
+                if (p.rotation) ctx.rotate(p.rotation);
+                
+                if (p.type === 'juice') {
+                    // Draw juice droplets
+                    ctx.fillStyle = p.color;
+                    ctx.globalAlpha = p.life / p.maxLife;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, p.radius * (p.life / p.maxLife), 0, Math.PI * 2);
+                    ctx.fill();
+                } else if (p.type === 'flash') {
+                    // Flash image stretches out and fades
+                    const img = IMAGES['flash'];
+                    const scaleX = (1 - (p.life / p.maxLife)) * 3; // stretch along cut
+                    const scaleY = (p.life / p.maxLife); // thin out
+                    ctx.globalAlpha = p.life / p.maxLife;
+                    if (img && img.complete) {
+                        ctx.scale(scaleX, scaleY);
+                        ctx.drawImage(img, -img.width / 2, -img.height / 2);
+                    }
+                } else {
+                    const img = IMAGES[p.type];
+                    if (img && img.complete) {
+                        ctx.globalAlpha = p.life / p.maxLife;
+                        const scale = p.scale || 1.0;
+                        ctx.scale(scale, scale);
+                        ctx.drawImage(img, -img.width / 2, -img.height / 2);
+                    }
+                }
+                ctx.restore();
+            }
+
+            // Draw Blade
+            if (trailHistory.length >= 2) {
+                ctx.save();
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                
+                // Outer glow (simulated with thick semi-transparent stroke instead of slow shadowBlur)
+                ctx.beginPath();
+                for (let i = 1; i < trailHistory.length; i++) {
+                    const p1 = trailHistory[i - 1];
+                    const p2 = trailHistory[i];
+                    const progress = i / trailHistory.length;
+                    
+                    ctx.moveTo(p1.x, p1.y);
+                    ctx.lineTo(p2.x, p2.y);
+                    ctx.lineWidth = progress * 20;
+                    ctx.strokeStyle = `rgba(0, 255, 255, ${progress * 0.4})`;
+                    ctx.stroke();
+                    ctx.beginPath(); // reset path for next segment
+                }
+                
+                // Inner core
+                ctx.beginPath();
+                for (let i = 1; i < trailHistory.length; i++) {
+                    const p1 = trailHistory[i - 1];
+                    const p2 = trailHistory[i];
+                    const progress = i / trailHistory.length;
+                    
+                    ctx.moveTo(p1.x, p1.y);
+                    ctx.lineTo(p2.x, p2.y);
+                    ctx.lineWidth = progress * 6;
+                    ctx.strokeStyle = `rgba(255, 255, 255, ${progress})`;
+                    ctx.stroke();
+                    ctx.beginPath();
+                }
+                ctx.restore();
+            }
+        }
+
+        requestAnimationFrame(loop);
+
+        window.addEventListener('resize', () => {
+            w = canvas.width = window.innerWidth;
+            h = canvas.height = window.innerHeight;
+        });
+        
+        console.log("Fruit Ninja HTML5 Canvas initialized.");
+    </script>
+</body>
+</html>
