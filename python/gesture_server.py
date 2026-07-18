@@ -19,7 +19,7 @@ SERVER_URL = "ws://127.0.0.1:8765"
 CAMERA_INDEX = 0
 FRAME_WIDTH = 640
 FRAME_HEIGHT = 480
-SEND_FPS = 60
+SEND_FPS = 30
 IMAGE_STREAM_FPS = 12
 RECONNECT_DELAY_SECONDS = 0.25
 LOCAL_COMPAT_MODE = True
@@ -28,7 +28,7 @@ LOCAL_COMPAT_MODE = True
 #   $env:GESTURE_SERVER_SHOW_PREVIEW = "1"
 SHOW_PREVIEW = os.getenv("GESTURE_SERVER_SHOW_PREVIEW", "0") == "1"
 SEND_IMAGE_STREAM = True
-IMAGE_JPEG_QUALITY = 30
+IMAGE_JPEG_QUALITY = 62
 PRINT_PAYLOAD_SAMPLE = True
 PAYLOAD_LOG_INTERVAL_SECONDS = 1.0
 MODEL_URL = (
@@ -465,7 +465,9 @@ def draw_preview(frame, hand_landmarks, payload, raw_gesture: str):
 
 
 def encode_image_data(frame) -> str:
-    small = cv2.resize(frame, (320, 240), interpolation=cv2.INTER_NEAREST)
+    # The game state does not transmit preview frames, so a clearer lobby image
+    # does not compete with gameplay gesture processing.
+    small = cv2.resize(frame, (480, 360), interpolation=cv2.INTER_AREA)
     ok, encoded = cv2.imencode(
         ".jpg",
         small,

@@ -105,7 +105,7 @@ function Invoke-Game {
     $java = Find-JavaCommand
     Assert-JavaVersion $java
     $classPath = $appJar + [IO.Path]::PathSeparator + (Join-Path $runtimeLib "*")
-    & $java "-Dfile.encoding=UTF-8" "-cp" $classPath "com.gesturegame.FastLauncher"
+    & $java "-Dfile.encoding=UTF-8" "-Dprism.order=d3d,sw" "-cp" $classPath "com.gesturegame.FastLauncher"
     if ($LASTEXITCODE -ne 0) {
         throw "The Java game failed to start (exit code $LASTEXITCODE)."
     }

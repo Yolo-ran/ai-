@@ -1,307 +1,362 @@
-import { useRef, useState } from 'react';
-import { motion, useScroll, useTransform } from 'framer-motion';
-import { ArrowRight, Check } from 'lucide-react';
-import AnimatedLetter from './components/AnimatedLetter';
-import WordsPullUp from './components/WordsPullUp';
-import WordsPullUpMultiStyle from './components/WordsPullUpMultiStyle';
+import * as React from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { Settings2 } from 'lucide-react';
 
-const navigationItems = [
-  { label: 'Our story', href: '#about' },
-  { label: 'Collective', href: '#about' },
-  { label: 'Workshops', href: '#features' },
-  { label: 'Programs', href: '#features' },
-  { label: 'Inquiries', href: '#features' },
-];
+type JavaLobbyBridge = {
+  onWebReady?: () => void;
+  selectGame?: (index: number) => void;
+  navigate?: (direction: number) => void;
+  launchSelected?: () => void;
+  openApiSettings?: () => void;
+};
 
-const featureCards = [
-  {
-    number: '01',
-    title: 'Project Storyboard.',
-    image:
-      'https://images.higgs.ai/?default=1&output=webp&url=https%3A%2F%2Fd8j0ntlcm91z4.cloudfront.net%2Fuser_38xzZboKViGWJOttwIXH07lWA1P%2Fhf_20260405_171918_4a5edc79-d78f-4637-ac8b-53c43c220606.png&w=1280&q=85',
-    bullets: [
-      'Scene planning with mood-first sequencing.',
-      'Shot rhythm, framing, and visual continuity.',
-      'Creative alignment before production begins.',
-      'Fast iteration for cinematic story flow.',
-    ],
-  },
-  {
-    number: '02',
-    title: 'Smart Critiques.',
-    image:
-      'https://images.higgs.ai/?default=1&output=webp&url=https%3A%2F%2Fd8j0ntlcm91z4.cloudfront.net%2Fuser_38xzZboKViGWJOttwIXH07lWA1P%2Fhf_20260405_171741_ed9845ab-f5b2-4018-8ce7-07cc01823522.png&w=1280&q=85',
-    bullets: [
-      'AI analysis for pacing and composition.',
-      'Creative notes tailored to the project tone.',
-      'Tool integrations that keep feedback actionable.',
-    ],
-  },
-  {
-    number: '03',
-    title: 'Immersion Capsule.',
-    image:
-      'https://images.higgs.ai/?default=1&output=webp&url=https%3A%2F%2Fd8j0ntlcm91z4.cloudfront.net%2Fuser_38xzZboKViGWJOttwIXH07lWA1P%2Fhf_20260405_171809_f56666dc-c099-4778-ad82-9ad4f209567b.png&w=1280&q=85',
-    bullets: [
-      'Notification silencing for uninterrupted focus.',
-      'Ambient soundscapes for deeper immersion.',
-      'Schedule syncing to protect creative flow.',
-    ],
-  },
-];
+type LobbyWebApi = {
+  setActive: (index: number) => void;
+  setConfirmProgress: (progress: number) => void;
+  setHand: (visible: boolean, x: number, y: number) => void;
+  setGesture: (visible: boolean, x: number, y: number, progress: number) => void;
+  setCameraFrame: (frame: string) => void;
+  activate: () => void;
+  pause: () => void;
+};
 
-export default function App() {
-  const heroRef = useRef<HTMLElement>(null);
-  const aboutRef = useRef<HTMLElement>(null);
-  const [hoveredNav, setHoveredNav] = useState<string | null>(null);
-  const { scrollYProgress } = useScroll({
-    target: heroRef,
-    offset: ['start start', 'end start'],
-  });
+declare global {
+  interface Window {
+    javaLobby?: JavaLobbyBridge;
+    gestureLobby?: LobbyWebApi;
+  }
+}
 
-  const heroOpacity = useTransform(scrollYProgress, [0, 0.75], [1, 0.38]);
-  const heroY = useTransform(scrollYProgress, [0, 1], [0, 80]);
+type ParticleAnimationProps = {
+  particleCount?: number;
+  colors?: string[];
+  animationDuration?: [number, number];
+};
+
+const random = (min: number, max: number) => Math.random() * (max - min) + min;
+const STAR_COLORS = ['#fff200', '#a855f7', '#f43f5e', '#22c55e'];
+
+const ParticleAnimation = React.memo(function ParticleAnimation({
+  particleCount = 340,
+  colors = STAR_COLORS,
+  animationDuration = [1, 5],
+}: ParticleAnimationProps) {
+  const canvasRef = React.useRef<HTMLCanvasElement>(null);
+
+  React.useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const context = canvas.getContext('2d', { alpha: false });
+    if (!context) return;
+    const sprites = new Map<string, HTMLCanvasElement>();
+    const particles = Array.from({ length: particleCount }, () => {
+      const pitch = random(-Math.PI, Math.PI);
+      return {
+        angle: random(0, Math.PI * 2),
+        duration: random(animationDuration[0], animationDuration[1]),
+        phase: random(0, animationDuration[1]),
+        color: colors[Math.floor(Math.random() * colors.length)]!,
+        depth: 0.2 + Math.abs(Math.cos(pitch)) * 0.8,
+        brightness: random(0.44, 0.98),
+        thickness: random(0.72, 1.22),
+      };
+    });
+    let width = 1;
+    let height = 1;
+    let pixelRatio = 1;
+    let frame = 0;
+    let lastDraw = 0;
+
+    colors.forEach((color) => {
+      const sprite = document.createElement('canvas');
+      sprite.width = 320;
+      sprite.height = 3;
+      const spriteContext = sprite.getContext('2d')!;
+      const gradient = spriteContext.createLinearGradient(0, 0, sprite.width, 0);
+      gradient.addColorStop(0, 'rgba(0,0,0,0)');
+      gradient.addColorStop(0.46, 'rgba(0,0,0,0)');
+      gradient.addColorStop(1, color);
+      spriteContext.fillStyle = gradient;
+      spriteContext.fillRect(0, 1, sprite.width, 1);
+      sprites.set(color, sprite);
+    });
+
+    const resize = () => {
+      width = Math.max(1, window.innerWidth);
+      height = Math.max(1, window.innerHeight);
+      pixelRatio = Math.min(window.devicePixelRatio || 1, 1, 1920 / width, 1080 / height);
+      canvas.width = Math.round(width * pixelRatio);
+      canvas.height = Math.round(height * pixelRatio);
+    };
+
+    const draw = (now: number) => {
+      frame = requestAnimationFrame(draw);
+      if (canvas.closest('.lobby')?.classList.contains('is-paused')) return;
+      if (now - lastDraw < 1000 / 30) return;
+      lastDraw = now;
+      context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+      context.globalAlpha = 1;
+      context.fillStyle = '#000';
+      context.fillRect(0, 0, width, height);
+      const centerX = width * 0.5;
+      const centerY = height * 0.5;
+      const baseLength = Math.min(width, height) * 0.4;
+      const seconds = now / 1000;
+      particles.forEach((particle) => {
+        const progress = ((seconds + particle.phase) % particle.duration) / particle.duration;
+        const length = baseLength * 2 * (1 - progress) * (0.72 + particle.depth * 0.4);
+        let alpha = progress < 0.2 ? progress / 0.2 : 1;
+        alpha *= particle.brightness;
+        if (length < 0.6 || alpha < 0.01) return;
+        context.save();
+        context.translate(centerX, centerY);
+        context.rotate(particle.angle);
+        context.globalAlpha = alpha;
+        context.drawImage(sprites.get(particle.color)!, 0, -particle.thickness,
+          length, Math.max(1, particle.thickness * 2));
+        context.restore();
+      });
+    };
+
+    resize();
+    frame = requestAnimationFrame(draw);
+    window.addEventListener('resize', resize);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener('resize', resize);
+    };
+  }, [particleCount, colors, animationDuration]);
 
   return (
-    <main className="bg-black text-primary">
-      <section
-        id="home"
-        ref={heroRef}
-        className="relative flex h-screen items-stretch bg-black p-4 md:p-6"
-      >
-        <div className="relative h-full w-full overflow-hidden rounded-[2rem] border border-white/10 bg-black shadow-glow">
-          <video
-            className="absolute inset-0 h-full w-full object-cover"
-            src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260405_170732_8a9ccda6-5cff-4628-b164-059c500a2b41.mp4"
-            autoPlay
-            loop
-            muted
-            playsInline
-          />
-          <div className="noise-overlay pointer-events-none absolute inset-0 opacity-[0.7] mix-blend-overlay" />
-          <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/60" />
+    <div className="particle-perspective" aria-hidden="true">
+      <canvas ref={canvasRef} className="time-canvas" />
+    </div>
+  );
+});
 
-          <motion.div
-            style={{ opacity: heroOpacity, y: heroY }}
-            className="relative z-10 flex h-full flex-col justify-between px-5 pb-8 pt-6 sm:px-8 sm:pb-10 sm:pt-8 md:px-10 lg:px-14 lg:pb-14"
-          >
-            <div className="absolute left-1/2 top-0 z-20 -translate-x-1/2">
-              <nav className="inline-flex flex-wrap items-center justify-center gap-3 rounded-b-2xl bg-black px-4 py-2 sm:gap-6 md:rounded-b-3xl md:px-8 lg:gap-14 md:gap-12">
-                {navigationItems.map((item) => (
-                  <a
-                    key={item.label}
-                    href={item.href}
-                    className="rounded-full px-1 py-1 text-[10px] transition-colors duration-300 sm:text-xs md:text-sm"
-                    style={{
-                      color:
-                        hoveredNav === item.label ? '#E1E0CC' : 'rgba(225, 224, 204, 0.8)',
-                    }}
-                    onMouseEnter={() => setHoveredNav(item.label)}
-                    onMouseLeave={() => setHoveredNav(null)}
-                  >
-                    {item.label}
-                  </a>
-                ))}
-              </nav>
-            </div>
+type GameCard = {
+  id: string;
+  title: string;
+  subtitle: string;
+  index: string;
+  accent: string;
+  accent2: string;
+};
 
-            <div className="absolute bottom-0 left-0 right-0 grid grid-cols-1 items-end gap-8 pb-2 lg:grid-cols-12 lg:gap-10">
-              <div className="lg:col-span-8">
-                <WordsPullUp
-                  text="Prisma"
-                  trailingAsterisk
-                  className="text-[26vw] font-medium leading-[0.85] tracking-[-0.07em] sm:text-[24vw] md:text-[22vw] lg:text-[20vw] xl:text-[19vw] 2xl:text-[20vw]"
-                />
-              </div>
+const GAME_CARDS: GameCard[] = [
+  { id: 'catch', title: '接水果', subtitle: 'Catch the rhythm of falling color', index: '01', accent: '#06b6d4', accent2: '#0f766e' },
+  { id: 'rps', title: '猜拳对决', subtitle: 'Read the moment. Make your move.', index: '02', accent: '#f43f5e', accent2: '#7c3aed' },
+  { id: 'bubble', title: '戳泡泡', subtitle: 'Aim softly. Chain every touch.', index: '03', accent: '#84cc16', accent2: '#0891b2' },
+  { id: 'tarot', title: '塔罗牌', subtitle: 'Three cards reveal one direction', index: '04', accent: '#d8b4fe', accent2: '#4338ca' },
+  { id: 'ninja', title: '水果忍者', subtitle: 'Draw the blade through color', index: '05', accent: '#f97316', accent2: '#e11d48' },
+  { id: 'rhythm', title: '节奏大师', subtitle: 'Move precisely inside the beat', index: '06', accent: '#a78bfa', accent2: '#0ea5e9' },
+  { id: 'shooter', title: '星际突击', subtitle: 'A new path generated every run', index: '07', accent: '#38bdf8', accent2: '#1d4ed8' },
+];
 
-              <motion.div
-                initial={{ opacity: 0, y: 34 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, amount: 0.55 }}
-                transition={{ duration: 0.85, ease: [0.16, 1, 0.3, 1], delay: 0.5 }}
-                className="max-w-sm lg:col-span-4 lg:justify-self-end"
-              >
-                <p
-                  className="text-xs leading-[1.2] text-primary/70 sm:text-sm md:text-base"
-                >
-                  Prisma is a worldwide network of visual artists, filmmakers and
-                  storytellers bound not by place, status or labels but by passion and
-                  hunger to unlock potential through our unique perspectives.
-                </p>
-                <motion.a
-                  href="#features"
-                  whileHover={{ y: -2 }}
-                  whileTap={{ scale: 0.98 }}
-                  transition={{ duration: 0.85, ease: [0.16, 1, 0.3, 1], delay: 0.7 }}
-                  className="group mt-6 inline-flex items-center gap-2 rounded-full bg-primary px-5 py-1.5 text-sm font-medium text-black transition-all duration-300 hover:gap-3 sm:mt-8 sm:px-6 sm:py-2 sm:text-base"
-                >
-                  <span>Join the lab</span>
-                  <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-black text-primary transition-transform duration-300 group-hover:scale-110 sm:h-10 sm:w-10">
-                    <ArrowRight size={18} />
-                  </span>
-                </motion.a>
-              </motion.div>
-            </div>
-          </motion.div>
-        </div>
-      </section>
+function wrapIndex(index: number, length: number) {
+  return ((index % length) + length) % length;
+}
 
-      <section id="about" ref={aboutRef} className="bg-black px-4 py-24 md:px-6 md:py-32">
-        <div className="mx-auto max-w-6xl">
-          <div
-            className="rounded-[2rem] border border-white/10 px-6 py-10 shadow-glow sm:px-8 md:px-12 md:py-14"
-            style={{ backgroundColor: '#101010' }}
-          >
-            <motion.p
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, amount: 0.7 }}
-              transition={{ duration: 0.7 }}
-              className="mb-6 text-xs uppercase tracking-[0.28em] text-gray-500"
-            >
-              Visual arts
-            </motion.p>
+function signedOffset(index: number, active: number, length: number) {
+  const raw = index - active;
+  const alternate = raw > 0 ? raw - length : raw + length;
+  return Math.abs(alternate) < Math.abs(raw) ? alternate : raw;
+}
 
-            <WordsPullUpMultiStyle
-              className="mx-auto max-w-3xl text-center text-3xl font-normal leading-[0.95] sm:text-4xl sm:leading-[0.9] md:text-5xl lg:text-6xl xl:text-7xl"
-              lineClassName="inline-flex flex-wrap justify-center gap-x-3 gap-y-2"
-              lines={[
-                [{ text: 'I am Marcus Chen,', className: 'text-primary' }],
-                [{ text: 'a self-taught director.', className: 'font-serif italic text-primary' }],
-                [
-                  {
-                    text: 'I have skills in color grading, visual effects, and narrative design.',
-                    className: 'text-primary',
-                  },
-                ],
-              ]}
-            />
+function useViewport() {
+  const [size, setSize] = React.useState(() => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  }));
+  React.useEffect(() => {
+    let frame = 0;
+    const resize = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => setSize({ width: window.innerWidth, height: window.innerHeight }));
+    };
+    window.addEventListener('resize', resize);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener('resize', resize);
+    };
+  }, []);
+  return size;
+}
 
-            <motion.div
-              initial={{ opacity: 0, y: 24 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, amount: 0.4 }}
-              transition={{ duration: 0.8, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
-              className="mx-auto mt-10 max-w-4xl text-center"
-            >
-              <AnimatedLetter
-                targetRef={aboutRef}
-                className="text-xs text-[#DEDBC8] sm:text-sm md:text-base"
-                text="Over the last seven years, I have worked with Parallax, a Berlin-based production house that crafts cinema, series, and Noir Studio in Paris. Together, we have created work that has earned international acclaim at several major festivals."
-              />
-            </motion.div>
-          </div>
-        </div>
-      </section>
+type CardStackProps = {
+  active: number;
+  onSelect: (index: number) => void;
+  onNavigate: (direction: number) => void;
+};
 
-      <section id="features" className="relative min-h-screen overflow-hidden bg-black px-4 py-24 md:px-6 md:py-32">
-        <div className="bg-noise pointer-events-none absolute inset-0 opacity-15" />
+function CardStack({ active, onSelect, onNavigate }: CardStackProps) {
+  const reduceMotion = useReducedMotion();
+  const viewport = useViewport();
+  const cardWidth = Math.round(Math.max(420, Math.min(620, viewport.width * 0.42)));
+  const cardHeight = Math.round(Math.max(252, Math.min(372, cardWidth * 0.6)));
+  const spacing = Math.round(cardWidth * 0.47);
+  const visibleOffset = viewport.width < 1050 ? 1 : 2;
 
-        <div className="relative z-10 mx-auto max-w-7xl">
-          <div className="max-w-4xl">
-            <WordsPullUpMultiStyle
-              className="space-y-2 text-xl font-normal sm:text-2xl md:text-3xl lg:text-4xl"
-              lineClassName="inline-flex flex-wrap gap-x-3 gap-y-2"
-              lines={[
-                [
-                  {
-                    text: 'Studio-grade workflows for visionary creators.',
-                    className: 'text-primary',
-                  },
-                ],
-                [
-                  {
-                    text: 'Built for pure vision. Powered by art.',
-                    className: 'text-gray-500',
-                  },
-                ],
-              ]}
-            />
-          </div>
+  return (
+    <section
+      className="card-stage"
+      aria-label="游戏选择"
+      tabIndex={0}
+      onKeyDown={(event) => {
+        if (event.key === 'ArrowLeft') onNavigate(-1);
+        if (event.key === 'ArrowRight') onNavigate(1);
+        if (event.key === 'Enter') window.javaLobby?.launchSelected?.();
+      }}
+    >
+      <div className="stage-halo" />
+      <div className="card-perspective">
+        <AnimatePresence initial={false}>
+          {GAME_CARDS.map((item, index) => {
+            const offset = signedOffset(index, active, GAME_CARDS.length);
+            const distance = Math.abs(offset);
+            if (distance > visibleOffset) return null;
+            const isActive = offset === 0;
+            const rotate = offset * 23;
+            const x = offset * spacing;
+            const y = distance * 18 + (isActive ? -22 : 0);
+            const z = -distance * 150;
 
-          <div className="mt-14 grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-2 lg:h-[480px] lg:grid-cols-4 lg:gap-1">
-            <motion.article
-              initial={{ opacity: 0, scale: 0.95 }}
-              whileInView={{ opacity: 1, scale: 1 }}
-              viewport={{ once: true, margin: '-100px' }}
-              transition={{ duration: 0.85, ease: [0.22, 1, 0.36, 1] }}
-              className="group relative min-h-[460px] overflow-hidden rounded-[1.75rem] border border-white/10"
-              style={{ backgroundColor: '#212121' }}
-            >
-              <video
-                className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
-                src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260406_133058_0504132a-0cf3-4450-a370-8ea3b05c95d4.mp4"
-                autoPlay
-                loop
-                muted
-                playsInline
-              />
-              <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.18)_0%,rgba(0,0,0,0.82)_100%)]" />
-              <div className="absolute inset-x-0 top-0 flex items-center justify-between px-6 py-6">
-                <span className="rounded-full border border-white/10 bg-black/40 px-3 py-1 text-xs tracking-[0.26em] text-gray-300">
-                  01
-                </span>
-                <span className="text-xs uppercase tracking-[0.26em] text-gray-400">Direction</span>
-              </div>
-              <div className="absolute inset-x-0 bottom-0 p-6">
-                <p className="text-2xl font-bold leading-tight" style={{ color: '#E1E0CC' }}>
-                  Your creative canvas.
-                </p>
-              </div>
-            </motion.article>
-
-            {featureCards.map((card, index) => (
+            return (
               <motion.article
-                key={card.title}
-                initial={{ opacity: 0, scale: 0.95 }}
-                whileInView={{ opacity: 1, scale: 1 }}
-                viewport={{ once: true, margin: '-100px' }}
-                transition={{
-                  duration: 0.85,
-                  ease: [0.22, 1, 0.36, 1],
-                  delay: 0.15 + index * 0.15,
+                className={`fan-card${isActive ? ' is-active' : ''}`}
+                key={item.id}
+                style={{
+                  width: cardWidth,
+                  height: cardHeight,
+                  marginLeft: -cardWidth / 2,
+                  marginTop: -cardHeight / 2,
+                  zIndex: 50 - distance,
+                  transformStyle: 'preserve-3d',
+                  '--accent': item.accent,
+                  '--accent-2': item.accent2,
+                } as React.CSSProperties}
+                initial={reduceMotion ? false : { opacity: 0, x, y: y + 44, z, rotateZ: rotate, rotateX: 12, scale: 0.92 }}
+                animate={{
+                  opacity: isActive ? 1 : distance === 1 ? 0.9 : 0.66,
+                  x,
+                  y,
+                  z,
+                  rotateZ: rotate,
+                  rotateX: isActive ? 0 : 12,
+                  scale: isActive ? 1.035 : 0.94,
                 }}
-                className="flex min-h-[460px] flex-col rounded-[1.75rem] border border-white/10 p-5 transition-transform duration-300 hover:-translate-y-1"
-                style={{ backgroundColor: '#212121' }}
+                exit={{ opacity: 0, scale: 0.86, y: y + 28 }}
+                transition={{ type: 'spring', stiffness: 285, damping: 29, mass: 0.78 }}
+                drag={isActive ? 'x' : false}
+                dragConstraints={{ left: 0, right: 0 }}
+                dragElastic={0.16}
+                onDragEnd={(_, info) => {
+                  const threshold = Math.min(145, cardWidth * 0.2);
+                  if (info.offset.x > threshold || info.velocity.x > 620) onNavigate(-1);
+                  if (info.offset.x < -threshold || info.velocity.x < -620) onNavigate(1);
+                }}
+                onClick={() => onSelect(index)}
               >
-                <div className="overflow-hidden rounded-[1.25rem] border border-white/10">
-                  <img
-                    src={card.image}
-                    alt={card.title}
-                    className="h-10 w-10 rounded object-cover sm:h-12 sm:w-12"
-                  />
+                <div className="card-art" />
+                <div className="card-grain" />
+                <div className="card-sheen" />
+                <div className="card-copy">
+                  <span className="card-index">{item.index}</span>
+                  <h2>{item.title}</h2>
+                  <p>{item.subtitle}</p>
                 </div>
-
-                <div className="mt-5 flex items-start justify-between gap-4">
-                  <div>
-                    <h3 className="text-2xl font-normal" style={{ color: '#E1E0CC' }}>
-                      {card.title}
-                    </h3>
-                    <p className="mt-2 text-xs uppercase tracking-[0.28em] text-gray-500">{card.number}</p>
-                  </div>
-                </div>
-
-                <ul className="mt-6 space-y-4">
-                  {card.bullets.map((bullet) => (
-                    <li key={bullet} className="flex items-start gap-3 text-sm leading-6 text-gray-400">
-                      <Check className="mt-1 h-4 w-4 shrink-0 text-primary" />
-                      <span>{bullet}</span>
-                    </li>
-                  ))}
-                </ul>
-
-                <a
-                  href="#home"
-                  className="mt-auto inline-flex items-center gap-3 pt-8 text-sm font-bold uppercase tracking-[0.22em] text-primary transition-opacity duration-300 hover:opacity-80"
-                >
-                  <span>Learn more</span>
-                  <ArrowRight size={16} style={{ transform: 'rotate(-45deg)' }} />
-                </a>
               </motion.article>
-            ))}
-          </div>
-        </div>
-      </section>
+            );
+          })}
+        </AnimatePresence>
+      </div>
+      <div className="dots" aria-label="游戏页码">
+        {GAME_CARDS.map((item, index) => (
+          <button
+            type="button"
+            key={item.id}
+            className={index === active ? 'active' : ''}
+            aria-label={`选择 ${item.title}`}
+            onClick={() => onSelect(index)}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+export default function App() {
+  const [active, setActive] = React.useState(0);
+  const cursorRef = React.useRef<HTMLDivElement>(null);
+  const cameraRef = React.useRef<HTMLImageElement>(null);
+  const rootRef = React.useRef<HTMLDivElement>(null);
+
+  const select = React.useCallback((index: number) => {
+    const next = wrapIndex(index, GAME_CARDS.length);
+    setActive(next);
+    window.javaLobby?.selectGame?.(next);
+  }, []);
+
+  const navigate = React.useCallback((direction: number) => {
+    if (window.javaLobby?.navigate) {
+      window.javaLobby.navigate(direction);
+    } else {
+      setActive((value) => wrapIndex(value + direction, GAME_CARDS.length));
+    }
+  }, []);
+
+  React.useEffect(() => {
+    window.gestureLobby = {
+      setActive: (index) => setActive(wrapIndex(Math.round(index), GAME_CARDS.length)),
+      setConfirmProgress: (progress) => {
+        cursorRef.current?.style.setProperty('--confirm-progress', `${Math.max(0, Math.min(1, progress)) * 360}deg`);
+        cursorRef.current?.classList.toggle('is-confirming', progress > 0.001);
+      },
+      setHand: (visible, x, y) => {
+        const cursor = cursorRef.current;
+        if (!cursor) return;
+        cursor.classList.toggle('is-visible', visible);
+        cursor.style.transform = `translate3d(${x * window.innerWidth}px, ${y * window.innerHeight}px, 0)`;
+      },
+      setGesture: (visible, x, y, progress) => {
+        const cursor = cursorRef.current;
+        if (!cursor) return;
+        cursor.classList.toggle('is-visible', visible);
+        cursor.style.transform = `translate3d(${x * window.innerWidth}px, ${y * window.innerHeight}px, 0)`;
+        cursor.style.setProperty('--confirm-progress', `${Math.max(0, Math.min(1, progress)) * 360}deg`);
+        cursor.classList.toggle('is-confirming', progress > 0.001);
+      },
+      setCameraFrame: (frame) => {
+        const camera = cameraRef.current;
+        if (!camera || !frame) return;
+        camera.src = frame.startsWith('data:') ? frame : `data:image/jpeg;base64,${frame}`;
+        camera.closest('.camera-preview')?.classList.add('is-live');
+      },
+      activate: () => rootRef.current?.classList.remove('is-paused'),
+      pause: () => rootRef.current?.classList.add('is-paused'),
+    };
+    window.javaLobby?.onWebReady?.();
+    return () => {
+      delete window.gestureLobby;
+    };
+  }, []);
+
+  return (
+    <main className="lobby" ref={rootRef}>
+      <ParticleAnimation />
+      <div className="background-vignette" />
+      <button className="api-button" type="button" onClick={() => window.javaLobby?.openApiSettings?.()}>
+        <Settings2 size={15} strokeWidth={1.6} />
+        <span>API</span>
+      </button>
+      <div className="camera-preview" aria-label="手势摄像头预览">
+        <img ref={cameraRef} alt="" />
+        <span>LIVE</span>
+      </div>
+      <CardStack active={active} onSelect={select} onNavigate={navigate} />
+      <div className="hand-cursor" ref={cursorRef} aria-hidden="true">
+        <i />
+      </div>
     </main>
   );
 }

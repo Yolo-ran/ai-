@@ -1,63 +1,31 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
 :root {
   color-scheme: dark;
   font-family: Inter, "Segoe UI", "Microsoft YaHei UI", sans-serif;
-  background: #000;
-  font-synthesis: none;
+  background: transparent;
   text-rendering: geometricPrecision;
 }
 
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
-html,
-body,
-#root {
+html, body {
   width: 100%;
   height: 100%;
   margin: 0;
   overflow: hidden;
-  background: #000;
+  background: transparent;
 }
 
-button,
-[tabindex] {
-  font: inherit;
-  outline: none;
-}
+button, [tabindex] { font: inherit; outline: none; }
 
 .lobby {
   position: relative;
   width: 100vw;
   height: 100vh;
   overflow: hidden;
-  isolation: isolate;
-  background: #000;
   color: #fff;
+  background: transparent;
   user-select: none;
-}
-
-.lobby.is-paused .fan-card { transition: none; }
-
-.particle-perspective {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  overflow: hidden;
-  background: #000;
-}
-
-.time-canvas {
-  position: absolute;
-  inset: 0;
-  display: block;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
+  -webkit-user-select: none;
 }
 
 .background-vignette {
@@ -75,15 +43,14 @@ button,
   inset: 0;
   z-index: 4;
   overflow: hidden;
-  border: 0;
 }
 
 .stage-halo {
   position: absolute;
   left: 50%;
   top: 51%;
-  width: min(70vw, 980px);
-  height: min(46vw, 560px);
+  width: min(72vw, 1050px);
+  height: min(48vw, 590px);
   transform: translate(-50%, -50%);
   border-radius: 50%;
   background: radial-gradient(ellipse, rgba(0,0,0,.74) 0%, rgba(0,0,0,.42) 50%, transparent 74%);
@@ -93,9 +60,6 @@ button,
 .card-perspective {
   position: absolute;
   inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   perspective: 1100px;
   transform-style: preserve-3d;
 }
@@ -105,33 +69,37 @@ button,
   top: 50%;
   left: 50%;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  /* JavaFX 17 WebView does not reliably support aspect-ratio. JavaScript writes
+     an explicit pixel width and height before the first transform. */
+  width: 520px;
+  height: 312px;
+  border: 1px solid rgba(255,255,255,.13);
   border-radius: 22px;
+  opacity: 0;
   background: #050608;
-  box-shadow:
-    0 28px 80px rgba(0, 0, 0, 0.74),
-    0 2px 2px rgba(255, 255, 255, 0.08) inset;
+  box-shadow: 0 28px 80px rgba(0,0,0,.76), inset 0 2px 2px rgba(255,255,255,.08);
   cursor: pointer;
+  transform-style: preserve-3d;
   will-change: transform, opacity;
   backface-visibility: hidden;
+  transition:
+    transform 690ms cubic-bezier(.16, 1, .3, 1),
+    opacity 420ms ease,
+    border-color 360ms ease,
+    box-shadow 420ms ease;
 }
+
+.lobby.is-paused .fan-card { transition: none; }
 
 .fan-card.is-active {
-  border-color: rgba(255, 255, 255, 0.24);
+  border-color: rgba(255,255,255,.28);
+  box-shadow: 0 36px 110px rgba(0,0,0,.84), 0 0 0 1px var(--accent), inset 0 2px 2px rgba(255,255,255,.15);
   cursor: grab;
-  box-shadow:
-    0 36px 110px rgba(0, 0, 0, 0.82),
-    0 0 0 1px var(--accent),
-    0 2px 2px rgba(255, 255, 255, 0.14) inset;
 }
 
-.fan-card.is-active:active {
-  cursor: grabbing;
-}
+.fan-card.is-dragging { transition: opacity 180ms ease; cursor: grabbing; }
 
-.card-art,
-.card-grain,
-.card-sheen {
+.card-art, .card-grain, .card-sheen {
   position: absolute;
   inset: 0;
   pointer-events: none;
@@ -144,16 +112,16 @@ button,
     radial-gradient(ellipse at 40% 20%, var(--accent) 0, transparent 49%),
     linear-gradient(132deg, var(--accent-2) 0%, #05070b 46%, var(--accent) 100%);
   transform: scale(1.04);
-  transition: transform 900ms cubic-bezier(0.16, 1, 0.3, 1), filter 600ms ease;
+  transition: transform 900ms cubic-bezier(.16, 1, .3, 1), filter 600ms ease;
 }
 
 .fan-card:not(.is-active) .card-art {
-  filter: saturate(0.62) brightness(0.58);
+  filter: saturate(.62) brightness(.58);
   transform: scale(1.1);
 }
 
 .card-grain {
-  opacity: 0.08;
+  opacity: .08;
   mix-blend-mode: soft-light;
   background-image:
     repeating-linear-gradient(117deg, rgba(255,255,255,.12) 0 1px, transparent 1px 4px),
@@ -162,8 +130,8 @@ button,
 
 .card-sheen {
   background:
-    linear-gradient(112deg, rgba(255,255,255,0.12), transparent 24%, transparent 68%, rgba(255,255,255,0.05)),
-    linear-gradient(to top, rgba(0,0,0,0.92), transparent 58%);
+    linear-gradient(112deg, rgba(255,255,255,.12), transparent 24%, transparent 68%, rgba(255,255,255,.05)),
+    linear-gradient(to top, rgba(0,0,0,.93), transparent 59%);
 }
 
 .card-copy {
@@ -173,32 +141,32 @@ button,
   bottom: 0;
   left: 0;
   padding: clamp(20px, 2vw, 30px);
-  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.8);
+  text-shadow: 0 2px 16px rgba(0,0,0,.82);
 }
 
 .card-index {
   display: inline-flex;
   margin-bottom: 10px;
   padding: 4px 8px;
-  border: 1px solid rgba(255,255,255,0.22);
+  border: 1px solid rgba(255,255,255,.22);
   border-radius: 999px;
-  color: rgba(255,255,255,0.72);
+  color: rgba(255,255,255,.72);
   font-size: 10px;
-  letter-spacing: 0.24em;
+  letter-spacing: .24em;
 }
 
 .card-copy h2 {
   margin: 0;
   font-size: clamp(22px, 2.2vw, 34px);
   font-weight: 650;
-  letter-spacing: -0.025em;
+  letter-spacing: -.025em;
 }
 
 .card-copy p {
   margin: 7px 0 0;
-  color: rgba(255,255,255,0.65);
+  color: rgba(255,255,255,.65);
   font-size: clamp(11px, 1vw, 14px);
-  letter-spacing: 0.025em;
+  letter-spacing: .025em;
 }
 
 .dots {
@@ -218,7 +186,7 @@ button,
   padding: 0;
   border: 0;
   border-radius: 50%;
-  background: rgba(255,255,255,0.3);
+  background: rgba(255,255,255,.3);
   cursor: pointer;
   transition: width 280ms ease, border-radius 280ms ease, background 280ms ease;
 }
@@ -226,39 +194,36 @@ button,
 .dots button.active {
   width: 24px;
   border-radius: 8px;
-  background: rgba(255,255,255,0.92);
+  background: rgba(255,255,255,.94);
 }
 
 .api-button {
   position: absolute;
-  top: 22px;
-  left: 22px;
-  z-index: 20;
+  top: 26px;
+  left: 28px;
+  z-index: 120;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 9px 13px;
-  border: 1px solid rgba(255,255,255,0.12);
+  gap: 9px;
+  min-height: 42px;
+  padding: 10px 17px;
+  border: 1px solid rgba(255,255,255,.32);
   border-radius: 999px;
-  color: rgba(255,255,255,0.62);
-  background: rgba(0,0,0,0.42);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  color: rgba(255,255,255,.94);
+  background: rgba(7,10,16,.88);
+  box-shadow: 0 8px 28px rgba(0,0,0,.56), inset 0 1px rgba(255,255,255,.08);
   cursor: pointer;
   transition: color 180ms ease, border-color 180ms ease, background 180ms ease;
 }
 
 .api-button:hover {
   color: #fff;
-  border-color: rgba(255,255,255,0.28);
-  background: rgba(20,20,20,0.74);
+  border-color: rgba(255,255,255,.28);
+  background: rgba(20,20,20,.74);
 }
 
-.api-button span {
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.16em;
-}
+.api-button span:last-child { font-size: 12px; font-weight: 650; letter-spacing: .12em; }
+.settings-icon { font-size: 17px; line-height: 1; }
 
 .camera-preview {
   position: absolute;
@@ -268,21 +233,17 @@ button,
   width: 142px;
   height: 88px;
   overflow: hidden;
-  border: 1px solid rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,.1);
   border-radius: 14px;
   opacity: 0;
-  background: rgba(0,0,0,0.64);
-  box-shadow: 0 12px 30px rgba(0,0,0,0.4);
+  background: rgba(0,0,0,.64);
+  box-shadow: 0 12px 30px rgba(0,0,0,.4);
   transition: opacity 500ms ease;
+  pointer-events: none;
 }
 
-.camera-preview.is-live {
-  opacity: 0.34;
-}
-
-.camera-preview.is-live:hover {
-  opacity: 0.9;
-}
+.camera-preview.is-live { opacity: .34; pointer-events: auto; }
+.camera-preview.is-live:hover { opacity: .9; }
 
 .camera-preview img {
   width: 100%;
@@ -297,10 +258,10 @@ button,
   left: 9px;
   padding: 3px 6px;
   border-radius: 999px;
-  color: rgba(255,255,255,0.86);
-  background: rgba(0,0,0,0.54);
+  color: rgba(255,255,255,.86);
+  background: rgba(0,0,0,.54);
   font-size: 8px;
-  letter-spacing: 0.16em;
+  letter-spacing: .16em;
 }
 
 .hand-cursor {
@@ -322,11 +283,10 @@ button,
   position: absolute;
   inset: 3px;
   border-radius: 50%;
-  background: conic-gradient(#fff var(--confirm-progress), rgba(255,255,255,0.1) 0);
+  background: conic-gradient(#fff var(--confirm-progress), rgba(255,255,255,.1) 0);
   content: '';
   opacity: 0;
   transition: opacity 180ms ease;
-  mask: radial-gradient(circle, transparent 63%, #000 65%);
   -webkit-mask: radial-gradient(circle, transparent 63%, #000 65%);
 }
 
@@ -337,21 +297,16 @@ button,
   width: 7px;
   height: 7px;
   transform: translate(-50%, -50%);
-  border: 1px solid rgba(0,0,0,0.7);
+  border: 1px solid rgba(0,0,0,.7);
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 0 12px rgba(255,255,255,0.88);
+  box-shadow: 0 0 12px rgba(255,255,255,.88);
 }
 
-.hand-cursor.is-visible {
-  opacity: 1;
-}
-
-.hand-cursor.is-confirming::before {
-  opacity: 1;
-}
+.hand-cursor.is-visible { opacity: 1; }
+.hand-cursor.is-confirming::before { opacity: 1; }
 
 @media (max-height: 720px) {
-  .card-perspective { transform: scale(0.88); }
-  .dots { bottom: 23px; }
+  .fan-card { width: clamp(390px, 39vw, 550px); }
+  .dots { bottom: 22px; }
 }

@@ -209,11 +209,13 @@ public class GameRenderer {
 
         boolean tarotMode = "塔罗牌".equals(game.getName());
         boolean fruitNinjaMode = "切水果".equals(game.getName());
+        boolean catchFruitMode = "接水果".equals(game.getName());
         if (gameNameLabel != null) {
-            gameNameLabel.setText(tarotMode || fruitNinjaMode ? "" : game.getIcon() + "  " + game.getName());
+            gameNameLabel.setText(tarotMode || fruitNinjaMode || catchFruitMode
+                    ? "" : game.getIcon() + "  " + game.getName());
         }
         if (scoreLabel != null) {
-            scoreLabel.setText(tarotMode || fruitNinjaMode ? "" : "分数: " + game.getScore());
+            scoreLabel.setText(tarotMode || fruitNinjaMode || catchFruitMode ? "" : "分数: " + game.getScore());
         }
         if (statusLabel != null && tarotMode) {
             statusLabel.setText("");

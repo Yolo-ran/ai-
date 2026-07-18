@@ -12,7 +12,8 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
-        <javafx.version>17.0.6</javafx.version>
+        <!-- Current JavaFX LTS patch with the official RTImage/RTTexture fixes. -->
+        <javafx.version>21.0.6</javafx.version>
     </properties>
 
     <dependencies>
@@ -75,6 +76,9 @@
                 <version>0.0.8</version>
                 <configuration>
                     <mainClass>com.gesturegame.MainApp</mainClass>
+                    <options>
+                        <option>-Dprism.order=d3d,sw</option>
+                    </options>
                 </configuration>
             </plugin>
         </plugins>

@@ -205,10 +205,14 @@ public class GestureStreamServer extends WebSocketServer {
             lastIdleDispatchTime = now;
         }
 
-        LOGGER.info(() -> "收到串流指令: raw=" + rawGesture
-                + ", mapped=" + command
-                + ", confidence=" + confidence
-                + ", state=" + state);
+        // NONE 是稳定画面下的常态，每 200ms 写一次 INFO 会持续制造磁盘 I/O，
+        // 也会让重渲染场景出现不必要的卡顿。只记录真正的控制指令。
+        if (command != GestureCommand.NONE) {
+            LOGGER.info(() -> "收到串流指令: raw=" + rawGesture
+                    + ", mapped=" + command
+                    + ", confidence=" + confidence
+                    + ", state=" + state);
+        }
 
         if (AppStateManager.STATE_LOGIN.equals(state) && loginController != null) {
             loginController.handleAgentCommand(command, confidence, "STREAM");

@@ -31,6 +31,9 @@ public class FruitNinja implements GameInterface {
     private WebView webView;
     private WebEngine webEngine;
     private JSObject jsWindow;
+    // WebKit keeps only a weak reference to Java bridge objects. Holding this
+    // instance prevents callbacks from silently disappearing after a GC cycle.
+    private JavaBridge javaBridge;
     private boolean isWebViewAdded = false;
     private Pane parentPane;
 
@@ -65,6 +68,7 @@ public class FruitNinja implements GameInterface {
         over = false;
         initErrorMsg = null;
         jsWindow = null;
+        javaBridge = null;
         lastX = -1;
         lastY = -1;
         lastDetected = false;
@@ -83,11 +87,13 @@ public class FruitNinja implements GameInterface {
                 webEngine.getLoadWorker().stateProperty().addListener((obs, oldState, newState) -> {
                     if (newState == Worker.State.SUCCEEDED) {
                         jsWindow = (JSObject) webEngine.executeScript("window");
-                        jsWindow.setMember("javaBackend", new JavaBridge());
+                        javaBridge = new JavaBridge();
+                        jsWindow.setMember("javaBackend", javaBridge);
                         LOGGER.info("Fruit Ninja WebView 加载成功，JSBridge 注入完毕");
                         
                         // 确保前端页面也处于全新状态
                         try {
+                            jsWindow.call("configureGame", difficulty.name());
                             jsWindow.call("resetGame");
                         } catch (Exception e) {
                             LOGGER.warning("重置前端游戏状态失败: " + e.getMessage());
@@ -105,6 +111,7 @@ public class FruitNinja implements GameInterface {
             // 如果 WebView 已经被复用（即没有被彻底销毁），我们需要在重新进入时调用前端的复位逻辑
             if (jsWindow != null) {
                 try {
+                    jsWindow.call("configureGame", difficulty.name());
                     jsWindow.call("resetGame");
                 } catch (Exception e) {
                     LOGGER.warning("复用 WebView 时重置前端状态失败: " + e.getMessage());
@@ -191,8 +198,14 @@ public class FruitNinja implements GameInterface {
         removeWebView();
         webView = null;
         webEngine = null;
+        jsWindow = null;
+        javaBridge = null;
+        parentPane = null;
         score = 0;
         over = false;
+        lastX = -1;
+        lastY = -1;
+        lastDetected = false;
     }
 
     @Override
@@ -206,6 +219,13 @@ public class FruitNinja implements GameInterface {
     }
 
     private void removeWebView() {
+        if (jsWindow != null) {
+            try {
+                jsWindow.call("stopGame");
+            } catch (RuntimeException ignored) {
+                // Page may already be unloading.
+            }
+        }
         if (parentPane != null && webView != null && isWebViewAdded) {
             parentPane.getChildren().remove(webView);
             isWebViewAdded = false;

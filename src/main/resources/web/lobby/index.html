@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Gesture Game Lobby</title>
+  <link rel="stylesheet" href="./lobby.css" />
+</head>
+<body>
+  <main id="lobby" class="lobby">
+    <div class="background-vignette"></div>
+
+    <button id="api-button" class="api-button" type="button" aria-label="API 设置">
+      <span class="settings-icon">⚙</span><span>API 设置</span>
+    </button>
+
+    <div id="camera-preview" class="camera-preview" aria-label="手势摄像头预览">
+      <img id="camera-image" alt="" />
+      <span>LIVE</span>
+    </div>
+
+    <section id="card-stage" class="card-stage" tabindex="0" aria-label="游戏选择">
+      <div class="stage-halo"></div>
+      <div id="card-perspective" class="card-perspective"></div>
+      <div id="dots" class="dots" aria-label="游戏页码"></div>
+    </section>
+
+    <div id="hand-cursor" class="hand-cursor" aria-hidden="true"><i></i></div>
+  </main>
+  <script src="./lobby.js"></script>
+</body>
+</html>

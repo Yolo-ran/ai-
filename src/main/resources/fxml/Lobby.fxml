@@ -2,45 +2,52 @@
 
 <?import javafx.geometry.Insets?>
 <?import javafx.scene.canvas.Canvas?>
-<?import javafx.scene.control.Label?>
 <?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Label?>
 <?import javafx.scene.image.ImageView?>
 <?import javafx.scene.layout.AnchorPane?>
 <?import javafx.scene.layout.StackPane?>
-<?import javafx.scene.shape.Rectangle?>
 
-<AnchorPane prefHeight="720.0" prefWidth="1280.0" stylesheets="@../css/app.css"
-            xmlns="http://javafx.com/javafx/17"
+<AnchorPane prefHeight="720.0" prefWidth="1280.0"
+            xmlns="http://javafx.com/javafx/21"
             xmlns:fx="http://javafx.com/fxml/1"
             fx:controller="com.gesturegame.ui.LobbyController"
-            styleClass="lobby-root">
+            style="-fx-background-color: black;">
     <children>
-        <Canvas fx:id="lobbyCanvas" width="1280.0" height="720.0"
-                AnchorPane.bottomAnchor="0.0" AnchorPane.leftAnchor="0.0"
-                AnchorPane.rightAnchor="0.0" AnchorPane.topAnchor="0.0" />
-
-        <Label fx:id="statusLabel" alignment="CENTER" maxWidth="1.7976931348623157E308"
-               styleClass="lobby-status"
-               text="张开手掌左右挥动选择 · 轨道自动巡航 · ✊握拳查看 / 进入"
-               AnchorPane.bottomAnchor="22.0" AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0" />
-
-        <Button text="API  ⚙" onAction="#openApiSettings" styleClass="lobby-api-button"
-                AnchorPane.leftAnchor="22.0" AnchorPane.topAnchor="22.0" />
-
-        <StackPane AnchorPane.rightAnchor="22.0" AnchorPane.topAnchor="22.0"
-                   maxHeight="154.0" maxWidth="210.0" minHeight="154.0" minWidth="210.0"
-                   prefHeight="154.0" prefWidth="210.0" styleClass="camera-preview-panel">
+        <StackPane fx:id="rayLayer" mouseTransparent="true"
+                   AnchorPane.bottomAnchor="0.0" AnchorPane.leftAnchor="0.0"
+                   AnchorPane.rightAnchor="0.0" AnchorPane.topAnchor="0.0">
             <children>
-                <ImageView fx:id="cameraView" fitHeight="126.0" fitWidth="184.0" preserveRatio="true"
-                           styleClass="camera-preview-image" />
-                <Rectangle arcHeight="12.0" arcWidth="12.0" fill="TRANSPARENT"
-                           height="126.0" mouseTransparent="true" stroke="#FFFFFF55"
-                           strokeType="INSIDE" strokeWidth="1.0" width="184.0" />
-                <Label StackPane.alignment="TOP_LEFT" styleClass="preview-title" text="LIVE FEED" />
+                <Canvas fx:id="rayCanvas" height="720.0" width="1280.0"
+                        mouseTransparent="true" />
             </children>
-            <padding>
-                <Insets bottom="14.0" left="13.0" right="13.0" top="14.0" />
-            </padding>
+        </StackPane>
+
+        <StackPane fx:id="uiLayer"
+                   AnchorPane.bottomAnchor="0.0" AnchorPane.leftAnchor="0.0"
+                   AnchorPane.rightAnchor="0.0" AnchorPane.topAnchor="0.0">
+            <children>
+                <Canvas fx:id="cardCanvas" height="720.0" width="1280.0" />
+            </children>
+        </StackPane>
+
+        <Button fx:id="apiButton" text="⚙  API 设置"
+                AnchorPane.leftAnchor="28.0" AnchorPane.topAnchor="27.0"
+                style="-fx-background-color: rgba(7,10,16,0.88); -fx-background-radius: 999; -fx-border-color: rgba(255,255,255,0.32); -fx-border-radius: 999; -fx-text-fill: rgba(255,255,255,0.94); -fx-font-family: 'Microsoft YaHei UI'; -fx-font-size: 12px; -fx-padding: 10 17 10 17; -fx-cursor: hand;" />
+
+        <StackPane prefHeight="184.0" prefWidth="244.0" opacity="0.88"
+                   style="-fx-background-color: rgba(0,0,0,0.82); -fx-background-radius: 16; -fx-border-color: rgba(255,255,255,0.26); -fx-border-radius: 16; -fx-padding: 2; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.65), 24, 0.12, 0, 8);"
+                   AnchorPane.rightAnchor="26.0" AnchorPane.topAnchor="26.0">
+            <children>
+                <ImageView fx:id="cameraView" fitHeight="180.0" fitWidth="240.0"
+                           preserveRatio="true" smooth="true" />
+                <Label text="LIVE" StackPane.alignment="TOP_LEFT"
+                       style="-fx-text-fill: white; -fx-background-color: rgba(0,0,0,0.58); -fx-background-radius: 8; -fx-font-size: 10px; -fx-padding: 5 8 5 8;">
+                    <StackPane.margin>
+                        <Insets left="9.0" top="9.0" />
+                    </StackPane.margin>
+                </Label>
+            </children>
         </StackPane>
     </children>
 </AnchorPane>

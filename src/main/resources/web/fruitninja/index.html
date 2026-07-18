@@ -36,11 +36,17 @@
             width: 50px;
         }
 
-        .lives-icon {
+        .mode-container {
             position: absolute;
-            top: 20px;
+            top: 26px;
             right: 30px;
-            height: 40px;
+            padding: 8px 14px;
+            border: 1px solid rgba(255,255,255,0.28);
+            border-radius: 999px;
+            background: rgba(0,0,0,0.42);
+            color: rgba(255,255,255,0.9);
+            font-size: 16px;
+            letter-spacing: 0.08em;
         }
 
         #game-over {
@@ -61,7 +67,7 @@
     <div id="ui-layer">
         <img src="assets/score.png" class="score-icon">
         <div class="score-container"><span id="scoreDisplay">0</span></div>
-        <img src="assets/xxxf.png" class="lives-icon" id="livesDisplay">
+        <div class="mode-container" id="modeDisplay">目标 0 / 500</div>
         <div id="game-over">GAME OVER<br><span style="font-size: 24px; color: white;">等待重新开始...</span></div>
     </div>
     
@@ -82,12 +88,23 @@
         let h = canvas.height = window.innerHeight;
 
         const scoreDisplay = document.getElementById('scoreDisplay');
-        const livesDisplay = document.getElementById('livesDisplay');
+        const modeDisplay = document.getElementById('modeDisplay');
         const gameOverDisplay = document.getElementById('game-over');
 
         let score = 0;
-        let lives = 3;
         let isGameOver = false;
+        let finalScoreSent = false;
+        let finalExitTimeout = 0;
+        let difficultyName = 'NORMAL';
+        let gameConfig = null;
+
+        const GAME_CONFIGS = {
+            EASY: { targetScore: 300, minWave: 2, maxWave: 3, bombChance: 0.05, minDelay: 1700, maxDelay: 2400 },
+            NORMAL: { targetScore: 500, minWave: 2, maxWave: 4, bombChance: 0.10, minDelay: 1400, maxDelay: 2100 },
+            HARD: { targetScore: 800, minWave: 3, maxWave: 5, bombChance: 0.16, minDelay: 1000, maxDelay: 1600 },
+            ENDLESS: { targetScore: 0, minWave: 3, maxWave: 5, bombChance: 0.12, minDelay: 1100, maxDelay: 1800 }
+        };
+        gameConfig = GAME_CONFIGS.NORMAL;
 
         // --- Background ---
         const bgImg = new Image();
@@ -101,10 +118,25 @@
         };
 
         // --- Audio ---
+        const audioPools = {};
+        const audioPoolIndex = {};
         function playSound(name) {
             try {
-                let snd = new Audio(`assets/${name}.mp3`);
-                snd.play();
+                if (!audioPools[name]) {
+                    audioPools[name] = [0, 1, 2].map(() => {
+                        const audio = new Audio(`assets/${name}.mp3`);
+                        audio.preload = 'auto';
+                        return audio;
+                    });
+                    audioPoolIndex[name] = 0;
+                }
+                const pool = audioPools[name];
+                const index = audioPoolIndex[name];
+                audioPoolIndex[name] = (index + 1) % pool.length;
+                const snd = pool[index];
+                snd.currentTime = 0;
+                const playing = snd.play();
+                if (playing && playing.catch) playing.catch(() => {});
             } catch(e) {
                 console.log("Audio play error: " + e);
             }
@@ -139,33 +171,76 @@
         const trailHistory = [];
         const juiceStains = []; // 沾染在背景上的果汁
         const maxHistoryLength = 15;
+        const MAX_PARTICLES = 240;
+        const MAX_JUICE_STAINS = 22;
+        let loopRunning = true;
+        let animationFrameId = 0;
+
+        function addParticle(particle) {
+            if (particles.length >= MAX_PARTICLES) {
+                particles.splice(0, particles.length - MAX_PARTICLES + 1);
+            }
+            particles.push(particle);
+        }
+
+        window.configureGame = function(name) {
+            const normalized = String(name || 'NORMAL').toUpperCase();
+            difficultyName = GAME_CONFIGS[normalized] ? normalized : 'NORMAL';
+            gameConfig = GAME_CONFIGS[difficultyName];
+            updateHUD();
+        };
 
         // JS 端暴露的 resetGame 方法，供 Java 端在重新进入游戏时调用
         window.resetGame = function() {
             score = 0;
-            lives = 3;
             isGameOver = false;
+            finalScoreSent = false;
             fruits.length = 0;
             particles.length = 0;
             trailHistory.length = 0;
             juiceStains.length = 0;
             screenFlashAlpha = 0;
+            isHandDetected = false;
+            targetHandX = -1;
+            targetHandY = -1;
+            currentHandX = -1;
+            currentHandY = -1;
+            lastTime = performance.now ? performance.now() : Date.now();
             updateHUD();
             gameOverDisplay.style.display = 'none';
             window.removeEventListener('mousedown', exitGame);
+            clearTimeout(finalExitTimeout);
             
             // 重新开始产生水果
             clearTimeout(spawnTimeout);
             spawnTimeout = setTimeout(spawnWave, 1000);
+            if (!loopRunning) {
+                loopRunning = true;
+                animationFrameId = requestAnimationFrame(loop);
+            }
+        };
+
+        window.stopGame = function() {
+            loopRunning = false;
+            cancelAnimationFrame(animationFrameId);
+            clearTimeout(spawnTimeout);
+            clearTimeout(finalExitTimeout);
+            Object.keys(audioPools).forEach(name => {
+                audioPools[name].forEach(audio => {
+                    audio.pause();
+                    audio.currentTime = 0;
+                });
+            });
         };
 
         let spawnTimeout;
         function spawnWave() {
             if (isGameOver) return;
             playSound('throw');
-            const count = Math.floor(Math.random() * 3) + 2;
+            const count = gameConfig.minWave
+                + Math.floor(Math.random() * (gameConfig.maxWave - gameConfig.minWave + 1));
             for(let i=0; i<count; i++) {
-                const isBomb = Math.random() < 0.15;
+                const isBomb = Math.random() < gameConfig.bombChance;
                 const type = isBomb ? 'boom' : FRUIT_TYPES[Math.floor(Math.random() * FRUIT_TYPES.length)];
                 
                 fruits.push({
@@ -181,7 +256,8 @@
                     rotSpeed: (Math.random() - 0.5) * 0.1
                 });
             }
-            spawnTimeout = setTimeout(spawnWave, 1500 + Math.random() * 2000);
+            spawnTimeout = setTimeout(spawnWave,
+                gameConfig.minDelay + Math.random() * (gameConfig.maxDelay - gameConfig.minDelay));
         }
         
         spawnTimeout = setTimeout(spawnWave, 1000);
@@ -226,7 +302,7 @@
             if (l2 === 0) return Math.hypot(px - vx, py - vy);
             let t = ((px - vx) * (wx - vx) + (py - vy) * (wy - vy)) / l2;
             t = Math.max(0, Math.min(1, t));
-            return Math.hypot(px - (vx + t * (wx - vx)), py - (vy + t * (wy - wy)));
+            return Math.hypot(px - (vx + t * (wx - vx)), py - (vy + t * (wy - vy)));
         }
 
         function checkSlices() {
@@ -258,7 +334,7 @@
                 const dir = Math.random() * Math.PI * 2;
                 const dist = Math.random() * 200 + 50;
                 const life = 1.0;
-                particles.push({
+                addParticle({
                     type: 'juice',
                     x: x, y: y,
                     vx: Math.cos(dir) * 15 * Math.random(),
@@ -277,20 +353,21 @@
                 alpha: 0.8,
                 time: Date.now()
             });
+            if (juiceStains.length > MAX_JUICE_STAINS) {
+                juiceStains.splice(0, juiceStains.length - MAX_JUICE_STAINS);
+            }
         }
 
         function sliceFruit(f, index, sliceAngle) {
             fruits.splice(index, 1);
             if (f.isBomb) {
                 playSound('boom');
-                lives--;
-                updateHUD();
-                
+
                 // 炸弹触发全屏白光
                 screenFlashAlpha = 1.0;
-                
+
                 // 炸弹爆炸黑烟
-                particles.push({
+                addParticle({
                     type: 'smoke',
                     x: f.x, y: f.y,
                     vx: 0, vy: 0,
@@ -300,8 +377,8 @@
                     scale: 2.5,
                     isFlash: true // won't fall down
                 });
-                
-                if (lives <= 0) endGame();
+
+                endGame('bomb');
             } else {
                 playSound('splatter');
                 score += 10;
@@ -314,7 +391,7 @@
                 const spreadY = Math.sin(apartAngle) * speedSpread;
                 
                 // 左半边/上边
-                particles.push({
+                addParticle({
                     type: f.type + '-1',
                     x: f.x - spreadX * 3, y: f.y - spreadY * 3,
                     vx: f.vx - spreadX, vy: f.vy - spreadY,
@@ -322,7 +399,7 @@
                     life: 2.0, maxLife: 2.0
                 });
                 // 右半边/下边
-                particles.push({
+                addParticle({
                     type: f.type + '-2',
                     x: f.x + spreadX * 3, y: f.y + spreadY * 3,
                     vx: f.vx + spreadX, vy: f.vy + spreadY,
@@ -331,7 +408,7 @@
                 });
                 
                 // 切击刀光特效 (flash.png)，旋转角度对齐刀光
-                particles.push({
+                addParticle({
                     type: 'flash',
                     x: f.x, y: f.y,
                     vx: 0, vy: 0,
@@ -343,28 +420,46 @@
                 
                 // 生成果汁
                 createJuice(f.x, f.y, FRUIT_COLORS[f.type]);
+                if (gameConfig.targetScore > 0 && score >= gameConfig.targetScore) {
+                    score = gameConfig.targetScore;
+                    updateHUD();
+                    endGame('target');
+                }
             }
         }
 
         function updateHUD() {
             scoreDisplay.innerText = score;
-            let livesImg = 'xxxf.png';
-            if (lives === 2) livesImg = 'xxf.png';
-            if (lives === 1) livesImg = 'xf.png';
-            if (lives <= 0) livesImg = 'x.png'; // 假设 x.png 表示 0 命
-            livesDisplay.src = `assets/${livesImg}`;
+            modeDisplay.innerText = gameConfig.targetScore > 0
+                ? `目标 ${score} / ${gameConfig.targetScore}`
+                : `无尽模式  ${score}`;
             if (window.javaBackend) window.javaBackend.updateScore(score);
         }
 
-        function endGame() {
+        function endGame(reason) {
+            if (isGameOver) return;
             isGameOver = true;
-            playSound('over');
+            clearTimeout(spawnTimeout);
+            if (reason !== 'bomb') playSound('over');
+            gameOverDisplay.innerHTML = reason === 'bomb'
+                ? 'GAME OVER<br><span style="font-size: 24px; color: white;">切到炸弹</span>'
+                : 'TARGET CLEAR<br><span style="font-size: 24px; color: white;">目标分数达成</span>';
             gameOverDisplay.style.display = 'block';
             window.addEventListener('mousedown', exitGame);
-            setTimeout(exitGame, 3000);
+            if (reason === 'bomb') {
+                // A bomb is an immediate loss. Notify Java in the same event turn so
+                // WebView timer throttling cannot leave the game running behind the
+                // GAME OVER frame.
+                exitGame();
+            } else {
+                finalExitTimeout = setTimeout(exitGame, 2400);
+            }
         }
 
         function exitGame() {
+            if (finalScoreSent) return;
+            finalScoreSent = true;
+            window.removeEventListener('mousedown', exitGame);
             if (window.javaBackend) {
                 window.javaBackend.saveScore(score);
             }
@@ -373,9 +468,13 @@
         // --- Render Loop ---
         let lastTime = performance.now ? performance.now() : Date.now();
         function loop(time) {
-            requestAnimationFrame(loop);
+            if (!loopRunning) return;
+            animationFrameId = requestAnimationFrame(loop);
             const currentTime = time || (performance.now ? performance.now() : Date.now());
-            const delta = (currentTime - lastTime) / 16.66; // approx 60fps multiplier
+            const rawDelta = (currentTime - lastTime) / 16.66;
+            // WebView may occasionally skip a frame. Capping the physics step
+            // prevents every fruit from teleporting below the screen at once.
+            const delta = Math.min(2.0, Math.max(0.25, rawDelta));
             lastTime = currentTime;
 
             // Clear old trail history naturally based on time
@@ -453,11 +552,7 @@
                 f.rotation += f.rotSpeed * delta;
 
                 if (f.y > h + 200) {
-                    if (!f.isBomb && !f.sliced && !isGameOver) {
-                        lives--;
-                        updateHUD();
-                        if (lives <= 0) endGame();
-                    }
+                    // Missing fruit only breaks the rhythm; it never ends a run.
                     fruits.splice(i, 1);
                     continue;
                 }
@@ -536,7 +631,7 @@
                 const neck = trailHistory[trailHistory.length - 2];
                 const speed = Math.hypot(head.x - neck.x, head.y - neck.y);
                 if (speed > 15 && Math.random() > 0.5) {
-                    particles.push({
+                    addParticle({
                         type: 'blade-spark',
                         x: head.x + (Math.random()-0.5)*10,
                         y: head.y + (Math.random()-0.5)*10,
@@ -597,7 +692,7 @@
             }
         }
 
-        requestAnimationFrame(loop);
+        animationFrameId = requestAnimationFrame(loop);
 
         window.addEventListener('resize', () => {
             w = canvas.width = window.innerWidth;
