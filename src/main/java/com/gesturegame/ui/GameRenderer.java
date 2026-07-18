@@ -359,6 +359,14 @@ public class GameRenderer {
             GameInterface game = AppStateManager.getInstance().getActiveGame();
             if (game == null) return;
 
+            // 双手入镜返回难度选择
+            if (dualHands.captured()) {
+                songSelectPhase = false;
+                mouseY = -1;
+                exitToDifficulty();
+                return;
+            }
+
             // 鼠标 → 悬停选歌，点击确认
             GestureType effectiveGesture = GestureType.NONE;
             boolean effectiveHand = false;
