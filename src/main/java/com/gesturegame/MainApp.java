@@ -37,6 +37,7 @@ public class MainApp extends Application {
     private GestureStreamServer gestureStreamServer;
     private GameRenderer gameRenderer;
     private LobbyController lobbyController;
+    private LoginController loginController;
     private Process pythonProcess;
     private long lastFrameNs;
 
@@ -45,7 +46,7 @@ public class MainApp extends Application {
         FXMLLoader loginLoader = new FXMLLoader(Objects.requireNonNull(
                 getClass().getResource("/fxml/Login.fxml")));
         Parent loginRoot = loginLoader.load();
-        LoginController loginController = loginLoader.getController();
+        loginController = loginLoader.getController();
 
         FXMLLoader lobbyLoader = new FXMLLoader(Objects.requireNonNull(
                 getClass().getResource("/fxml/Lobby.fxml")));
@@ -116,7 +117,9 @@ public class MainApp extends Application {
                 String state = AppStateManager.getInstance().getCurrentState();
                 GestureData gesture = gestureStreamServer.getLatestGesture();
                 DualHandState dualHands = gestureStreamServer.getLatestDualHandState();
-                if (AppStateManager.STATE_LOBBY.equals(state)) {
+                if (AppStateManager.STATE_LOGIN.equals(state)) {
+                    loginController.tick(gesture);
+                } else if (AppStateManager.STATE_LOBBY.equals(state)) {
                     lobbyController.tick(gesture, dualHands);
                 } else if (AppStateManager.STATE_DIFFICULTY.equals(state)) {
                     gameRenderer.tickDifficultySelect(gesture, dualHands);

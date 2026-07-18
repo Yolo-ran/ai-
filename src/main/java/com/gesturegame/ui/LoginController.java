@@ -1,5 +1,7 @@
 package com.gesturegame.ui;
 
+import com.gesturegame.common.GestureData;
+import com.gesturegame.common.GestureType;
 import com.gesturegame.engine.AppStateManager;
 import com.gesturegame.network.GestureCommand;
 import javafx.animation.AnimationTimer;
@@ -15,6 +17,9 @@ import javafx.scene.image.ImageView;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
+import javafx.scene.shape.ArcType;
+import javafx.scene.text.Font;
+import javafx.scene.text.TextAlignment;
 import javafx.animation.FadeTransition;
 import javafx.util.Duration;
 
@@ -63,6 +68,15 @@ public class LoginController {
     private boolean registerMode;
     private final com.gesturegame.persistence.UserAccountStore accountStore =
             new com.gesturegame.persistence.UserAccountStore();
+
+    // 引导页
+    private boolean showGuide;
+    private int guidePage;
+    private int guideTotalPages = 4;
+    private int guideHoldFrames;
+    private static final int GUIDE_HOLD_REQUIRED = 120; // 2秒
+    private double guideLastHandY = -1;
+    private double guideScrollAccum;
 
     // Star arrays
     private final double[] dx = new double[NUMBER_OF_STARS];
@@ -152,8 +166,19 @@ public class LoginController {
     }
 
     public void handleAgentCommand(GestureCommand command, double c, String h) {
-        if (command != GestureCommand.CONFIRM || entering) return;
+        if (entering) return;
         if (!loggedIn) { tryLogin(); return; }
+        // 引导页期间：SWIPE用于翻页，CONFIRM用于确认
+        if (showGuide) {
+            if (command == GestureCommand.SWIPE_LEFT && guidePage < guideTotalPages - 1) {
+                guidePage++; guideHoldFrames = 0;
+            } else if (command == GestureCommand.SWIPE_RIGHT && guidePage > 0) {
+                guidePage--; guideHoldFrames = 0;
+            }
+            return;
+        }
+        // 星空 ENTER 界面
+        if (command != GestureCommand.CONFIRM) return;
         entering = true;
         Platform.runLater(() -> {
             if (starTimer != null) starTimer.stop();
@@ -163,6 +188,37 @@ public class LoginController {
                 appStateManager.switchState(AppStateManager.STATE_LOBBY);
             }
         });
+    }
+
+    /** 每帧手势数据，用于引导页左右滑动 */
+    public void tick(GestureData gesture) {
+        if (!showGuide || gesture == null || !gesture.isHandDetected()) return;
+
+        double hx = gesture.getHandX();
+        if (guideLastHandY >= 0) {
+            double delta = hx - guideLastHandY; // 手右移→下一页
+            guideScrollAccum += delta * 100;
+            if (guideScrollAccum >= 15 && guidePage < guideTotalPages - 1) {
+                guidePage++; guideScrollAccum = 0; guideHoldFrames = 0;
+            } else if (guideScrollAccum <= -15 && guidePage > 0) {
+                guidePage--; guideScrollAccum = 0; guideHoldFrames = 0;
+            }
+        }
+        guideLastHandY = hx;
+
+        // 最后一页：握拳保持2秒进入
+        if (guidePage == guideTotalPages - 1 && gesture.getGesture() == GestureType.FIST) {
+            guideHoldFrames++;
+            if (guideHoldFrames >= GUIDE_HOLD_REQUIRED) {
+                // 进入星空
+                showGuide = false;
+                if (starTimer != null) starTimer.stop();
+                starTimer = null;
+                Platform.runLater(this::showStarField);
+            }
+        } else {
+            guideHoldFrames = 0;
+        }
     }
 
     private void tryLogin() {
@@ -194,7 +250,7 @@ public class LoginController {
                     loginBtnText.setText("✓");
                     FadeTransition ft = new FadeTransition(Duration.millis(600), loginCard);
                     ft.setFromValue(1); ft.setToValue(0);
-                    ft.setOnFinished(e -> { loginCard.setVisible(false); showStarField(); });
+                    ft.setOnFinished(e -> { loginCard.setVisible(false); showGuide(); });
                     ft.play();
                 } else {
                     loginStatus.setTextFill(Color.web("#ff6b6b"));
@@ -214,6 +270,126 @@ public class LoginController {
         enterLabel.setVisible(true);
         createStars();
         Platform.runLater(this::startStarAnimation);
+    }
+
+    // ===== 引导页 =====
+    private void showGuide() {
+        showGuide = true;
+        guidePage = 0;
+        guideHoldFrames = 0;
+        guideLastHandY = -1;
+        guideScrollAccum = 0;
+
+        // 鼠标滚轮翻页
+        rootPane.setOnScroll(e -> {
+            guideScrollAccum += e.getDeltaY();
+            if (guideScrollAccum <= -40 && guidePage < guideTotalPages - 1) {
+                guidePage++; guideScrollAccum = 0; guideHoldFrames = 0;
+            } else if (guideScrollAccum >= 40 && guidePage > 0) {
+                guidePage--; guideScrollAccum = 0; guideHoldFrames = 0;
+            }
+        });
+
+        starCanvas.setVisible(true);
+
+        // 引导页渲染循环（视频帧动画继续播放）
+        if (starTimer == null) {
+            starTimer = new AnimationTimer() {
+                @Override public void handle(long now) { renderGuide(); }
+            };
+        }
+        starTimer.start();
+    }
+
+    private void renderGuide() {
+        double w = starCanvas.getWidth(), h = starCanvas.getHeight();
+        GraphicsContext gc = starCanvas.getGraphicsContext2D();
+        double cx = w / 2;
+
+        // 透明底，让视频背景透过来；再加半透明遮罩
+        gc.clearRect(0, 0, w, h);
+        gc.setFill(Color.rgb(0, 0, 0, 0.45));
+        gc.fillRect(0, 0, w, h);
+
+        // 标题
+        gc.setFill(Color.WHITE);
+        gc.setFont(Font.font("Microsoft YaHei UI", 32));
+        gc.setTextAlign(TextAlignment.CENTER);
+        gc.fillText("🎮 欢迎来到手势游戏大厅", cx, 100);
+
+        // 分页内容
+        gc.setFont(Font.font("Microsoft YaHei UI", 18));
+        switch (guidePage) {
+            case 0:
+                gc.setFill(Color.rgb(200, 220, 255));
+                gc.fillText("这是一个通过摄像头识别手势来玩游戏的应用", cx, 180);
+                gc.fillText("你只需要动动手，就能操控一切", cx, 215);
+                gc.setFont(Font.font("Microsoft YaHei UI", 22));
+                gc.setFill(Color.WHITE);
+                gc.fillText("📷 请确保摄像头已开启", cx, 300);
+                gc.fillText("🖐 将手放入镜头范围内", cx, 340);
+                gc.fillText("💡 保持良好光线效果更佳", cx, 380);
+                break;
+            case 1:
+                gc.setFill(Color.rgb(200, 220, 255));
+                gc.fillText("系统支持以下手势操作：", cx, 180);
+                gc.setFont(Font.font("Microsoft YaHei UI", 24));
+                gc.setFill(Color.WHITE);
+                gc.fillText("✊  握拳  —  确认 / 选择", cx, 250);
+                gc.fillText("✋  张开  —  返回 / 散开", cx, 310);
+                gc.fillText("✌  剪刀手 —  切换 / 确认", cx, 370);
+                gc.fillText("👆  食指指向 —  返回上一步", cx, 430);
+                gc.fillText("🤲  双手入镜 —  返回大厅", cx, 490);
+                break;
+            case 2:
+                gc.setFill(Color.rgb(200, 220, 255));
+                gc.fillText("游戏大厅内有 7 款游戏等你挑战：", cx, 180);
+                gc.setFont(Font.font("Microsoft YaHei UI", 20));
+                gc.setFill(Color.WHITE);
+                gc.fillText("🍎 接水果    ✊ 猜拳    🫧 戳泡泡    🔮 塔罗牌", cx, 250);
+                gc.fillText("🔪 切水果    🥁 节奏大师    🚀 星际突击", cx, 295);
+                gc.setFont(Font.font("Microsoft YaHei UI", 18));
+                gc.setFill(Color.rgb(180, 200, 240));
+                gc.fillText("左右移动手浏览游戏，握拳选择", cx, 370);
+                gc.fillText("选好后选择难度即可开始", cx, 400);
+                break;
+            case 3:
+                gc.setFill(Color.rgb(200, 220, 255));
+                gc.fillText("准备好了吗？", cx, 200);
+                gc.setFont(Font.font("Microsoft YaHei UI", 28));
+                gc.setFill(Color.GOLD);
+                gc.fillText("✊ 握拳保持 2 秒进入游戏大厅", cx, 300);
+
+                // 进度环
+                if (guideHoldFrames > 0) {
+                    double progress = Math.min(1.0, guideHoldFrames / (double) GUIDE_HOLD_REQUIRED);
+                    double pr = 40, py = 400;
+                    gc.setStroke(Color.rgb(255, 255, 255, 0.2));
+                    gc.setLineWidth(5);
+                    gc.strokeOval(cx - pr, py - pr, pr * 2, pr * 2);
+                    gc.setStroke(Color.GOLD);
+                    gc.setLineWidth(5);
+                    gc.strokeArc(cx - pr, py - pr, pr * 2, pr * 2, -90, -360 * progress, javafx.scene.shape.ArcType.OPEN);
+                    gc.setFill(Color.WHITE);
+                    gc.setFont(Font.font(16));
+                    gc.fillText((int)(progress * 100) + "%", cx, py + 6);
+                }
+                break;
+        }
+
+        // 页码指示器
+        double dotY = h - 80;
+        for (int i = 0; i < guideTotalPages; i++) {
+            gc.setFill(i == guidePage ? Color.WHITE : Color.rgb(255, 255, 255, 0.3));
+            gc.fillOval(cx - 30 + i * 20, dotY, 10, 10);
+        }
+
+        // 底部提示
+        gc.setFill(Color.rgb(255, 255, 255, 0.4));
+        gc.setFont(Font.font("Microsoft YaHei UI", 14));
+        gc.fillText("左右移动手 或 鼠标滚轮 翻页", cx, h - 30);
+
+        gc.setTextAlign(TextAlignment.LEFT);
     }
 
     public void updateCameraStream(String s) {}

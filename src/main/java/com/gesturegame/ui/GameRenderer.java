@@ -280,6 +280,10 @@ public class GameRenderer {
         settlementStartedNanos = 0;
         songSelectPhase = false;
         mouseY = -1;
+        // 重置当前游戏（清理WebView等资源）
+        if (currentGame != null) {
+            currentGame.reset();
+        }
         currentGame = null;
         gameOverHandled = false;
         settling = false;
