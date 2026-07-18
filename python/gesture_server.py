@@ -556,6 +556,9 @@ async def stream_gestures():
     cap = open_camera()
     state = GestureState()
     last_timestamp_ms = -1
+    
+    # 动态控制图像流：仅在非 GAME 状态下发送，避免游戏时卡顿
+    java_state = {"current": "LOGIN"}
 
     try:
         with create_landmarker() as hand_landmarker:
@@ -564,6 +567,18 @@ async def stream_gestures():
                 try:
                     async with websockets.connect(SERVER_URL, max_size=None) as websocket:
                         LOGGER.info("已连接到 Java WebSocket 服务: %s", SERVER_URL)
+
+                        async def receive_state():
+                            try:
+                                async for message in websocket:
+                                    data = json.loads(message)
+                                    if "state" in data:
+                                        java_state["current"] = data["state"]
+                                        LOGGER.info(f"收到 Java 状态切换: {java_state['current']}")
+                            except Exception as e:
+                                pass
+
+                        receive_task = asyncio.create_task(receive_state())
 
                         while True:
                             loop_start = time.perf_counter()
@@ -590,7 +605,12 @@ async def stream_gestures():
 
                             payload = state.build_payload(hands)
                             output_frame = frame
-                            if SHOW_PREVIEW or SEND_IMAGE_STREAM:
+                            
+                            # 动态决定是否需要处理/发送图像流
+                            is_game_state = java_state["current"] == "GAME"
+                            should_send_image = SEND_IMAGE_STREAM and not is_game_state
+
+                            if SHOW_PREVIEW or should_send_image:
                                 output_frame = frame.copy()
                                 draw_preview(
                                     output_frame,
@@ -607,7 +627,7 @@ async def stream_gestures():
                                         MP_STYLES.get_default_hand_connections_style(),
                                     )
 
-                            if SEND_IMAGE_STREAM:
+                            if should_send_image:
                                 if now - state.last_image_send_time >= 1.0 / IMAGE_STREAM_FPS:
                                     encoded_image = encode_image_data(output_frame)
                                     if encoded_image:
@@ -634,6 +654,9 @@ async def stream_gestures():
                 except (ConnectionRefusedError, OSError, websockets.WebSocketException) as error:
                     LOGGER.info("Java 端暂未就绪，%.1f 秒后重连: %s", RECONNECT_DELAY_SECONDS, error)
                     await asyncio.sleep(RECONNECT_DELAY_SECONDS)
+                finally:
+                    if 'receive_task' in locals():
+                        receive_task.cancel()
     finally:
         cap.release()
         cv2.destroyAllWindows()

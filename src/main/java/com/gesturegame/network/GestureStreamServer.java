@@ -94,6 +94,15 @@ public class GestureStreamServer extends WebSocketServer {
     @Override
     public void onOpen(WebSocket conn, ClientHandshake handshake) {
         LOGGER.info("[Socket] Python 视觉串流端已成功建立连接");
+        
+        // 当 Python 连接时，立刻同步当前的 Java 状态
+        try {
+            JSONObject stateMsg = new JSONObject();
+            stateMsg.put("state", AppStateManager.getInstance().getCurrentState());
+            conn.send(stateMsg.toString());
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "初始同步状态给 Python 失败", e);
+        }
     }
 
     @Override
@@ -420,6 +429,15 @@ public class GestureStreamServer extends WebSocketServer {
         resetSwipeState();
         lastStaticCommandTime = stateEnterTime;
         LOGGER.info(() -> "[GestureStream] 场景切换，启用手势保护: " + state);
+        
+        // 通知 Python 端当前的 Java 状态，以便 Python 动态决定是否需要发送视频流（降低游戏时的网络和解码压力）
+        try {
+            JSONObject stateMsg = new JSONObject();
+            stateMsg.put("state", state);
+            broadcast(stateMsg.toString());
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "通知 Python 状态失败", e);
+        }
     }
 
     private boolean isInStateEntryGuard(String state, long now) {

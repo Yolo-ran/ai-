@@ -392,14 +392,14 @@
                 if (trailHistory.length > 0) {
                     const lastPt = trailHistory[trailHistory.length - 1];
                     const dist = Math.hypot(currentHandX - lastPt.x, currentHandY - lastPt.y);
-                    if (dist >= 5) {
+                    if (dist >= 10) {
                         trailHistory.push({ x: currentHandX, y: currentHandY, time: now });
                         if (trailHistory.length > maxHistoryLength) trailHistory.shift();
                         checkSlices();
                     } else {
+                        // 距离不够时不更新 lastPt 的坐标，只更新时间！
+                        // 这样累计移动距离达到阈值后才会真正生成一个新的拖尾节点，避免静止点堆积和长线断裂
                         lastPt.time = now;
-                        lastPt.x = currentHandX;
-                        lastPt.y = currentHandY;
                     }
                 } else {
                     trailHistory.push({ x: currentHandX, y: currentHandY, time: now });
