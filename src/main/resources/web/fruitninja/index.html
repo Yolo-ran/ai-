@@ -140,6 +140,26 @@
         const juiceStains = []; // 沾染在背景上的果汁
         const maxHistoryLength = 15;
 
+        // JS 端暴露的 resetGame 方法，供 Java 端在重新进入游戏时调用
+        window.resetGame = function() {
+            score = 0;
+            lives = 3;
+            isGameOver = false;
+            fruits.length = 0;
+            particles.length = 0;
+            trailHistory.length = 0;
+            juiceStains.length = 0;
+            screenFlashAlpha = 0;
+            updateHUD();
+            gameOverDisplay.style.display = 'none';
+            window.removeEventListener('mousedown', exitGame);
+            
+            // 重新开始产生水果
+            clearTimeout(spawnTimeout);
+            spawnTimeout = setTimeout(spawnWave, 1000);
+        };
+
+        let spawnTimeout;
         function spawnWave() {
             if (isGameOver) return;
             playSound('throw');
@@ -161,10 +181,10 @@
                     rotSpeed: (Math.random() - 0.5) * 0.1
                 });
             }
-            setTimeout(spawnWave, 1500 + Math.random() * 2000);
+            spawnTimeout = setTimeout(spawnWave, 1500 + Math.random() * 2000);
         }
         
-        setTimeout(spawnWave, 1000);
+        spawnTimeout = setTimeout(spawnWave, 1000);
 
         // --- Input Handling ---
         let isHandDetected = false;

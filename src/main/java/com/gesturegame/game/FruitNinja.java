@@ -85,6 +85,13 @@ public class FruitNinja implements GameInterface {
                         jsWindow = (JSObject) webEngine.executeScript("window");
                         jsWindow.setMember("javaBackend", new JavaBridge());
                         LOGGER.info("Fruit Ninja WebView 加载成功，JSBridge 注入完毕");
+                        
+                        // 确保前端页面也处于全新状态
+                        try {
+                            jsWindow.call("resetGame");
+                        } catch (Exception e) {
+                            LOGGER.warning("重置前端游戏状态失败: " + e.getMessage());
+                        }
                     }
                 });
             } catch (Throwable t) {
@@ -93,6 +100,15 @@ public class FruitNinja implements GameInterface {
                     initErrorMsg = t.getClass().getName();
                 }
                 LOGGER.severe("WebView 初始化失败: " + t);
+            }
+        } else {
+            // 如果 WebView 已经被复用（即没有被彻底销毁），我们需要在重新进入时调用前端的复位逻辑
+            if (jsWindow != null) {
+                try {
+                    jsWindow.call("resetGame");
+                } catch (Exception e) {
+                    LOGGER.warning("复用 WebView 时重置前端状态失败: " + e.getMessage());
+                }
             }
         }
         if (webView != null) {
