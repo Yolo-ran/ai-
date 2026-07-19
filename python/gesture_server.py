@@ -101,6 +101,8 @@ class GestureState:
                 "secondHandY": 0.0,
                 "twoHandSpread": 0.0,
                 "bothHandsOpen": False,
+                "indexTipX": 0.0,
+                "indexTipY": 0.0,
             }
 
         hand_landmarks, handedness_label = hands[0]
@@ -155,6 +157,8 @@ class GestureState:
             "secondHandY": round(second_hand_y, 4),
             "twoHandSpread": round(two_hand_spread, 4),
             "bothHandsOpen": both_hands_open,
+            "indexTipX": round(hand_landmarks[8].x, 4),
+            "indexTipY": round(hand_landmarks[8].y, 4),
         }
 
 

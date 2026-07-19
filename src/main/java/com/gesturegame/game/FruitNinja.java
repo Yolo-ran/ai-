@@ -130,8 +130,8 @@ public class FruitNinja implements GameInterface {
         // 当页面加载完成时，将本地识别的手势坐标高频下发给前端 PixiJS/Canvas
         if (jsWindow != null) {
             boolean detected = gesture != null && gesture.isHandDetected();
-            double x = detected ? gesture.getHandX() : 0.5;
-            double y = detected ? gesture.getHandY() : 0.5;
+            double x = detected ? gesture.getIndexTipX() : 0.5;
+            double y = detected ? gesture.getIndexTipY() : 0.5;
             
             // 节流：只有当坐标或检测状态发生变化时才通过高性能的 JSObject.call 调用
             if (x != lastX || y != lastY || detected != lastDetected) {

@@ -28,6 +28,8 @@ public class GestureData {
     private GestureType gesture;
     private double confidence;
     private boolean handDetected;
+    private double indexTipX;
+    private double indexTipY;
 
     /** 无参构造，字段为安全默认值（手势 NONE，未检测到手）。 */
     public GestureData() {
@@ -188,4 +190,9 @@ public class GestureData {
     public void setHandDetected(boolean handDetected) {
         this.handDetected = handDetected;
     }
+
+    public double getIndexTipX() { return indexTipX; }
+    public void setIndexTipX(double x) { this.indexTipX = x; }
+    public double getIndexTipY() { return indexTipY; }
+    public void setIndexTipY(double y) { this.indexTipY = y; }
 }
