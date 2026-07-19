@@ -46,9 +46,7 @@ public class LobbyController {
     private static final int CONFIRM_HOLD_FRAMES = 72;
 
     @FXML
-    private StackPane rayLayer;
-    @FXML
-    private Canvas rayCanvas;
+    private StackPane planetLayer;
     @FXML
     private StackPane uiLayer;
     @FXML
@@ -59,7 +57,7 @@ public class LobbyController {
     private ImageView cameraView;
 
     private AppStateManager appStateManager;
-    private LobbyRayRenderer rayRenderer;
+    private LobbyPlanetBackground planetBackground;
     private LobbyCardDeck cardDeck;
     private int currentIndex;
     private int confirmHoldFrames;
@@ -69,14 +67,10 @@ public class LobbyController {
 
     @FXML
     public void initialize() {
-        rayRenderer = new LobbyRayRenderer(rayCanvas);
+        planetBackground = new LobbyPlanetBackground(planetLayer);
         cardDeck = new LobbyCardDeck(cardCanvas, this::selectGame,
                 this::navigate, this::launchGame);
 
-        rayCanvas.scaleXProperty().bind(rayLayer.widthProperty()
-                .divide(LobbyRayRenderer.DESIGN_WIDTH));
-        rayCanvas.scaleYProperty().bind(rayLayer.heightProperty()
-                .divide(LobbyRayRenderer.DESIGN_HEIGHT));
         cardCanvas.scaleXProperty().bind(uiLayer.widthProperty()
                 .divide(LobbyCardDeck.DESIGN_WIDTH));
         cardCanvas.scaleYProperty().bind(uiLayer.heightProperty()
@@ -97,7 +91,7 @@ public class LobbyController {
             return;
         }
         confirmHoldFrames = 0;
-        rayRenderer.start();
+        planetBackground.start();
         cardDeck.activate(currentIndex);
     }
 
@@ -224,7 +218,7 @@ public class LobbyController {
     }
 
     private void pauseLobby() {
-        rayRenderer.stop();
+        planetBackground.stop();
         cardDeck.pause();
     }
 

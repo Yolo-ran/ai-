@@ -31,9 +31,10 @@ final class LobbyCardDeck {
     static final double DESIGN_WIDTH = 1280.0;
     static final double DESIGN_HEIGHT = 720.0;
 
-    private static final double CARD_WIDTH = 558.0;
-    private static final double CARD_HEIGHT = 334.8;
-    private static final double CARD_SPACING = CARD_WIDTH * 0.47;
+    private static final double CARD_WIDTH = 500.0;
+    private static final double CARD_HEIGHT = 300.0;
+    private static final double CARD_SPACING = CARD_WIDTH * 0.49;
+    private static final double CARD_VERTICAL_OFFSET = -94.0;
     private static final long TRANSITION_NS = 690_000_000L;
     private static final List<CardData> CARDS = List.of(
             new CardData("接水果", "Catch the rhythm of falling color", "01", "#06b6d4", "#0f766e"),
@@ -239,12 +240,13 @@ final class LobbyCardDeck {
 
     private void drawVignette() {
         graphics.save();
-        graphics.translate(DESIGN_WIDTH * 0.5, DESIGN_HEIGHT * 0.51);
+        graphics.translate(DESIGN_WIDTH * 0.5,
+                DESIGN_HEIGHT * 0.51 + CARD_VERTICAL_OFFSET);
         graphics.scale(1.75, 1.0);
         graphics.setFill(new RadialGradient(0.0, 0.0, 0.0, 0.0, 300.0,
                 false, CycleMethod.NO_CYCLE,
-                new Stop(0.0, Color.color(0.0, 0.0, 0.0, 0.73)),
-                new Stop(0.55, Color.color(0.0, 0.0, 0.0, 0.42)),
+                new Stop(0.0, Color.color(0.0, 0.0, 0.0, 0.58)),
+                new Stop(0.55, Color.color(0.0, 0.0, 0.0, 0.32)),
                 new Stop(1.0, Color.TRANSPARENT)));
         graphics.fillOval(-300.0, -300.0, 600.0, 600.0);
         graphics.restore();
@@ -317,11 +319,13 @@ final class LobbyCardDeck {
         if (distance > 2.0) {
             double sign = offset < 0 ? -1.0 : 1.0;
             return new CardPose(DESIGN_WIDTH * 0.5 + sign * DESIGN_WIDTH * 0.64,
-                    DESIGN_HEIGHT * 0.5 + 52.0, sign * 50.0, 0.82, 0.0, distance);
+                    DESIGN_HEIGHT * 0.5 + 52.0 + CARD_VERTICAL_OFFSET,
+                    sign * 50.0, 0.82, 0.0, distance);
         }
         return new CardPose(
                 DESIGN_WIDTH * 0.5 + offset * CARD_SPACING,
-                DESIGN_HEIGHT * 0.5 + distance * 18.0 + (distance == 0.0 ? -22.0 : 0.0),
+                DESIGN_HEIGHT * 0.5 + CARD_VERTICAL_OFFSET + distance * 18.0
+                        + (distance == 0.0 ? -22.0 : 0.0),
                 offset * 23.0,
                 distance == 0.0 ? 1.035 : 0.94,
                 distance == 0.0 ? 1.0 : distance == 1.0 ? 0.9 : 0.66,
