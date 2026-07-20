@@ -37,13 +37,13 @@ final class LobbyCardDeck {
     private static final double CARD_VERTICAL_OFFSET = -94.0;
     private static final long TRANSITION_NS = 690_000_000L;
     private static final List<CardData> CARDS = List.of(
-            new CardData("接水果", "Catch the rhythm of falling color", "01", "#06b6d4", "#0f766e"),
-            new CardData("猜拳对决", "Read the moment. Make your move.", "02", "#f43f5e", "#7c3aed"),
-            new CardData("祖玛", "Match the orbit. Break the chain.", "03", "#84cc16", "#ca8a04"),
-            new CardData("塔罗牌", "Three cards reveal one direction", "04", "#d8b4fe", "#4338ca"),
-            new CardData("水果忍者", "Draw the blade through color", "05", "#f97316", "#e11d48"),
-            new CardData("节奏大师", "Move precisely inside the beat", "06", "#a78bfa", "#0ea5e9"),
-            new CardData("星际突击", "A new path generated every run", "07", "#38bdf8", "#1d4ed8")
+            new CardData("暗星采矿", "Catch the rhythm of falling color", "01", "#06b6d4", "#0f766e", null),
+            new CardData("矩阵博弈", "Read the moment. Make your move.", "02", "#f43f5e", "#7c3aed", null),
+            new CardData("星际祖玛", "Match the orbit. Break the chain.", "03", "#84cc16", "#ca8a04", "file:///C:/Users/Justin/Desktop/实训项目素材/封面.jpg"),
+            new CardData("命运演算", "Three cards reveal one direction", "04", "#d8b4fe", "#4338ca", null),
+            new CardData("水果忍者", "Draw the blade through color", "05", "#f97316", "#e11d48", null),
+            new CardData("节奏大师", "Move precisely inside the beat", "06", "#a78bfa", "#0ea5e9", null),
+            new CardData("星系战线", "A new path generated every run", "07", "#38bdf8", "#1d4ed8", null)
     );
 
     private final Canvas canvas;
@@ -352,28 +352,58 @@ final class LobbyCardDeck {
 
             java.awt.Color accent = java.awt.Color.decode(card.accent);
             java.awt.Color accent2 = java.awt.Color.decode(card.accent2);
-            graphics.setPaint(new LinearGradientPaint(0.0f, 0.0f, width, height,
-                    new float[]{0.0f, 0.48f, 1.0f},
-                    new java.awt.Color[]{accent2, new java.awt.Color(5, 7, 11), accent}));
-            graphics.fillRect(0, 0, width, height);
 
-            graphics.setComposite(AlphaComposite.SrcOver.derive(0.48f));
-            graphics.setPaint(new GradientPaint(width * 0.52f, height * 0.08f,
-                    withAlpha(accent2, 220), width * 0.82f, height * 0.62f,
-                    new java.awt.Color(0, 0, 0, 0)));
-            graphics.fillOval((int) (width * 0.34), (int) (-height * 0.16),
-                    (int) (width * 0.72), (int) (height * 0.9));
-            graphics.setPaint(new GradientPaint(width * 0.18f, height * 0.28f,
-                    withAlpha(accent, 205), width * 0.62f, height * 0.68f,
-                    new java.awt.Color(0, 0, 0, 0)));
-            graphics.fillOval((int) (-width * 0.05), (int) (height * 0.04),
-                    (int) (width * 0.72), (int) (height * 0.84));
+            boolean imageLoaded = false;
+            if (card.imagePath != null) {
+                try {
+                    java.net.URL url = new java.net.URL(card.imagePath);
+                    BufferedImage bgImage = javax.imageio.ImageIO.read(url);
+                    if (bgImage != null) {
+                        // 按比例缩放并居中裁剪 (cover)
+                        double scale = Math.max((double) width / bgImage.getWidth(), (double) height / bgImage.getHeight());
+                        int drawW = (int) (bgImage.getWidth() * scale);
+                        int drawH = (int) (bgImage.getHeight() * scale);
+                        int drawX = (width - drawW) / 2;
+                        int drawY = (height - drawH) / 2;
 
-            graphics.setComposite(AlphaComposite.SrcOver.derive(0.12f));
-            graphics.setStroke(new BasicStroke(1.0f));
-            graphics.setColor(java.awt.Color.WHITE);
-            for (int x = -height; x < width + height; x += 8) {
-                graphics.drawLine(x, 0, x - height, height);
+                        // 绘制背景图
+                        graphics.drawImage(bgImage, drawX, drawY, drawW, drawH, null);
+
+                        // 叠加一层极轻微的暗色遮罩，让底色不至于太刺眼
+                        graphics.setPaint(new java.awt.Color(0, 0, 0, 80));
+                        graphics.fillRect(0, 0, width, height);
+
+                        imageLoaded = true;
+                    }
+                } catch (Exception e) {
+                    System.err.println("Failed to load card image: " + card.imagePath);
+                }
+            }
+
+            if (!imageLoaded) {
+                graphics.setPaint(new LinearGradientPaint(0.0f, 0.0f, width, height,
+                        new float[]{0.0f, 0.48f, 1.0f},
+                        new java.awt.Color[]{accent2, new java.awt.Color(5, 7, 11), accent}));
+                graphics.fillRect(0, 0, width, height);
+
+                graphics.setComposite(AlphaComposite.SrcOver.derive(0.48f));
+                graphics.setPaint(new GradientPaint(width * 0.52f, height * 0.08f,
+                        withAlpha(accent2, 220), width * 0.82f, height * 0.62f,
+                        new java.awt.Color(0, 0, 0, 0)));
+                graphics.fillOval((int) (width * 0.34), (int) (-height * 0.16),
+                        (int) (width * 0.72), (int) (height * 0.9));
+                graphics.setPaint(new GradientPaint(width * 0.18f, height * 0.28f,
+                        withAlpha(accent, 205), width * 0.62f, height * 0.68f,
+                        new java.awt.Color(0, 0, 0, 0)));
+                graphics.fillOval((int) (-width * 0.05), (int) (height * 0.04),
+                        (int) (width * 0.72), (int) (height * 0.84));
+
+                graphics.setComposite(AlphaComposite.SrcOver.derive(0.12f));
+                graphics.setStroke(new BasicStroke(1.0f));
+                graphics.setColor(java.awt.Color.WHITE);
+                for (int x = -height; x < width + height; x += 8) {
+                    graphics.drawLine(x, 0, x - height, height);
+                }
             }
 
             graphics.setComposite(AlphaComposite.SrcOver);
@@ -417,7 +447,7 @@ final class LobbyCardDeck {
     }
 
     private record CardData(String title, String subtitle, String number,
-                            String accent, String accent2) {
+                            String accent, String accent2, String imagePath) {
     }
 
     private static final class CardPose {
