@@ -78,7 +78,7 @@ public final class SideScrollingShooter implements GameInterface {
     private int powerUpSpawnDelay = 480; // 约8秒后开始出道具
 
     @Override
-    public String getName() { return "星际突击"; }
+    public String getName() { return "星系战线"; }
 
     @Override
     public String getDescription() { return "手势驾驶战机，AI 根据表现动态生成下一关"; }

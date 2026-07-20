@@ -115,7 +115,7 @@ public class CatchFruit implements GameInterface {
 
     @Override
     public String getName() {
-        return "接水果";
+        return "暗星采矿";
     }
 
     @Override

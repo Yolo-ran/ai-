@@ -108,7 +108,7 @@ public class RPSGame implements GameInterface {
 
     @Override
     public String getName() {
-        return "猜拳";
+        return "矩阵博弈";
     }
 
     @Override
