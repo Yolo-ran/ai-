@@ -53,6 +53,7 @@ public final class SideScrollingShooter implements GameInterface {
     private ShooterLevelConfig level;
     private CompletableFuture<ShooterLevelConfig> nextLevelFuture;
     private PlayerPerformance lastPerformance;
+    private int levelClearedFrames;   // 通关提示倒计时
     private int width;
     private int height;
     private int frame;
@@ -106,6 +107,7 @@ public final class SideScrollingShooter implements GameInterface {
         over = false;
         cleared = false;
         nextLevelFuture = null;
+        levelClearedFrames = 0;
         hasShield = false;
         multiShotTimer = 0;
         speedBoostTimer = 0;
@@ -138,6 +140,14 @@ public final class SideScrollingShooter implements GameInterface {
 
     @Override
     public void update(GestureData gesture) {
+        // 通关过渡：倒计时结束后自动进入下一关
+        if (levelClearedFrames > 0) {
+            levelClearedFrames--;
+            if (levelClearedFrames <= 0) {
+                reset(); // 加载下一关
+            }
+            return;
+        }
         if (over) return;
         frame++;
 
@@ -395,10 +405,17 @@ public final class SideScrollingShooter implements GameInterface {
     private void finish(boolean victory) {
         if (over) return;
         cleared = victory;
-        if (victory) score += hp * 150;
-        over = true;
-        lastPerformance = performance();
-        requestNextLevel();
+        if (victory) {
+            score += hp * 150;
+            lastPerformance = performance();
+            requestNextLevel();
+            levelClearedFrames = 120; // 显示2秒通关提示
+        } else {
+            // 失败 → 真正的 Game Over
+            over = true;
+            lastPerformance = performance();
+            requestNextLevel();
+        }
     }
 
     private void requestNextLevel() {
@@ -527,7 +544,7 @@ public final class SideScrollingShooter implements GameInterface {
             gc.drawImage(playerImage, -w * 0.45, -h / 2, w, h);
 
             // 2. 动态光感：全机身能量脉冲 (Energy Pulse)
-            // 再次叠加同一张贴图，使用 ADD 模式，透明度随时间正弦波动，使机身的亮部（如驾驶舱、金属反光）产生“呼吸灯”般的能量涌动感
+            // 再次叠加同一张贴图，使用 ADD 模式，透明度随时间正弦波动，使机身的亮部（如驾驶舱、金属反光）产生"呼吸灯"般的能量涌动感
             double pulseAlpha = 0.15 + Math.sin(frame * 0.1) * 0.15; // 在 0.0 ~ 0.3 之间呼吸波动
             gc.setGlobalAlpha(pulseAlpha);
             gc.setGlobalBlendMode(BlendMode.ADD); 
@@ -545,7 +562,7 @@ public final class SideScrollingShooter implements GameInterface {
             gc.fillOval(-w * 0.25 - engineGlowRadius, -engineGlowRadius, engineGlowRadius * 2, engineGlowRadius * 2);
 
             // 4. 物理反馈：机动光学残影 (Velocity Ghosting)
-            // 当手势控制战机高速上下移动时，由于“视觉残留”，在反方向拖拽出科幻的光学残影
+            // 当手势控制战机高速上下移动时，由于"视觉残留"，在反方向拖拽出科幻的光学残影
             double vy = playerY - lastPlayerY;
             if (Math.abs(vy) > 1.5) {
                 gc.setGlobalAlpha(0.25);
@@ -829,16 +846,29 @@ public final class SideScrollingShooter implements GameInterface {
         gc.setFill(Color.web("#FFEA00"));
         gc.fillText("SCORE: " + score, width - 85, 40);
 
-        // 底部“双手入镜保持返回”提示
+        // 通关提示
+        if (levelClearedFrames > 0) {
+            gc.setFill(Color.rgb(0, 0, 0, 0.6));
+            gc.fillRect(0, 0, width, height);
+            gc.setFill(Color.web("#FFEA00"));
+            gc.setFont(Font.font("Arial", 48));
+            gc.setTextAlign(TextAlignment.CENTER);
+            gc.fillText("LEVEL CLEARED!", width / 2.0, height / 2.0 - 20);
+            gc.setFill(Color.WHITE);
+            gc.setFont(Font.font("Arial", 20));
+            gc.fillText("NEXT LEVEL LOADING...", width / 2.0, height / 2.0 + 30);
+        }
+
+        // 底部"双手入镜保持返回"提示
         gc.setFill(Color.rgb(5, 5, 5, 0.6));
         gc.fillRoundRect(width / 2.0 - 100, height - 40, 200, 24, 12, 12);
-        gc.setStroke(Color.rgb(0, 255, 102, 0.6)); // 毒绿提示边框
+        gc.setStroke(Color.rgb(0, 255, 102, 0.6));
         gc.setLineWidth(1);
         gc.strokeRoundRect(width / 2.0 - 100, height - 40, 200, 24, 12, 12);
         gc.setFill(Color.web("#00FF66"));
         gc.setFont(Font.font("Arial", 12));
         gc.fillText("👐 双手入镜保持返回", width / 2.0, height - 23);
-        
+
         gc.setTextAlign(TextAlignment.LEFT);
     }
 

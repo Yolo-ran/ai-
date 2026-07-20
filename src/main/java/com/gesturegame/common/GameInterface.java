@@ -63,4 +63,7 @@ public interface GameInterface {
 
     /** 难度卡牌上的显示文字（不覆盖则用全局标签）。 */
     default String getDifficultyLabel(Difficulty d) { return d.getLabel(); }
+
+    /** 最大连击数（有连击系统的游戏重写）。 */
+    default int getMaxCombo() { return 0; }
 }

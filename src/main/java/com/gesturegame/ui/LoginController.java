@@ -333,6 +333,7 @@ public class LoginController {
                 // 登录模式 → SQLite 验证
                 if (accountStore.authenticate(u, p.toCharArray())) {
                     loggedIn = true;
+                    appStateManager.markAccountAuthenticated(u);
                     loginStatus.setTextFill(Color.LIME);
                     loginBtnText.setText("✓");
                     FadeTransition ft = new FadeTransition(Duration.millis(600), loginCard);
