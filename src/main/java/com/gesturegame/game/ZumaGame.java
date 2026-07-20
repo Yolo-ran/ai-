@@ -5,6 +5,9 @@ import com.gesturegame.common.GameInterface;
 import com.gesturegame.common.GestureData;
 import com.gesturegame.common.GestureType;
 import javafx.scene.canvas.GraphicsContext;
+import javafx.scene.effect.BlendMode;
+import javafx.scene.effect.DropShadow;
+import javafx.scene.paint.RadialGradient;
 import javafx.scene.paint.Color;
 import javafx.scene.paint.CycleMethod;
 import javafx.scene.paint.LinearGradient;
@@ -36,10 +39,104 @@ public final class ZumaGame implements GameInterface {
             Color.web("#f97316")
     };
 
+    private static final class Star {
+        double x, y, radius, alpha, blinkSpeed;
+        public Star(double x, double y) {
+            this.x = x; this.y = y;
+            this.radius = Math.random() * 1.5 + 0.5;
+            this.alpha = Math.random();
+            this.blinkSpeed = Math.random() * 0.05 + 0.01;
+        }
+        public void updateAndDraw(GraphicsContext gc) {
+            alpha += blinkSpeed;
+            if (alpha >= 1.0 || alpha <= 0.0) blinkSpeed = -blinkSpeed;
+            gc.setFill(Color.color(1, 1, 1, Math.max(0, Math.min(1, alpha))));
+            gc.fillOval(x - radius, y - radius, radius * 2, radius * 2);
+        }
+    }
+
+    private static final class Shockwave {
+        double x, y, radius, maxRadius, lineWidth, alpha;
+        Color color;
+        Shockwave(double x, double y, Color color) {
+            this.x = x; this.y = y; this.color = color;
+            this.radius = 10; this.maxRadius = 55; this.lineWidth = 5; this.alpha = 1.0;
+        }
+    }
+
+    private static final class MagneticArc {
+        ChainBall b1, b2;
+        Color color;
+        MagneticArc(ChainBall b1, ChainBall b2, Color color) {
+            this.b1 = b1; this.b2 = b2; this.color = color;
+        }
+    }
+
+    // --- Image Assets ---
+    private javafx.scene.image.Image bgImage;
+    private javafx.scene.image.Image turretImage;
+    private javafx.scene.image.Image[] ballImages;
+    private boolean assetsLoaded = false;
+
+    private void loadAssets() {
+        try {
+            bgImage = new javafx.scene.image.Image("file:///C:/Users/Justin/Desktop/实训项目素材/background.png", 0, 0, false, true);
+            turretImage = new javafx.scene.image.Image("file:///C:/Users/Justin/Desktop/实训项目素材/炮台.png", 0, 0, false, true);
+            
+            ballImages = new javafx.scene.image.Image[6];
+            ballImages[0] = new javafx.scene.image.Image("file:///C:/Users/Justin/Desktop/实训项目素材/红球.png", 0, 0, false, true); // Red
+            ballImages[1] = new javafx.scene.image.Image("file:///C:/Users/Justin/Desktop/实训项目素材/黄球.png", 0, 0, false, true); // Yellow
+            ballImages[2] = new javafx.scene.image.Image("file:///C:/Users/Justin/Desktop/实训项目素材/绿球.png", 0, 0, false, true); // Green
+            ballImages[3] = new javafx.scene.image.Image("file:///C:/Users/Justin/Desktop/实训项目素材/蓝球.png", 0, 0, false, true); // Blue
+            // Reuse for other indices or leave null to use fallback rendering
+            ballImages[4] = null; 
+            ballImages[5] = null;
+            
+            assetsLoaded = true;
+        } catch (Exception e) {
+            System.err.println("Failed to load Zuma assets: " + e.getMessage());
+        }
+    }
+    // --------------------
+
+    private static final class ChargeParticle {
+        double angle, dist, speed, size;
+        Color color;
+        ChargeParticle(Color color) {
+            this.angle = Math.random() * Math.PI * 2;
+            this.dist = 40 + Math.random() * 20;
+            this.speed = 2 + Math.random() * 3;
+            this.size = 2 + Math.random() * 3;
+            this.color = color;
+        }
+        boolean update() {
+            dist -= speed;
+            angle += 0.1;
+            return dist > 0;
+        }
+    }
+
+    private static final class LightningArc {
+        double x, y, angle, length, life;
+        Color color;
+        LightningArc(double x, double y, Color color) {
+            this.x = x; this.y = y; this.color = color;
+            this.angle = Math.random() * Math.PI * 2;
+            this.length = 30 + Math.random() * 30;
+            this.life = 1.0;
+        }
+    }
+
     private final Random random = new Random();
     private final List<PathPoint> path = new ArrayList<>(PATH_SAMPLES);
     private final List<ChainBall> chain = new ArrayList<>();
     private final List<BurstParticle> particles = new ArrayList<>();
+    private final List<TrailParticle> trailParticles = new ArrayList<>();
+    private final List<Star> stars = new ArrayList<>();
+    private final List<Shockwave> shockwaves = new ArrayList<>();
+    private final List<MagneticArc> magneticArcs = new ArrayList<>();
+    private final List<ChargeParticle> chargeParticles = new ArrayList<>();
+    private final List<LightningArc> lightnings = new ArrayList<>();
 
     private int width;
     private int height;
@@ -91,6 +188,9 @@ public final class ZumaGame implements GameInterface {
 
     @Override
     public void init(int width, int height) {
+        if (!assetsLoaded) {
+            loadAssets();
+        }
         this.width = Math.max(1, width);
         this.height = Math.max(1, height);
         frogX = this.width * 0.5;
@@ -112,6 +212,9 @@ public final class ZumaGame implements GameInterface {
         inputGuardFrames = INPUT_GUARD_FRAMES;
         chain.clear();
         particles.clear();
+        trailParticles.clear();
+        shockwaves.clear();
+        magneticArcs.clear();
 
         applyDifficulty();
         createSpiralPath();
@@ -151,10 +254,10 @@ public final class ZumaGame implements GameInterface {
 
     private void createSpiralPath() {
         path.clear();
-        double centerX = width * 0.5;
-        double centerY = height * 0.5;
-        double outerRadiusX = width * 0.43;
-        double outerRadiusY = height * 0.37;
+        double centerX = width * 0.48; // Align with the background nebula core
+        double centerY = height * 0.45;
+        double outerRadiusX = width * 0.45;
+        double outerRadiusY = height * 0.40;
         double innerRadiusX = Math.max(112.0, width * 0.115);
         double innerRadiusY = Math.max(72.0, height * 0.105);
         double previousX = 0.0;
@@ -166,7 +269,10 @@ public final class ZumaGame implements GameInterface {
             double eased = t * t * (3.0 - 2.0 * t);
             double radiusX = outerRadiusX + (innerRadiusX - outerRadiusX) * eased;
             double radiusY = outerRadiusY + (innerRadiusY - outerRadiusY) * eased;
-            double angle = Math.PI + t * Math.PI * 3.72;
+            
+            // Adjust the angle to match the nebula swirl (Starts from top-right, spirals inwards to center)
+            double angle = -Math.PI / 4.0 + t * Math.PI * 3.72; 
+            
             double x = centerX + Math.cos(angle) * radiusX;
             double y = centerY + Math.sin(angle) * radiusY;
             if (index > 0) {
@@ -295,6 +401,9 @@ public final class ZumaGame implements GameInterface {
     private void advanceChain() {
         for (ChainBall ball : chain) {
             ball.distance += chainSpeed;
+            if (ball.visualOffset > 0) {
+                ball.visualOffset = Math.max(0, ball.visualOffset - 12.0); // Magnetic snap speed
+            }
         }
     }
 
@@ -326,6 +435,18 @@ public final class ZumaGame implements GameInterface {
         }
         projectile.x += projectile.vx;
         projectile.y += projectile.vy;
+
+        // Generate neon trail particles
+        for (int i = 0; i < 3; i++) {
+            trailParticles.add(new TrailParticle(
+                projectile.x + (random.nextDouble() - 0.5) * 4,
+                projectile.y + (random.nextDouble() - 0.5) * 4,
+                -projectile.vx * 0.15 + (random.nextDouble() - 0.5) * 2,
+                -projectile.vy * 0.15 + (random.nextDouble() - 0.5) * 2,
+                random.nextDouble() * 6 + 4,
+                PALETTE[Math.floorMod(projectile.color, PALETTE.length)]
+            ));
+        }
 
         int hitIndex = -1;
         double hitDistance = Double.MAX_VALUE;
@@ -407,12 +528,18 @@ public final class ZumaGame implements GameInterface {
 
             for (int index = left; index <= right; index++) {
                 ChainBall ball = chain.get(index);
-                PathPoint point = pointAtDistance(ball.distance);
+                PathPoint point = pointAtDistance(ball.distance + ball.visualOffset);
                 createBurst(point.x, point.y, ball.color);
+                shockwaves.add(new Shockwave(point.x, point.y, PALETTE[Math.floorMod(ball.color, PALETTE.length)]));
             }
             chain.subList(left, right + 1).clear();
             for (int index = left; index < chain.size(); index++) {
                 chain.get(index).distance -= removed * BALL_SPACING;
+                chain.get(index).visualOffset += removed * BALL_SPACING;
+            }
+
+            if (left > 0 && left < chain.size()) {
+                magneticArcs.add(new MagneticArc(chain.get(left - 1), chain.get(left), PALETTE[Math.floorMod(color, PALETTE.length)]));
             }
 
             score += removed * 10 * chainCombo;
@@ -429,31 +556,84 @@ public final class ZumaGame implements GameInterface {
     }
 
     private void createBurst(double x, double y, int colorIndex) {
-        Color color = PALETTE[colorIndex];
-        for (int index = 0; index < 9; index++) {
+        Color color = PALETTE[Math.floorMod(colorIndex, PALETTE.length)];
+        int type = Math.floorMod(colorIndex, PALETTE.length);
+        
+        int numParticles = 15;
+        if (type == 0) numParticles = 20;
+        else if (type == 1) numParticles = 10;
+        
+        for (int index = 0; index < numParticles; index++) {
             double angle = random.nextDouble() * Math.PI * 2.0;
-            double speed = 1.8 + random.nextDouble() * 4.2;
+            double speed = 2.0 + random.nextDouble() * 5.0;
             particles.add(new BurstParticle(
                     x, y,
                     Math.cos(angle) * speed,
                     Math.sin(angle) * speed,
                     1.0,
-                    2.0 + random.nextDouble() * 3.5,
-                    color));
+                    2.0 + random.nextDouble() * 4.0,
+                    color, type));
         }
-        if (particles.size() > 180) {
-            particles.subList(0, particles.size() - 180).clear();
+        
+        if (type == 1) { // Yellow: Lightning arcs
+            for (int i = 0; i < 4; i++) {
+                lightnings.add(new LightningArc(x, y, color));
+            }
+        }
+        
+        if (particles.size() > 300) {
+            particles.subList(0, particles.size() - 300).clear();
         }
     }
 
     private void updateParticles() {
+        if (projectile == null && frame % 2 == 0) {
+            chargeParticles.add(new ChargeParticle(PALETTE[Math.floorMod(currentColor, PALETTE.length)]));
+        }
+        for (int i = chargeParticles.size() - 1; i >= 0; i--) {
+            if (!chargeParticles.get(i).update()) {
+                chargeParticles.remove(i);
+            }
+        }
+
+        for (int i = lightnings.size() - 1; i >= 0; i--) {
+            LightningArc arc = lightnings.get(i);
+            arc.life -= 0.05;
+            if (arc.life <= 0) {
+                lightnings.remove(i);
+            }
+        }
+
+        for (int index = shockwaves.size() - 1; index >= 0; index--) {
+            Shockwave sw = shockwaves.get(index);
+            sw.radius += 3.0;
+            sw.alpha -= 0.05;
+            sw.lineWidth = Math.max(0.5, sw.lineWidth - 0.15);
+            if (sw.alpha <= 0 || sw.radius >= sw.maxRadius) {
+                shockwaves.remove(index);
+            }
+        }
+
+        for (int index = trailParticles.size() - 1; index >= 0; index--) {
+            TrailParticle tp = trailParticles.get(index);
+            tp.x += tp.vx;
+            tp.y += tp.vy;
+            tp.life -= 0.08;
+            tp.radius *= 0.92;
+            if (tp.life <= 0) {
+                trailParticles.remove(index);
+            }
+        }
+
         for (int index = particles.size() - 1; index >= 0; index--) {
             BurstParticle particle = particles.get(index);
             particle.x += particle.vx;
             particle.y += particle.vy;
-            particle.vx *= 0.965;
-            particle.vy = particle.vy * 0.965 + 0.055;
-            particle.life -= 0.035;
+            particle.vx *= 0.94; // space drag
+            particle.vy *= 0.94;
+            particle.life -= 0.03;
+            particle.radius *= 0.95;
+            particle.angle += particle.angularVelocity;
             if (particle.life <= 0.0) {
                 particles.remove(index);
             }
@@ -492,6 +672,7 @@ public final class ZumaGame implements GameInterface {
         drawTrack(graphics);
         drawTempleMouth(graphics);
         drawChain(graphics);
+        drawMagneticArcs(graphics);
         drawParticles(graphics);
         drawAim(graphics);
         drawFrog(graphics);
@@ -500,34 +681,133 @@ public final class ZumaGame implements GameInterface {
     }
 
     private void drawBackground(GraphicsContext graphics) {
-        graphics.setGlobalAlpha(1.0);
-        graphics.setFill(new LinearGradient(0.0, 0.0, 0.0, 1.0, true,
-                CycleMethod.NO_CYCLE,
-                new Stop(0.0, Color.web("#071912")),
-                new Stop(0.55, Color.web("#10261b")),
-                new Stop(1.0, Color.web("#06100c"))));
-        graphics.fillRect(0.0, 0.0, width, height);
+        if (assetsLoaded && bgImage != null) {
+            graphics.clearRect(0, 0, width, height);
+            graphics.drawImage(bgImage, 0, 0, width, height);
 
-        graphics.setStroke(Color.color(0.55, 0.76, 0.39, 0.075));
-        graphics.setLineWidth(1.0);
-        double tile = Math.max(48.0, Math.min(width, height) / 12.0);
-        for (double x = -height; x < width + height; x += tile) {
-            graphics.strokeLine(x, 0.0, x - height, height);
-            graphics.strokeLine(x, 0.0, x + height, height);
+            // Core Energy Pulse (Nebula core breathing)
+            double coreX = width * 0.48;
+            double coreY = height * 0.45;
+            double alpha = 0.1 + Math.sin(frame * 0.05) * 0.05;
+            
+            graphics.setGlobalBlendMode(BlendMode.ADD);
+            RadialGradient coreGrad = new RadialGradient(0, 0, coreX, coreY, 120, false, CycleMethod.NO_CYCLE,
+                    new Stop(0, Color.color(0.9, 0.39, 0.86, Math.min(1.0, alpha * 1.5))),
+                    new Stop(0.5, Color.color(0.51, 0.15, 0.7, alpha)),
+                    new Stop(1, Color.TRANSPARENT));
+            graphics.setFill(coreGrad);
+            graphics.fillOval(coreX - 120, coreY - 120, 240, 240);
+            graphics.setGlobalBlendMode(BlendMode.SRC_OVER);
+
+            // Floating Space Dust
+            if (stars.isEmpty()) {
+                for (int i = 0; i < 40; i++) {
+                    stars.add(new Star(random.nextDouble() * width, random.nextDouble() * height));
+                }
+            }
+            for (Star star : stars) {
+                star.updateAndDraw(graphics);
+            }
+            return;
         }
 
-        graphics.setFill(Color.color(0.02, 0.05, 0.03, 0.38));
-        graphics.fillOval(frogX - width * 0.24, frogY - height * 0.30,
-                width * 0.48, height * 0.60);
+        if (stars.isEmpty()) {
+            for (int i = 0; i < 100; i++) {
+                stars.add(new Star(random.nextDouble() * width, random.nextDouble() * height));
+            }
+        }
+        graphics.setGlobalAlpha(1.0);
+        RadialGradient bgGrad = new RadialGradient(0, 0, width / 2.0, height / 2.0, Math.max(width, height), false,
+                CycleMethod.NO_CYCLE,
+                new Stop(0, Color.web("#0d1127")),
+                new Stop(0.6, Color.web("#050714")),
+                new Stop(1, Color.web("#020208")));
+        graphics.setFill(bgGrad);
+        graphics.fillRect(0.0, 0.0, width, height);
+
+        for (Star star : stars) {
+            star.updateAndDraw(graphics);
+        }
     }
 
+    private void drawMagneticArcs(GraphicsContext graphics) {
+        graphics.setGlobalBlendMode(BlendMode.ADD);
+        for (int i = magneticArcs.size() - 1; i >= 0; i--) {
+            MagneticArc arc = magneticArcs.get(i);
+            if (arc.b2.visualOffset <= 0 || !chain.contains(arc.b1) || !chain.contains(arc.b2)) {
+                magneticArcs.remove(i);
+                continue;
+            }
+            PathPoint p1 = pointAtDistance(arc.b1.distance + arc.b1.visualOffset);
+            PathPoint p2 = pointAtDistance(arc.b2.distance + arc.b2.visualOffset);
+            
+            graphics.save();
+            graphics.setStroke(arc.color);
+            graphics.setLineWidth(3.0);
+            graphics.setEffect(new DropShadow(15, arc.color));
+            graphics.beginPath();
+            graphics.moveTo(p1.x, p1.y);
+            double midX = (p1.x + p2.x) / 2.0 + (random.nextDouble() - 0.5) * 20.0;
+            double midY = (p1.y + p2.y) / 2.0 + (random.nextDouble() - 0.5) * 20.0;
+            graphics.lineTo(midX, midY);
+            graphics.lineTo(p2.x, p2.y);
+            graphics.stroke();
+            graphics.restore();
+        }
+        graphics.setGlobalBlendMode(BlendMode.SRC_OVER);
+    }
     private void drawTrack(GraphicsContext graphics) {
-        strokePath(graphics, 48.0, Color.color(0.0, 0.0, 0.0, 0.58));
-        strokePath(graphics, 40.0, Color.web("#75633c"));
-        strokePath(graphics, 34.0, Color.web("#2f3929"));
-        strokePath(graphics, 27.0, Color.web("#131c16"));
-        graphics.setLineDashes(7.0, 13.0);
-        strokePath(graphics, 1.4, Color.color(0.83, 0.75, 0.40, 0.28));
+        if (assetsLoaded && bgImage != null) {
+            // Layer 1: 3D Groove Groove
+            strokePath(graphics, 22.0, Color.color(0.04, 0.05, 0.09, 0.4));
+            
+            // Layer 2: Glowing Fiber Edge
+            graphics.setEffect(new DropShadow(8, Color.color(0.84, 0.55, 1.0, 0.6))); // Pink/Purple glow
+            graphics.setLineDashes();
+            
+            // Offset the stroke by drawing two thin paths
+            // Note: A true offset path is complex in basic GraphicsContext, so we draw a single slightly wider track 
+            // and hollow it out to create the "two edge lines" look.
+            strokePath(graphics, 18.0, Color.color(0.84, 0.55, 1.0, 0.35));
+            graphics.setEffect(null);
+            
+            // To hollow it out, we'll draw over it using SRC_OUT or just redraw the background in that area if possible.
+            // Since JavaFX doesn't have BlendMode.CLEAR, and SRC_OUT requires a specific group structure,
+            // we will simply draw the hollow part with a dark semi-transparent color to simulate the hollow center.
+            strokePath(graphics, 16.0, Color.color(0.04, 0.05, 0.09, 0.8));
+            
+            // Re-fill the groove
+            strokePath(graphics, 16.0, Color.color(0.04, 0.05, 0.09, 0.4));
+            
+            // Layer 3: Particle Flow (Gravity energy dots)
+            graphics.setGlobalBlendMode(BlendMode.ADD);
+            graphics.setFill(Color.color(1.0, 0.8, 0.9, 0.8));
+            double flowSpeed = frame * 2.0;
+            for (int i = 0; i < 18; i++) {
+                double d = (flowSpeed + i * (pathLength / 18.0)) % pathLength;
+                PathPoint p = pointAtDistance(d);
+                graphics.fillOval(p.x - 2, p.y - 2, 4, 4);
+            }
+            graphics.setGlobalBlendMode(BlendMode.SRC_OVER);
+            return;
+        }
+
+        // Outer glowing edge (20px width to create 2px border around 16px inner)
+        graphics.setEffect(new DropShadow(12, Color.web("#8a2be2")));
+        graphics.setLineDashes();
+        strokePath(graphics, 20.0, Color.web("#00e5ff"));
+
+        graphics.setEffect(null);
+
+        // Hollow out the center using background color
+        strokePath(graphics, 16.0, Color.web("#080c1e")); 
+
+        // Semi-transparent blue fill for the glass pipe
+        strokePath(graphics, 16.0, Color.color(0.0, 0.706, 1.0, 0.25));
+
+        // Center dashed energy flow
+        graphics.setLineDashes(4.0, 8.0);
+        strokePath(graphics, 2.0, Color.color(1.0, 1.0, 1.0, 0.6));
         graphics.setLineDashes();
     }
 
@@ -551,27 +831,37 @@ public final class ZumaGame implements GameInterface {
 
     private void drawTempleMouth(GraphicsContext graphics) {
         PathPoint end = path.get(path.size() - 1);
-        graphics.setFill(Color.color(0.0, 0.0, 0.0, 0.55));
-        graphics.fillOval(end.x - 37.0, end.y - 32.0, 74.0, 64.0);
-        graphics.setFill(Color.web("#8b7a48"));
-        graphics.fillOval(end.x - 30.0, end.y - 27.0, 60.0, 54.0);
-        graphics.setFill(Color.web("#1a2118"));
-        graphics.fillOval(end.x - 22.0, end.y - 18.0, 44.0, 38.0);
-        graphics.setFill(Color.web("#d8c46b"));
-        graphics.fillOval(end.x - 16.0, end.y - 10.0, 10.0, 9.0);
-        graphics.fillOval(end.x + 6.0, end.y - 10.0, 10.0, 9.0);
-        graphics.setStroke(Color.web("#d8c46b"));
-        graphics.setLineWidth(3.0);
-        graphics.strokeArc(end.x - 13.0, end.y + 2.0, 26.0, 16.0,
-                200.0, 140.0, javafx.scene.shape.ArcType.OPEN);
+        
+        // Pulsating event horizon rings
+        double pulse1 = (Math.sin(frame * 0.05) + 1.0) / 2.0;
+        double pulse2 = (Math.cos(frame * 0.04) + 1.0) / 2.0;
+
+        graphics.setStroke(Color.color(0.8, 0.0, 0.8, 0.3 + 0.3 * pulse1));
+        graphics.setLineWidth(2.0 + 2.0 * pulse1);
+        graphics.strokeOval(end.x - 45.0 - 10.0 * pulse1, end.y - 45.0 - 10.0 * pulse1, 90.0 + 20.0 * pulse1, 90.0 + 20.0 * pulse1);
+
+        graphics.setStroke(Color.color(1.0, 0.0, 0.5, 0.2 + 0.2 * pulse2));
+        graphics.setLineWidth(1.0 + 3.0 * pulse2);
+        graphics.strokeOval(end.x - 55.0 - 15.0 * pulse2, end.y - 55.0 - 15.0 * pulse2, 110.0 + 30.0 * pulse2, 110.0 + 30.0 * pulse2);
+
+        graphics.setEffect(new DropShadow(25, Color.web("#ff00ff")));
+        graphics.setFill(Color.BLACK);
+        graphics.fillOval(end.x - 40.0, end.y - 40.0, 80.0, 80.0);
+
+        RadialGradient holeGrad = new RadialGradient(0, 0, end.x, end.y, 40, false, CycleMethod.NO_CYCLE,
+                new Stop(0, Color.BLACK), new Stop(0.8, Color.web("#4b0082")), new Stop(1, Color.TRANSPARENT));
+        graphics.setFill(holeGrad);
+        graphics.fillOval(end.x - 55.0, end.y - 55.0, 110.0, 110.0);
+        graphics.setEffect(null);
     }
 
     private void drawChain(GraphicsContext graphics) {
         for (ChainBall ball : chain) {
-            if (ball.distance < -BALL_RADIUS * 2.0 || ball.distance > pathLength) {
+            double renderDistance = ball.distance + ball.visualOffset;
+            if (renderDistance < -BALL_RADIUS * 2.0 || renderDistance > pathLength) {
                 continue;
             }
-            PathPoint point = pointAtDistance(ball.distance);
+            PathPoint point = pointAtDistance(renderDistance);
             drawBall(graphics, point.x, point.y, BALL_RADIUS, ball.color, 1.0);
         }
     }
@@ -580,17 +870,64 @@ public final class ZumaGame implements GameInterface {
                           double radius, int colorIndex, double alpha) {
         Color color = PALETTE[Math.floorMod(colorIndex, PALETTE.length)];
         graphics.setGlobalAlpha(alpha);
-        graphics.setFill(Color.color(0.0, 0.0, 0.0, 0.42));
-        graphics.fillOval(x - radius + 3.0, y - radius + 5.0,
-                radius * 2.0, radius * 2.0);
-        graphics.setFill(color.deriveColor(0.0, 0.90, 0.84, 1.0));
-        graphics.fillOval(x - radius, y - radius, radius * 2.0, radius * 2.0);
-        graphics.setStroke(color.deriveColor(0.0, 1.0, 0.48, 1.0));
-        graphics.setLineWidth(2.0);
-        graphics.strokeOval(x - radius, y - radius, radius * 2.0, radius * 2.0);
-        graphics.setFill(Color.color(1.0, 1.0, 1.0, 0.58));
-        graphics.fillOval(x - radius * 0.48, y - radius * 0.50,
-                radius * 0.55, radius * 0.42);
+        
+        double auraBlur = 12 + Math.sin(frame * 0.05) * 6;
+        graphics.setEffect(new DropShadow(auraBlur, color));
+        
+        int type = Math.floorMod(colorIndex, PALETTE.length);
+        if (assetsLoaded && ballImages != null && type < ballImages.length && ballImages[type] != null) {
+            graphics.drawImage(ballImages[type], x - radius, y - radius, radius * 2.0, radius * 2.0);
+        } else {
+            RadialGradient ballGrad = new RadialGradient(0, 0, x - radius * 0.3, y - radius * 0.3, radius * 1.5, false, CycleMethod.NO_CYCLE,
+                    new Stop(0, Color.WHITE), new Stop(0.3, color), new Stop(1, color.darker().darker()));
+            
+            graphics.setFill(ballGrad);
+            graphics.fillOval(x - radius, y - radius, radius * 2.0, radius * 2.0);
+            
+            graphics.setStroke(color.brighter());
+            graphics.setLineWidth(1.5);
+            graphics.strokeOval(x - radius, y - radius, radius * 2.0, radius * 2.0);
+            
+            // Draw patterns
+            graphics.setEffect(null);
+            graphics.setGlobalAlpha(alpha * 0.7);
+            graphics.setStroke(Color.color(1.0, 1.0, 1.0, 0.8));
+            graphics.setFill(Color.color(1.0, 1.0, 1.0, 0.4));
+            graphics.setLineWidth(2.0);
+
+            double pr = radius * 0.45;
+
+            switch (type) {
+                case 0: // Red -> 4-point star / cross
+                    graphics.strokeLine(x - pr, y, x + pr, y);
+                    graphics.strokeLine(x, y - pr, x, y + pr);
+                    break;
+                case 1: // Yellow -> Triangle
+                    graphics.fillPolygon(new double[]{x, x - pr, x + pr}, new double[]{y - pr, y + pr*0.8, y + pr*0.8}, 3);
+                    break;
+                case 2: // Green -> Diamond
+                    graphics.strokePolygon(new double[]{x, x + pr, x, x - pr}, new double[]{y - pr, y, y + pr, y}, 4);
+                    break;
+                case 3: // Blue -> Concentric circles
+                    graphics.strokeOval(x - pr, y - pr, pr * 2, pr * 2);
+                    graphics.strokeOval(x - pr * 0.4, y - pr * 0.4, pr * 0.8, pr * 0.8);
+                    break;
+                case 4: // Purple -> Atom / 3-leaf swirl
+                    graphics.strokeOval(x - pr, y - pr*0.4, pr*2, pr*0.8);
+                    graphics.save();
+                    graphics.translate(x, y);
+                    graphics.rotate(60);
+                    graphics.strokeOval(-pr, -pr*0.4, pr*2, pr*0.8);
+                    graphics.rotate(60);
+                    graphics.strokeOval(-pr, -pr*0.4, pr*2, pr*0.8);
+                    graphics.restore();
+                    break;
+                case 5: // Orange -> Square
+                    graphics.strokeRect(x - pr*0.7, y - pr*0.7, pr*1.4, pr*1.4);
+                    break;
+            }
+        }
+        graphics.setEffect(null);
         graphics.setGlobalAlpha(1.0);
     }
 
@@ -600,19 +937,24 @@ public final class ZumaGame implements GameInterface {
         }
         double cos = Math.cos(aimAngle);
         double sin = Math.sin(aimAngle);
-        graphics.setStroke(Color.color(0.78, 1.0, 0.50, 0.42));
-        graphics.setLineWidth(1.5);
-        graphics.setLineDashes(7.0, 8.0);
-        graphics.strokeLine(frogX + cos * 42.0, frogY + sin * 42.0,
-                aimX, aimY);
+        
+        // Thin red laser aiming line
+        graphics.setStroke(Color.color(1.0, 0.2, 0.4, 0.4)); // rgba(255, 51, 102, 0.4)
+        graphics.setLineWidth(1.0);
         graphics.setLineDashes();
-        graphics.setStroke(Color.web("#d9ff88"));
+        graphics.strokeLine(frogX + cos * 42.0, frogY + sin * 42.0,
+                frogX + cos * Math.max(width, height), frogY + sin * Math.max(width, height));
+        
+        // Cyan crosshair at cursor position
+        graphics.setEffect(new DropShadow(10, Color.web("#00e5ff")));
+        graphics.setStroke(Color.web("#00e5ff"));
         graphics.setLineWidth(2.0);
         graphics.strokeOval(aimX - 13.0, aimY - 13.0, 26.0, 26.0);
         graphics.strokeLine(aimX - 18.0, aimY, aimX - 6.0, aimY);
         graphics.strokeLine(aimX + 6.0, aimY, aimX + 18.0, aimY);
         graphics.strokeLine(aimX, aimY - 18.0, aimX, aimY - 6.0);
         graphics.strokeLine(aimX, aimY + 6.0, aimX, aimY + 18.0);
+        graphics.setEffect(null);
     }
 
     private void drawFrog(GraphicsContext graphics) {
@@ -620,25 +962,52 @@ public final class ZumaGame implements GameInterface {
         graphics.translate(frogX, frogY);
         graphics.rotate(Math.toDegrees(aimAngle) + 90.0);
 
-        graphics.setFill(Color.color(0.0, 0.0, 0.0, 0.50));
-        graphics.fillOval(-39.0, -34.0, 78.0, 82.0);
-        graphics.setFill(Color.web("#3f7f46"));
-        graphics.fillOval(-34.0, -40.0, 68.0, 78.0);
-        graphics.setStroke(Color.web("#b7d66d"));
-        graphics.setLineWidth(3.0);
-        graphics.strokeOval(-34.0, -40.0, 68.0, 78.0);
+        if (assetsLoaded && turretImage != null) {
+            graphics.drawImage(turretImage, -70, -70, 140, 140);
+            
+            Color cColor = PALETTE[Math.floorMod(currentColor, PALETTE.length)];
+            graphics.setGlobalBlendMode(BlendMode.ADD);
+            
+            // Energy core / slot glow
+            double corePulse = 15 + Math.sin(frame * 0.1) * 5;
+            graphics.setEffect(new DropShadow(corePulse, cColor));
+            graphics.setFill(Color.color(cColor.getRed(), cColor.getGreen(), cColor.getBlue(), 0.6));
+            graphics.fillOval(-15, -15, 30, 30);
+            
+            // Inward vortex
+            for (ChargeParticle cp : chargeParticles) {
+                double px = Math.cos(cp.angle) * cp.dist;
+                double py = Math.sin(cp.angle) * cp.dist - 35; // move center to cannon mouth
+                graphics.setFill(cp.color);
+                graphics.fillOval(px - cp.size, py - cp.size, cp.size * 2, cp.size * 2);
+            }
+            
+            graphics.setGlobalBlendMode(BlendMode.SRC_OVER);
+            graphics.setEffect(null);
+            drawBall(graphics, 0.0, -29.0, 12.5, currentColor, 1.0);
+        } else {
+            graphics.setEffect(new DropShadow(10, Color.web("#00e5ff")));
+            graphics.setFill(Color.web("#0d1b2a"));
+            graphics.fillOval(-39.0, -34.0, 78.0, 82.0);
+            graphics.setFill(Color.web("#1b263b"));
+            graphics.fillOval(-34.0, -40.0, 68.0, 78.0);
+            graphics.setStroke(Color.web("#00e5ff"));
+            graphics.setLineWidth(2.0);
+            graphics.strokeOval(-34.0, -40.0, 68.0, 78.0);
 
-        graphics.setFill(Color.web("#7faf57"));
-        graphics.fillOval(-31.0, -48.0, 24.0, 27.0);
-        graphics.fillOval(7.0, -48.0, 24.0, 27.0);
-        graphics.setFill(Color.web("#f5f5d7"));
-        graphics.fillOval(-26.0, -43.0, 14.0, 16.0);
-        graphics.fillOval(12.0, -43.0, 14.0, 16.0);
-        graphics.setFill(Color.web("#172217"));
-        graphics.fillOval(-21.5, -38.5, 6.0, 8.0);
-        graphics.fillOval(15.5, -38.5, 6.0, 8.0);
-
-        drawBall(graphics, 0.0, -29.0, 12.5, currentColor, 1.0);
+            graphics.setFill(Color.web("#415a77"));
+            graphics.fillOval(-31.0, -48.0, 24.0, 27.0);
+            graphics.fillOval(7.0, -48.0, 24.0, 27.0);
+            graphics.setFill(Color.web("#00e5ff"));
+            graphics.fillOval(-26.0, -43.0, 14.0, 16.0);
+            graphics.fillOval(12.0, -43.0, 14.0, 16.0);
+            graphics.setFill(Color.web("#172217"));
+            graphics.fillOval(-21.5, -38.5, 6.0, 8.0);
+            graphics.fillOval(15.5, -38.5, 6.0, 8.0);
+            
+            graphics.setEffect(null);
+            drawBall(graphics, 0.0, -29.0, 12.5, currentColor, 1.0);
+        }
         graphics.restore();
     }
 
@@ -650,51 +1019,124 @@ public final class ZumaGame implements GameInterface {
     }
 
     private void drawParticles(GraphicsContext graphics) {
+        graphics.setGlobalBlendMode(BlendMode.ADD);
+        
+        for (LightningArc arc : lightnings) {
+            graphics.setGlobalAlpha(Math.max(0.0, arc.life));
+            graphics.setStroke(arc.color);
+            graphics.setLineWidth(2.0);
+            graphics.setEffect(new DropShadow(10, arc.color));
+            graphics.beginPath();
+            graphics.moveTo(arc.x, arc.y);
+            double lx = arc.x;
+            double ly = arc.y;
+            double segLen = arc.length / 4.0;
+            for (int j = 1; j <= 4; j++) {
+                lx += Math.cos(arc.angle) * segLen + (random.nextDouble() - 0.5) * 15;
+                ly += Math.sin(arc.angle) * segLen + (random.nextDouble() - 0.5) * 15;
+                graphics.lineTo(lx, ly);
+            }
+            graphics.stroke();
+        }
+
+        for (Shockwave sw : shockwaves) {
+            graphics.setGlobalAlpha(Math.max(0.0, sw.alpha));
+            graphics.setStroke(sw.color);
+            graphics.setLineWidth(sw.lineWidth);
+            graphics.setEffect(new DropShadow(15, sw.color));
+            graphics.strokeOval(sw.x - sw.radius, sw.y - sw.radius, sw.radius * 2, sw.radius * 2);
+        }
+
+        for (TrailParticle tp : trailParticles) {
+            graphics.setGlobalAlpha(Math.max(0.0, tp.life));
+            graphics.setEffect(new DropShadow(10, tp.color));
+            graphics.setFill(tp.color);
+            graphics.fillOval(tp.x - tp.radius, tp.y - tp.radius, tp.radius * 2, tp.radius * 2);
+        }
+        graphics.setEffect(null);
+
         for (BurstParticle particle : particles) {
             graphics.setGlobalAlpha(Math.max(0.0, particle.life));
             graphics.setFill(particle.color);
-            graphics.fillOval(particle.x - particle.radius,
-                    particle.y - particle.radius,
-                    particle.radius * 2.0, particle.radius * 2.0);
+            if (particle.type == 0) { // Red Sparks
+                graphics.fillOval(particle.x - particle.radius, particle.y - particle.radius, particle.radius * 2.0, particle.radius * 2.0);
+            } else if (particle.type == 1) { // Yellow Triangle fragments
+                graphics.save();
+                graphics.translate(particle.x, particle.y);
+                graphics.rotate(particle.angle);
+                double r = particle.radius * 1.5;
+                graphics.fillPolygon(new double[]{0, -r, r}, new double[]{-r, r, r}, 3);
+                graphics.restore();
+            } else if (particle.type == 2) { // Green Diamond
+                graphics.save();
+                graphics.translate(particle.x, particle.y);
+                graphics.rotate(particle.angle);
+                double r = particle.radius * 1.5;
+                graphics.fillPolygon(new double[]{0, r, 0, -r}, new double[]{-r, 0, r, 0}, 4);
+                graphics.restore();
+            } else if (particle.type == 3) { // Blue Ice crystals
+                graphics.save();
+                graphics.translate(particle.x, particle.y);
+                graphics.rotate(particle.angle);
+                double r = particle.radius * 1.2;
+                graphics.fillRect(-r/2, -r, r, r*2);
+                graphics.fillRect(-r, -r/2, r*2, r);
+                graphics.restore();
+            } else {
+                graphics.fillOval(particle.x - particle.radius, particle.y - particle.radius, particle.radius * 2.0, particle.radius * 2.0);
+            }
         }
+        
+        graphics.setGlobalBlendMode(BlendMode.SRC_OVER);
         graphics.setGlobalAlpha(1.0);
     }
 
     private void drawHud(GraphicsContext graphics) {
         graphics.setTextAlign(TextAlignment.LEFT);
-        graphics.setFill(Color.color(0.015, 0.055, 0.035, 0.88));
+        // Glassmorphism background for left panel
+        graphics.setFill(Color.color(0.05, 0.06, 0.15, 0.65));
         graphics.fillRoundRect(22.0, 18.0, 245.0, 78.0, 20.0, 20.0);
-        graphics.setStroke(Color.color(0.74, 0.90, 0.37, 0.48));
+        graphics.setStroke(Color.color(0.0, 0.9, 1.0, 0.3));
         graphics.setLineWidth(1.2);
         graphics.strokeRoundRect(22.0, 18.0, 245.0, 78.0, 20.0, 20.0);
-        graphics.setFill(Color.web("#e9ffc0"));
+        
+        graphics.setFill(Color.web("#00e5ff"));
         graphics.setFont(Font.font("Microsoft YaHei UI", FontWeight.BOLD, 22.0));
-        graphics.fillText("🐸  祖玛", 41.0, 49.0);
-        graphics.setFill(Color.web("#9fb790"));
+        graphics.fillText("🌌  星际祖玛", 41.0, 49.0);
+        graphics.setFill(Color.LIGHTGRAY);
         graphics.setFont(Font.font("Microsoft YaHei UI", 13.0));
         graphics.fillText("握拳发射  ·  剪刀手换球", 41.0, 76.0);
 
         graphics.setTextAlign(TextAlignment.RIGHT);
-        graphics.setFill(Color.web("#f7ffe8"));
+        
+        // Background panel for Score (Right side)
+        graphics.setFill(Color.color(0.05, 0.06, 0.15, 0.65));
+        graphics.fillRoundRect(width - 200.0, 18.0, 180.0, 78.0, 20.0, 20.0);
+        graphics.setStroke(Color.color(0.0, 0.9, 1.0, 0.3));
+        graphics.strokeRoundRect(width - 200.0, 18.0, 180.0, 78.0, 20.0, 20.0);
+
+        graphics.setFill(Color.web("#00e5ff"));
         graphics.setFont(Font.font("Microsoft YaHei UI", FontWeight.BOLD, 22.0));
-        graphics.fillText("得分  " + score, width - 28.0, 45.0);
-        graphics.setFill(Color.web("#a7bb9a"));
+        graphics.fillText("得分  " + score, width - 38.0, 49.0);
+        graphics.setFill(Color.LIGHTGRAY);
         graphics.setFont(Font.font("Microsoft YaHei UI", 13.0));
         graphics.fillText(targetScore > 0
-                ? "目标  " + targetScore : "无尽模式", width - 28.0, 70.0);
+                ? "目标  " + targetScore : "无尽模式", width - 38.0, 76.0);
 
         if (comboDisplayFrames > 0 && combo > 1) {
             double alpha = Math.min(1.0, comboDisplayFrames / 18.0);
             graphics.setGlobalAlpha(alpha);
             graphics.setTextAlign(TextAlignment.CENTER);
-            graphics.setFill(Color.web("#f5d547"));
+            graphics.setFill(Color.web("#00e5ff"));
             graphics.setFont(Font.font("Microsoft YaHei UI", FontWeight.BOLD, 25.0));
+            graphics.setEffect(new DropShadow(10, Color.web("#00e5ff")));
             graphics.fillText("连锁 × " + combo, width * 0.5, 62.0);
+            graphics.setEffect(null);
             graphics.setGlobalAlpha(1.0);
         }
 
         graphics.setTextAlign(TextAlignment.RIGHT);
-        graphics.setFill(Color.color(0.88, 1.0, 0.70, 0.72));
+        graphics.setFill(Color.web("#00e5ff"));
         graphics.setFont(Font.font("Microsoft YaHei UI", 13.0));
         graphics.fillText("移动手掌瞄准 · ✊ 发射 · ✌ 交换下一颗",
                 width - 28.0, height - 24.0);
@@ -785,10 +1227,12 @@ public final class ZumaGame implements GameInterface {
 
     private static final class ChainBall {
         private double distance;
+        private double visualOffset;
         private final int color;
 
         private ChainBall(double distance, int color) {
             this.distance = distance;
+            this.visualOffset = 0.0;
             this.color = color;
         }
     }
@@ -809,17 +1253,22 @@ public final class ZumaGame implements GameInterface {
         }
     }
 
+    private static final class TrailParticle {
+        double x, y, vx, vy, life, radius;
+        Color color;
+        TrailParticle(double x, double y, double vx, double vy, double radius, Color color) {
+            this.x = x; this.y = y; this.vx = vx; this.vy = vy; this.radius = radius; this.color = color;
+            this.life = 1.0;
+        }
+    }
+
     private static final class BurstParticle {
-        private double x;
-        private double y;
-        private double vx;
-        private double vy;
-        private double life;
-        private final double radius;
-        private final Color color;
+        double x, y, vx, vy, life, radius, angle, angularVelocity;
+        final Color color;
+        final int type;
 
         private BurstParticle(double x, double y, double vx, double vy,
-                              double life, double radius, Color color) {
+                              double life, double radius, Color color, int type) {
             this.x = x;
             this.y = y;
             this.vx = vx;
@@ -827,6 +1276,9 @@ public final class ZumaGame implements GameInterface {
             this.life = life;
             this.radius = radius;
             this.color = color;
+            this.type = type;
+            this.angle = Math.random() * 360.0;
+            this.angularVelocity = (Math.random() - 0.5) * 20.0;
         }
     }
 }
