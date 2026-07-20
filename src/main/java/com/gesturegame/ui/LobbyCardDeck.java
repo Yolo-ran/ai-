@@ -39,7 +39,7 @@ final class LobbyCardDeck {
     private static final List<CardData> CARDS = List.of(
             new CardData("暗星采矿", "Catch the rhythm of falling color", "01", "#06b6d4", "#0f766e", null),
             new CardData("矩阵博弈", "Read the moment. Make your move.", "02", "#f43f5e", "#7c3aed", null),
-            new CardData("星际祖玛", "Match the orbit. Break the chain.", "03", "#84cc16", "#ca8a04", "file:///C:/Users/Justin/Desktop/实训项目素材/封面.jpg"),
+            new CardData("星际祖玛", "Match the orbit. Break the chain.", "03", "#84cc16", "#ca8a04", "/assets/cards/cosmic-zuma-card.png"),
             new CardData("命运演算", "Three cards reveal one direction", "04", "#d8b4fe", "#4338ca", null),
             new CardData("水果忍者", "Draw the blade through color", "05", "#f97316", "#e11d48", null),
             new CardData("节奏大师", "Move precisely inside the beat", "06", "#a78bfa", "#0ea5e9", null),
@@ -356,7 +356,9 @@ final class LobbyCardDeck {
             boolean imageLoaded = false;
             if (card.imagePath != null) {
                 try {
-                    java.net.URL url = new java.net.URL(card.imagePath);
+                    java.net.URL url = card.imagePath.startsWith("/")
+                            ? LobbyCardDeck.class.getResource(card.imagePath)
+                            : new java.net.URL(card.imagePath);
                     BufferedImage bgImage = javax.imageio.ImageIO.read(url);
                     if (bgImage != null) {
                         // 按比例缩放并居中裁剪 (cover)
