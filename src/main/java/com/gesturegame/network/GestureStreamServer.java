@@ -161,7 +161,7 @@ public class GestureStreamServer extends WebSocketServer {
     private GestureData buildGestureData(JSONObject json) {
         double handX = json.optDouble("handX", 0.0);
         double handY = json.optDouble("handY", 0.0);
-        return new GestureData(
+        GestureData data = new GestureData(
                 handX,
                 handY,
                 json.optDouble("prevHandX", handX),
@@ -171,6 +171,9 @@ public class GestureStreamServer extends WebSocketServer {
                 GestureType.fromString(json.optString("gesture", "none")),
                 json.optDouble("confidence", 0.0),
                 json.optBoolean("handDetected", false));
+        data.setIndexTipX(json.optDouble("indexTipX", handX));
+        data.setIndexTipY(json.optDouble("indexTipY", handY));
+        return data;
     }
 
     private void dispatchCameraFrame(String state, String base64Image) {

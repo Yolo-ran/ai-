@@ -236,7 +236,7 @@ public class RhythmMaster implements GameInterface {
         GestureType[] gestures = {GestureType.FIST, GestureType.OPEN, GestureType.PEACE};
 
         // 在节拍上生成音符，单手操作保证不重叠
-        double minGap = Math.max(0.45, beatInterval * 0.6); // 最小间隔0.45秒
+        double minGap = Math.max(0.6, beatInterval * 0.8); // 最小间隔0.45秒
         double t = beatInterval;
         while (t < duration - travelSeconds - 1) {
             int lane = RAND.nextInt(laneCount);
@@ -244,7 +244,7 @@ public class RhythmMaster implements GameInterface {
             // ~25%概率生成长条
             double hold = 0;
             if (RAND.nextDouble() < 0.25) {
-                hold = 0.5 + RAND.nextDouble() * 1.3; // 0.5~1.8秒长条
+                hold = 0.8 + RAND.nextDouble() * 1.2; // 0.8~2.0秒
             }
             beatmapNotes.add(new BeatmapNote(t, lane, gt, hold));
 
@@ -254,8 +254,8 @@ public class RhythmMaster implements GameInterface {
             else if (r < 0.7) gap = beatInterval * 1.5;
             else gap = beatInterval * 2.0;
             t += Math.max(minGap, gap);
-            // 长条额外占时间
-            t += hold * 0.5;
+            // 长条占满其时长的间隔，不会同时出现两条
+            t += hold;
         }
         System.out.println("[RhythmMaster] Generated " + beatmapNotes.size() + " notes for " + (int)duration + "s song");
 
@@ -341,9 +341,16 @@ public class RhythmMaster implements GameInterface {
         System.out.println("[RhythmMaster] Calibrated BPM: " + defaultBpm + " from " + tapTimes.size() + " taps");
 
         generateBeatmapFromSong();
+
+        // 跳过校准期间已过的音符，避免开始瞬间堆积多条
+        double now = mediaPlayer != null ? mediaPlayer.getCurrentTime().toSeconds() : 0;
+        while (nextBeatmapIdx < beatmapNotes.size()
+                && beatmapNotes.get(nextBeatmapIdx).time < now + travelSeconds) {
+            nextBeatmapIdx++;
+        }
+
         frameCount = 0;
         state = State.PLAYING;
-        // 音乐已经播了，直接接上
     }
 
     private void gameOver() {
@@ -437,16 +444,20 @@ public class RhythmMaster implements GameInterface {
         }
         cursorX += (laneX[activeLane] - cursorX) * 0.2;
 
-        // 谱面生成
+        // 谱面生成：同时只允许一个音符，等判定完再出下一个
         if (!noMusicFallback && beatmapNotes != null) {
-            while (nextBeatmapIdx < beatmapNotes.size()) {
-                BeatmapNote bn = beatmapNotes.get(nextBeatmapIdx);
-                if (musicTime >= bn.time - travelSeconds) {
-                    double holdPx = bn.holdDuration > 0 ? bn.holdDuration * noteSpeed : 0;
-                    double startY = holdPx > 0 ? -60 - holdPx : -60;
-                    notes.add(new Note(bn.gestureType, bn.lane, startY, holdPx));
-                    nextBeatmapIdx++;
-                } else break;
+            boolean hasActive = notes.stream().anyMatch(n -> !n.judged);
+            if (!hasActive) {
+                while (nextBeatmapIdx < beatmapNotes.size()) {
+                    BeatmapNote bn = beatmapNotes.get(nextBeatmapIdx);
+                    if (musicTime >= bn.time - travelSeconds) {
+                        double holdPx = bn.holdDuration > 0 ? bn.holdDuration * noteSpeed * 60 : 0;
+                        double startY = holdPx > 0 ? -60 - holdPx : -60;
+                        notes.add(new Note(bn.gestureType, bn.lane, startY, holdPx));
+                        nextBeatmapIdx++;
+                        break;
+                    } else break;
+                }
             }
             if (nextBeatmapIdx >= beatmapNotes.size() && notes.isEmpty()) { gameOver(); return; }
         } else {
@@ -469,17 +480,30 @@ public class RhythmMaster implements GameInterface {
             boolean match = gesture.getGesture() == note.gestureType && gesture.getGesture() != GestureType.NONE;
 
             if (note.holdLength > 0) {
-                // 长条：头部到判定线开始追踪，尾部过线完成
+                // 长条：头部到判定线时开始，必须持续保持手势直到尾部过线
                 double tailDist = (note.y + note.holdLength) - judgeLineY;
                 double headDist = dist;
 
-                if (!note.holdStarted && Math.abs(headDist) <= perfectWindow && match) {
+                // 头部进判定区：开始追踪
+                if (!note.holdStarted && Math.abs(headDist) <= greatWindow && match) {
                     note.holdStarted = true;
+                    note.holdBroken = false;
                 }
-                if (tailDist > greatWindow) {
+                // 头部错过
+                if (!note.holdStarted && headDist > greatWindow) {
+                    note.judged = true; combo = 0; missCount++;
+                    floatTexts.add(new FloatText("MISS", laneX[note.lane], judgeLineY - 30, 30, Color.RED));
+                    laneHits.add(new LaneHit(note.lane, Color.RED));
+                }
+                // 保持中但手势松开了
+                if (note.holdStarted && !note.judged && headDist > 0 && !match) {
+                    note.holdBroken = true;
+                }
+                // 尾部过线：判定结果
+                if (note.holdStarted && tailDist > greatWindow) {
                     note.judged = true;
-                    if (note.holdStarted) {
-                        score += (int)(150 * getComboMultiplier()); combo++; perfectCount++;
+                    if (!note.holdBroken) {
+                        score += (int)(200 * getComboMultiplier()); combo++; perfectCount++;
                         floatTexts.add(new FloatText("HOLD OK!", laneX[note.lane], judgeLineY - 50, 30, Color.GOLD));
                         laneHits.add(new LaneHit(note.lane, Color.GOLD));
                     } else {
@@ -487,11 +511,6 @@ public class RhythmMaster implements GameInterface {
                         floatTexts.add(new FloatText("MISS", laneX[note.lane], judgeLineY - 30, 30, Color.RED));
                         laneHits.add(new LaneHit(note.lane, Color.RED));
                     }
-                }
-                if (!note.holdStarted && headDist > greatWindow) {
-                    note.judged = true; combo = 0; missCount++;
-                    floatTexts.add(new FloatText("MISS", laneX[note.lane], judgeLineY - 30, 30, Color.RED));
-                    laneHits.add(new LaneHit(note.lane, Color.RED));
                 }
             } else {
                 if (dist > greatWindow) {
@@ -862,8 +881,25 @@ public class RhythmMaster implements GameInterface {
             if (note.holdLength > 0) {
                 // 长条：竖条，窄而长
                 double hl = note.holdLength;
-                double vw = r * 0.55; // 窄条宽度
-                // 发光
+                double vw = r * 0.55;
+
+                // 按住时：外发光脉冲 + 粒子飞散
+                if (note.holdStarted && !note.holdBroken) {
+                    double pulse = 1.0 + 0.15 * Math.sin(frameCount * 0.3);
+                    // 外层大光晕
+                    gc.setFill(nc.deriveColor(0, 1, 1, 0.12 * pulse));
+                    gc.fillRoundRect(x - vw - 16, y - 4, vw * 2 + 32, hl + 8, vw + 16, vw + 16);
+                    // 中层光晕
+                    gc.setFill(nc.deriveColor(0, 1, 1, 0.2 * pulse));
+                    gc.fillRoundRect(x - vw - 10, y - 2, vw * 2 + 20, hl + 4, vw + 10, vw + 10);
+                    // 粒子（每隔几帧在长条边缘生成）
+                    if (frameCount % 3 == 0) {
+                        floatTexts.add(new FloatText("✦", x + (RAND.nextDouble() - 0.5) * vw * 2,
+                                note.y + RAND.nextDouble() * hl, 15, nc.deriveColor(0, 1, 1, 0.7)));
+                    }
+                }
+
+                // 发光底
                 gc.setFill(nc.deriveColor(0, 1, 1, 0.15));
                 gc.fillRoundRect(x - vw - 6, y - 2, vw * 2 + 12, hl + 4, vw + 8, vw + 8);
                 // 主体
@@ -873,11 +909,11 @@ public class RhythmMaster implements GameInterface {
                 gc.setStroke(nc.deriveColor(0, 1, 1, note.holdStarted ? 0.9 : 0.5));
                 gc.setLineWidth(2.5);
                 gc.strokeRoundRect(x - vw, y, vw * 2, hl, vw, vw);
-                // 头部emoji
+                // 手势标识在长条底部
                 gc.setFill(Color.WHITE);
                 gc.setFont(Font.font(20));
                 gc.setTextAlign(TextAlignment.CENTER);
-                gc.fillText(gEmoji(note.gestureType), x, y + 14);
+                gc.fillText(gEmoji(note.gestureType), x, y + hl + 16);
                 gc.setTextAlign(TextAlignment.LEFT);
             } else {
                 // 普通圆形音符
@@ -1115,8 +1151,9 @@ public class RhythmMaster implements GameInterface {
 
     private static class Note {
         GestureType gestureType; int lane; double y; boolean judged;
-        double holdLength;  // 长条长度（像素），0=普通音符
-        boolean holdStarted; // 已开始按住
+        double holdLength;
+        boolean holdStarted;
+        boolean holdBroken;  // 中途松手
         Note(GestureType g, int l, double y) { this(g, l, y, 0); }
         Note(GestureType g, int l, double y, double hl) { gestureType = g; lane = l; this.y = y; holdLength = hl; }
     }
