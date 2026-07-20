@@ -69,7 +69,7 @@ gesture-game-hall/
 │   │
 │   ├── game/                        ← 【人B负责】6个游戏
 │   │   ├── CatchFruit.java          ← 🍎 接水果      ⭐
-│   │   ├── PopBubbles.java          ← 🫧 戳泡泡      ⭐
+│   │   ├── ZumaGame.java            ← 🐸 祖玛        ⭐⭐
 │   │   ├── RPSGame.java             ← ✂️ 猜拳        ⭐⭐
 │   │   ├── TarotGame.java           ← 🔮 塔罗牌      ⭐⭐
 │   │   ├── FruitNinja.java          ← 🔪 切水果      ⭐⭐⭐
@@ -170,7 +170,7 @@ public class GestureData {
 public interface GameInterface {
     String getName();                    // 游戏名称（大厅显示）
     String getDescription();             // 一句话介绍
-    String getIcon();                    // 图标emoji（🍎✂️🫧🔮🔪🥁）
+    String getIcon();                    // 图标emoji（🍎✂️🐸🔮🔪🥁）
     void init(int width, int height);    // 初始化，传入画布宽高
     void update(GestureData gesture);    // 每帧调用
     void render(GraphicsContext gc);     // 每帧渲染（JavaFX Canvas）
@@ -350,28 +350,29 @@ GameRenderer 职责：
   - HUD：分数(右上) + 生命(左上)
 ```
 
-### 🫧 PopBubbles — 戳泡泡（简单 ⭐）
+### 🐸 ZumaGame — 祖玛（中等 ⭐⭐）
 
 ```
-核心数据：handX, handY（手移动到目标位置）
+核心数据：handX, handY（瞄准）+ gesture（FIST=发射，PEACE=换球）
 
 玩法：
-  - 泡泡在画布随机位置冒出来
-  - 手移到泡泡位置 → 自动戳破
-  - 泡泡会慢慢变大，太大就爆了（扣分）
-  - 泡泡越来越多，越来越快
+  - 彩球链沿螺旋轨道不断向神庙入口推进
+  - 移动手掌控制中央青蛙炮台的瞄准方向
+  - 握拳发射彩球，剪刀手交换当前球与下一颗球
+  - 插入后形成3颗及以上同色球即可消除，并可触发连锁得分
+  - 彩球进入轨道终点则本局结束；目标模式达到指定分数获胜
 
 实现要点：
-  - Bubble内部类：x, y, radius, color, alpha, growing
-  - 距离检测：distance(hand, bubble) < radius → 戳破
-  - 戳破动画：radius变大 + alpha降低 → 消失
-  - 每1~2秒生成新泡泡
-  - 同时最多15个泡泡
+  - PathPoint采样螺旋轨道，并按轨道距离定位每颗彩球
+  - Projectile按瞄准向量运动，与球链碰撞后按切线方向确定插入位置
+  - 从插入点向两侧扫描同色连续区间，完成消除和连锁判定
+  - 按难度调整颜色数量、推进速度、目标分数和每波球数
+  - 进入游戏后设置短暂输入保护，避免难度确认的握拳被当成发射
 
 渲染：
-  - 泡泡：半透明彩虹色圆形+高光
-  - 十字准星：手的位置
-  - 分数：左上角
+  - 深色遗迹背景与螺旋石质轨道
+  - 中央青蛙炮台、当前球、下一颗球和瞄准线
+  - 彩球高光、消除粒子、连锁提示与目标分数HUD
 ```
 
 ### ✂️ RPSGame — 剪刀石头布（中等 ⭐⭐）
@@ -648,7 +649,7 @@ websockets>=12.0
 | 人员 | 负责 | 文件 |
 |------|------|------|
 | **人A** | Python手势识别 + Java公共层 | gesture_server.py, requirements.txt, GestureType, GestureData, GameInterface |
-| **人B** | 6个Java游戏 | CatchFruit, PopBubbles, RPSGame, TarotGame, FruitNinja, RhythmMaster |
+| **人B** | 6个Java游戏 | CatchFruit, ZumaGame, RPSGame, TarotGame, FruitNinja, RhythmMaster |
 | **人C** | Java UI + 整合 | 改造 LobbyController/LoginController, 新建 GameRenderer/Game.fxml, 改造 MainApp/AppStateManager/GestureSocketServer |
 
 ---

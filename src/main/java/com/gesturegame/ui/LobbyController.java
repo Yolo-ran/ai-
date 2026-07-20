@@ -6,11 +6,11 @@ import com.gesturegame.common.GestureType;
 import com.gesturegame.engine.AppStateManager;
 import com.gesturegame.game.CatchFruit;
 import com.gesturegame.game.FruitNinja;
-import com.gesturegame.game.PopBubbles;
 import com.gesturegame.game.RPSGame;
 import com.gesturegame.game.RhythmMaster;
 import com.gesturegame.game.SideScrollingShooter;
 import com.gesturegame.game.TarotGame;
+import com.gesturegame.game.ZumaGame;
 import com.gesturegame.network.GestureCommand;
 import com.gesturegame.network.GestureCommandResolver;
 import com.gesturegame.network.GestureStreamServer.DualHandState;
@@ -34,7 +34,7 @@ public class LobbyController {
     private static final List<Supplier<GameInterface>> GAME_REGISTRY = List.of(
             CatchFruit::new,
             RPSGame::new,
-            PopBubbles::new,
+            ZumaGame::new,
             TarotGame::new,
             FruitNinja::new,
             RhythmMaster::new,

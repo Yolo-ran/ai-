@@ -39,7 +39,7 @@ final class LobbyCardDeck {
     private static final List<CardData> CARDS = List.of(
             new CardData("接水果", "Catch the rhythm of falling color", "01", "#06b6d4", "#0f766e"),
             new CardData("猜拳对决", "Read the moment. Make your move.", "02", "#f43f5e", "#7c3aed"),
-            new CardData("戳泡泡", "Aim softly. Chain every touch.", "03", "#84cc16", "#0891b2"),
+            new CardData("祖玛", "Match the orbit. Break the chain.", "03", "#84cc16", "#ca8a04"),
             new CardData("塔罗牌", "Three cards reveal one direction", "04", "#d8b4fe", "#4338ca"),
             new CardData("水果忍者", "Draw the blade through color", "05", "#f97316", "#e11d48"),
             new CardData("节奏大师", "Move precisely inside the beat", "06", "#a78bfa", "#0ea5e9"),

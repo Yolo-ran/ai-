@@ -74,8 +74,17 @@ public class LoginController {
     private int guidePage;
     private int guideTotalPages = 4;
     private int guideHoldFrames;
-    private static final int GUIDE_HOLD_REQUIRED = 120; // 2秒
-    private double guideLastHandY = -1;
+    private int guideHoldDropoutFrames;
+    private static final int GUIDE_HOLD_REQUIRED = 60; // 约1秒@60fps
+    private static final int GUIDE_HOLD_DROPOUT_MAX = 10;
+    private static final double GUIDE_SWIPE_DISTANCE = 0.075;
+    private static final double GUIDE_SWIPE_REST_VELOCITY = 0.012;
+    private static final int GUIDE_SWIPE_REST_REQUIRED = 6;
+    private static final int GUIDE_HAND_LOST_RESET = 5;
+    private double guideSwipeAnchorX = Double.NaN;
+    private boolean guideSwipeLocked;
+    private int guideSwipeRestFrames;
+    private int guideHandLostFrames;
     private double guideScrollAccum;
 
     // Star arrays
@@ -170,10 +179,10 @@ public class LoginController {
         if (!loggedIn) { tryLogin(); return; }
         // 引导页期间：SWIPE用于翻页，CONFIRM用于确认
         if (showGuide) {
-            if (command == GestureCommand.SWIPE_LEFT && guidePage < guideTotalPages - 1) {
-                guidePage++; guideHoldFrames = 0;
-            } else if (command == GestureCommand.SWIPE_RIGHT && guidePage > 0) {
-                guidePage--; guideHoldFrames = 0;
+            if (command == GestureCommand.SWIPE_RIGHT && guidePage < guideTotalPages - 1) {
+                Platform.runLater(() -> changeGuidePage(1));
+            } else if (command == GestureCommand.SWIPE_LEFT && guidePage > 0) {
+                Platform.runLater(() -> changeGuidePage(-1));
             }
             return;
         }
@@ -192,33 +201,111 @@ public class LoginController {
 
     /** 每帧手势数据，用于引导页左右滑动 */
     public void tick(GestureData gesture) {
-        if (!showGuide || gesture == null || !gesture.isHandDetected()) return;
+        if (!showGuide) return;
 
-        double hx = gesture.getHandX();
-        if (guideLastHandY >= 0) {
-            double delta = hx - guideLastHandY; // 手右移→下一页
-            guideScrollAccum += delta * 100;
-            if (guideScrollAccum >= 15 && guidePage < guideTotalPages - 1) {
-                guidePage++; guideScrollAccum = 0; guideHoldFrames = 0;
-            } else if (guideScrollAccum <= -15 && guidePage > 0) {
-                guidePage--; guideScrollAccum = 0; guideHoldFrames = 0;
+        if (gesture == null || !gesture.isHandDetected()) {
+            guideHandLostFrames++;
+            updateGuideHold(false);
+            if (guideHandLostFrames > GUIDE_HAND_LOST_RESET) {
+                resetGuideSwipeTracking();
             }
+            return;
         }
-        guideLastHandY = hx;
 
-        // 最后一页：握拳保持2秒进入
-        if (guidePage == guideTotalPages - 1 && gesture.getGesture() == GestureType.FIST) {
-            guideHoldFrames++;
-            if (guideHoldFrames >= GUIDE_HOLD_REQUIRED) {
-                // 进入星空
-                showGuide = false;
-                if (starTimer != null) starTimer.stop();
-                starTimer = null;
-                Platform.runLater(this::showStarField);
+        guideHandLostFrames = 0;
+        GestureType gestureType = gesture.getGesture();
+        if (gestureType == GestureType.FIST) {
+            resetGuideSwipeTracking();
+        } else {
+            updateGuideSwipe(gesture);
+        }
+        updateGuideHold(guidePage == guideTotalPages - 1
+                && gestureType == GestureType.FIST);
+    }
+
+    private void updateGuideSwipe(GestureData gesture) {
+        double handX = Math.max(0.0, Math.min(1.0, gesture.getHandX()));
+        if (guideSwipeLocked) {
+            if (Math.abs(gesture.getVelocityX()) <= GUIDE_SWIPE_REST_VELOCITY) {
+                guideSwipeRestFrames++;
+                if (guideSwipeRestFrames >= GUIDE_SWIPE_REST_REQUIRED) {
+                    guideSwipeLocked = false;
+                    guideSwipeRestFrames = 0;
+                    guideSwipeAnchorX = handX;
+                }
+            } else {
+                guideSwipeRestFrames = 0;
             }
+            return;
+        }
+
+        if (Double.isNaN(guideSwipeAnchorX)) {
+            guideSwipeAnchorX = handX;
+            return;
+        }
+
+        double displacement = handX - guideSwipeAnchorX;
+        // 引导页按阅读方向操作：向右挥进入下一页，向左挥返回上一页。
+        if (displacement >= GUIDE_SWIPE_DISTANCE
+                && guidePage < guideTotalPages - 1) {
+            changeGuidePage(1);
+            lockGuideSwipe(handX);
+        } else if (displacement <= -GUIDE_SWIPE_DISTANCE && guidePage > 0) {
+            changeGuidePage(-1);
+            lockGuideSwipe(handX);
+        }
+    }
+
+    private void lockGuideSwipe(double handX) {
+        guideSwipeLocked = true;
+        guideSwipeRestFrames = 0;
+        guideSwipeAnchorX = handX;
+    }
+
+    private void resetGuideSwipeTracking() {
+        guideSwipeAnchorX = Double.NaN;
+        guideSwipeLocked = false;
+        guideSwipeRestFrames = 0;
+    }
+
+    private void changeGuidePage(int delta) {
+        int nextPage = Math.max(0, Math.min(guideTotalPages - 1, guidePage + delta));
+        if (nextPage == guidePage) return;
+        guidePage = nextPage;
+        guideHoldFrames = 0;
+        guideHoldDropoutFrames = 0;
+        guideScrollAccum = 0;
+    }
+
+    private void updateGuideHold(boolean fistDetected) {
+        if (guidePage != guideTotalPages - 1) {
+            guideHoldFrames = 0;
+            guideHoldDropoutFrames = 0;
+            return;
+        }
+        if (fistDetected) {
+            guideHoldDropoutFrames = 0;
+            guideHoldFrames = Math.min(GUIDE_HOLD_REQUIRED, guideHoldFrames + 1);
+            if (guideHoldFrames >= GUIDE_HOLD_REQUIRED) {
+                finishGuide();
+            }
+        } else if (guideHoldFrames > 0
+                && guideHoldDropoutFrames < GUIDE_HOLD_DROPOUT_MAX) {
+            guideHoldDropoutFrames++;
         } else {
             guideHoldFrames = 0;
+            guideHoldDropoutFrames = 0;
         }
+    }
+
+    private void finishGuide() {
+        showGuide = false;
+        guideHoldFrames = 0;
+        guideHoldDropoutFrames = 0;
+        resetGuideSwipeTracking();
+        if (starTimer != null) starTimer.stop();
+        starTimer = null;
+        Platform.runLater(this::showStarField);
     }
 
     private void tryLogin() {
@@ -277,16 +364,20 @@ public class LoginController {
         showGuide = true;
         guidePage = 0;
         guideHoldFrames = 0;
-        guideLastHandY = -1;
+        guideHoldDropoutFrames = 0;
+        guideHandLostFrames = 0;
+        resetGuideSwipeTracking();
         guideScrollAccum = 0;
 
         // 鼠标滚轮翻页
         rootPane.setOnScroll(e -> {
             guideScrollAccum += e.getDeltaY();
-            if (guideScrollAccum <= -40 && guidePage < guideTotalPages - 1) {
-                guidePage++; guideScrollAccum = 0; guideHoldFrames = 0;
-            } else if (guideScrollAccum >= 40 && guidePage > 0) {
-                guidePage--; guideScrollAccum = 0; guideHoldFrames = 0;
+            if (guideScrollAccum <= -28 && guidePage < guideTotalPages - 1) {
+                changeGuidePage(1);
+                resetGuideSwipeTracking();
+            } else if (guideScrollAccum >= 28 && guidePage > 0) {
+                changeGuidePage(-1);
+                resetGuideSwipeTracking();
             }
         });
 
@@ -346,7 +437,7 @@ public class LoginController {
                 gc.fillText("游戏大厅内有 7 款游戏等你挑战：", cx, 180);
                 gc.setFont(Font.font("Microsoft YaHei UI", 20));
                 gc.setFill(Color.WHITE);
-                gc.fillText("🍎 接水果    ✊ 猜拳    🫧 戳泡泡    🔮 塔罗牌", cx, 250);
+                gc.fillText("🍎 接水果    ✊ 猜拳    🐸 祖玛    🔮 塔罗牌", cx, 250);
                 gc.fillText("🔪 切水果    🥁 节奏大师    🚀 星际突击", cx, 295);
                 gc.setFont(Font.font("Microsoft YaHei UI", 18));
                 gc.setFill(Color.rgb(180, 200, 240));
@@ -358,7 +449,7 @@ public class LoginController {
                 gc.fillText("准备好了吗？", cx, 200);
                 gc.setFont(Font.font("Microsoft YaHei UI", 28));
                 gc.setFill(Color.GOLD);
-                gc.fillText("✊ 握拳保持 2 秒进入游戏大厅", cx, 300);
+                gc.fillText("✊ 握拳稳定保持约 1 秒进入游戏大厅", cx, 300);
 
                 // 进度环
                 if (guideHoldFrames > 0) {
@@ -387,7 +478,7 @@ public class LoginController {
         // 底部提示
         gc.setFill(Color.rgb(255, 255, 255, 0.4));
         gc.setFont(Font.font("Microsoft YaHei UI", 14));
-        gc.fillText("左右移动手 或 鼠标滚轮 翻页", cx, h - 30);
+        gc.fillText("向右挥手下一页 · 向左挥手上一页 · 鼠标滚轮翻页", cx, h - 30);
 
         gc.setTextAlign(TextAlignment.LEFT);
     }

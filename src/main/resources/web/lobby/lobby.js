@@ -4,7 +4,7 @@
   var games = [
     { id: 'catch', title: '接水果', subtitle: 'Catch the rhythm of falling color', number: '01', accent: '#06b6d4', accent2: '#0f766e' },
     { id: 'rps', title: '猜拳对决', subtitle: 'Read the moment. Make your move.', number: '02', accent: '#f43f5e', accent2: '#7c3aed' },
-    { id: 'bubble', title: '戳泡泡', subtitle: 'Aim softly. Chain every touch.', number: '03', accent: '#84cc16', accent2: '#0891b2' },
+    { id: 'zuma', title: '祖玛', subtitle: 'Match the orbit. Break the chain.', number: '03', accent: '#84cc16', accent2: '#ca8a04' },
     { id: 'tarot', title: '塔罗牌', subtitle: 'Three cards reveal one direction', number: '04', accent: '#d8b4fe', accent2: '#4338ca' },
     { id: 'ninja', title: '水果忍者', subtitle: 'Draw the blade through color', number: '05', accent: '#f97316', accent2: '#e11d48' },
     { id: 'rhythm', title: '节奏大师', subtitle: 'Move precisely inside the beat', number: '06', accent: '#a78bfa', accent2: '#0ea5e9' },
