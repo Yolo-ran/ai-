@@ -212,7 +212,7 @@ public class GameRenderer {
         }
 
         // 单手基础手势完整交给游戏；双手系统模式只屏蔽输入，不暂停游戏动画。
-        game.update(dualHands.captured() ? new GestureData() : gesture);
+        game.update(dualHands.active() ? new GestureData() : gesture);
         game.render(gc);
         // 保留全局退出判定及确认进度，但不再绘制统一文字提示。
         drawExitProgress(gesture, dualHands);

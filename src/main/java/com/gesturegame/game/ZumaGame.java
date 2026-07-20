@@ -30,15 +30,20 @@ public final class ZumaGame implements GameInterface {
     private static final double PROJECTILE_SPEED = 17.0;
     private static final int PATH_SAMPLES = 960;
     private static final int INPUT_GUARD_FRAMES = 30;
-    private static final int FIST_CONFIRM_FRAMES = 10;
-    private static final int FIST_RELEASE_FRAMES = 8;
-    private static final int FIST_DROPOUT_MAX = 3;
+    // 30fps 下约 0.17 秒确认；必须明确张开手掌约 0.17 秒才可再次发射。
+    private static final int FIST_CONFIRM_FRAMES = 5;
+    private static final int FIST_RELEASE_FRAMES = 5;
+    private static final int FIST_DROPOUT_MAX = 2;
     private static final int MAX_PROJECTILES = 4;
     private static final double AIM_CENTER_X = 0.50;
     private static final double AIM_CENTER_Y = 0.52;
-    private static final double AIM_DEAD_ZONE = 0.035;
-    private static final double AIM_SMOOTHING = 0.24;
-    private static final double AIM_ASSIST_ANGLE = Math.toRadians(9.0);
+    // Hysteresis keeps tiny camera-coordinate jitter around the neutral hand
+    // position from making the direction flip.  Once aiming has begun, it
+    // remains active until the hand comes back well inside the smaller zone.
+    private static final double AIM_DEAD_ZONE_ENTER = 0.027;
+    private static final double AIM_DEAD_ZONE_EXIT = 0.018;
+    private static final double AIM_TURN_RESPONSE = 0.46;
+    private static final double AIM_MAX_TURN_PER_FRAME = Math.toRadians(14.0);
     private static final Color[] PALETTE = {
             Color.web("#ef4444"),
             Color.web("#f5cf45"),
@@ -164,6 +169,7 @@ public final class ZumaGame implements GameInterface {
     private double aimY;
     private double aimAngle = -Math.PI / 2.0;
     private double lockedShotAngle = -Math.PI / 2.0;
+    private boolean aimOutsideDeadZone;
     private boolean handDetected;
 
     private Difficulty difficulty = Difficulty.NORMAL;
@@ -213,6 +219,7 @@ public final class ZumaGame implements GameInterface {
         frogY = this.height * 0.5;
         aimX = frogX;
         aimY = frogY - 180.0;
+        aimOutsideDeadZone = false;
         handDetected = false;
         score = 0;
         over = false;
@@ -373,6 +380,9 @@ public final class ZumaGame implements GameInterface {
             fistDropoutFrames = 0;
             if (!fistLatched) {
                 if (fistHoldFrames == 0) {
+                    // Closing a hand moves its centre.  Preserve the visible
+                    // guide-line direction from the first fist frame and use
+                    // that exact angle for this shot.
                     lockedShotAngle = aimAngle;
                 }
                 fistHoldFrames = Math.min(FIST_CONFIRM_FRAMES, fistHoldFrames + 1);
@@ -396,13 +406,13 @@ public final class ZumaGame implements GameInterface {
         } else {
             fistHoldFrames = 0;
             fistDropoutFrames = 0;
-            // 只有持续检测到非握拳才重新解锁；短暂丢手不会造成二次发射。
-            if (fistLatched && handDetected) {
+            // 只接受明确张开手掌作为“松手”；NONE/误识别不能让持续握拳变成连发。
+            if (fistLatched && type == GestureType.OPEN) {
                 fistReleaseFrames = Math.min(FIST_RELEASE_FRAMES, fistReleaseFrames + 1);
                 if (fistReleaseFrames >= FIST_RELEASE_FRAMES) {
                     fistLatched = false;
                 }
-            } else if (!handDetected) {
+            } else {
                 fistReleaseFrames = 0;
             }
         }
@@ -411,37 +421,28 @@ public final class ZumaGame implements GameInterface {
     private void updateComfortAim(GestureData gesture) {
         double dx = clamp(gesture.getHandX(), 0.0, 1.0) - AIM_CENTER_X;
         double dy = clamp(gesture.getHandY(), 0.0, 1.0) - AIM_CENTER_Y;
-        if (Math.hypot(dx, dy) < AIM_DEAD_ZONE) {
+        double handRadius = Math.hypot(dx, dy);
+        if (aimOutsideDeadZone) {
+            if (handRadius < AIM_DEAD_ZONE_EXIT) {
+                aimOutsideDeadZone = false;
+            }
+        } else if (handRadius > AIM_DEAD_ZONE_ENTER) {
+            aimOutsideDeadZone = true;
+        }
+        if (!aimOutsideDeadZone) {
             updateAimMarker();
             return;
         }
 
-        double targetAngle = applyAimAssist(Math.atan2(dy, dx));
-        aimAngle = normalizeAngle(aimAngle
-                + shortestAngleDelta(aimAngle, targetAngle) * AIM_SMOOTHING);
+        double rawAngle = Math.atan2(dy, dx);
+        double delta = shortestAngleDelta(aimAngle, rawAngle);
+        // Never consume a large coordinate jump in a single render frame.
+        // It turns at a visibly continuous speed while still covering normal
+        // hand movements in only a few frames.
+        double turn = clamp(delta * AIM_TURN_RESPONSE,
+                -AIM_MAX_TURN_PER_FRAME, AIM_MAX_TURN_PER_FRAME);
+        aimAngle = normalizeAngle(aimAngle + turn);
         updateAimMarker();
-    }
-
-    private double applyAimAssist(double rawAngle) {
-        double bestDelta = AIM_ASSIST_ANGLE;
-        double bestAngle = rawAngle;
-        for (ChainBall ball : chain) {
-            if (ball.distance < 0.0 || ball.distance > pathLength) {
-                continue;
-            }
-            PathPoint point = pointAtDistance(ball.distance);
-            double ballAngle = Math.atan2(point.y - frogY, point.x - frogX);
-            double delta = Math.abs(shortestAngleDelta(rawAngle, ballAngle));
-            if (delta < bestDelta) {
-                bestDelta = delta;
-                bestAngle = ballAngle;
-            }
-        }
-        if (bestDelta >= AIM_ASSIST_ANGLE) {
-            return rawAngle;
-        }
-        double strength = 0.72 * (1.0 - bestDelta / AIM_ASSIST_ANGLE);
-        return normalizeAngle(rawAngle + shortestAngleDelta(rawAngle, bestAngle) * strength);
     }
 
     private void updateAimMarker() {
@@ -523,10 +524,11 @@ public final class ZumaGame implements GameInterface {
             double hitDistance = Double.MAX_VALUE;
             for (int index = 0; index < chain.size(); index++) {
                 ChainBall ball = chain.get(index);
-                if (ball.distance < -BALL_RADIUS || ball.distance > pathLength) {
+                double renderDistance = ball.distance + ball.visualOffset;
+                if (renderDistance < -BALL_RADIUS || renderDistance > pathLength) {
                     continue;
                 }
-                PathPoint point = pointAtDistance(ball.distance);
+                PathPoint point = pointAtDistance(renderDistance);
                 double distance = Math.hypot(projectile.x - point.x, projectile.y - point.y);
                 if (distance < BALL_RADIUS + PROJECTILE_RADIUS - 2.0
                         && distance < hitDistance) {
@@ -551,9 +553,11 @@ public final class ZumaGame implements GameInterface {
 
     private void insertProjectile(int hitIndex, Projectile projectile) {
         ChainBall hit = chain.get(hitIndex);
-        Vec tangent = tangentAtDistance(hit.distance);
+        Vec tangent = tangentAtDistance(hit.distance + hit.visualOffset);
         double alongPath = projectile.vx * tangent.x + projectile.vy * tangent.y;
-        int insertIndex = alongPath >= 0.0 ? hitIndex + 1 : hitIndex;
+        // A shot travelling along the chain reaches the hit marble from its rear,
+        // so it must be inserted before it. The former direction was reversed.
+        int insertIndex = alongPath >= 0.0 ? hitIndex : hitIndex + 1;
 
         double distance;
         if (insertIndex <= 0) {
@@ -1039,6 +1043,8 @@ public final class ZumaGame implements GameInterface {
         graphics.strokeLine(frogX + cos * 42.0, frogY + sin * 42.0,
                 frogX + cos * Math.max(width, height), frogY + sin * Math.max(width, height));
 
+        drawInsertionGuide(graphics, cos, sin);
+
         // Cyan crosshair at cursor position
         graphics.setEffect(new DropShadow(10, Color.web("#00e5ff")));
         graphics.setStroke(Color.web("#00e5ff"));
@@ -1056,6 +1062,105 @@ public final class ZumaGame implements GameInterface {
                     90.0, -360.0 * progress, javafx.scene.shape.ArcType.OPEN);
         }
         graphics.setEffect(null);
+    }
+
+    /**
+     * Shows the exact gap where the current guide line would insert a marble.
+     * This is visual-only: it neither bends the aim nor changes collision or
+     * insertion logic.
+     */
+    private void drawInsertionGuide(GraphicsContext graphics, double directionX, double directionY) {
+        GuideGap gap = findGuideGap(directionX, directionY);
+        if (gap == null) {
+            return;
+        }
+
+        Color shotColor = PALETTE[Math.floorMod(currentColor, PALETTE.length)];
+        double pulse = 0.82 + Math.sin(frame * 0.18) * 0.18;
+        double halfLength = 17.0;
+        double x1 = gap.x - gap.normalX * halfLength;
+        double y1 = gap.y - gap.normalY * halfLength;
+        double x2 = gap.x + gap.normalX * halfLength;
+        double y2 = gap.y + gap.normalY * halfLength;
+
+        graphics.save();
+        graphics.setGlobalBlendMode(BlendMode.ADD);
+        graphics.setEffect(new DropShadow(18.0, shotColor));
+        graphics.setStroke(Color.color(shotColor.getRed(), shotColor.getGreen(), shotColor.getBlue(), 0.35 * pulse));
+        graphics.setLineWidth(8.0);
+        graphics.strokeLine(x1, y1, x2, y2);
+        graphics.setEffect(new DropShadow(8.0, Color.WHITE));
+        graphics.setStroke(Color.color(1.0, 1.0, 1.0, 0.96));
+        graphics.setLineWidth(2.4);
+        graphics.strokeLine(x1, y1, x2, y2);
+        graphics.setFill(Color.WHITE);
+        graphics.fillOval(gap.x - 3.2, gap.y - 3.2, 6.4, 6.4);
+        graphics.restore();
+    }
+
+    private GuideGap findGuideGap(double directionX, double directionY) {
+        double originX = frogX + directionX * 42.0;
+        double originY = frogY + directionY * 42.0;
+        double hitRadius = BALL_RADIUS + PROJECTILE_RADIUS - 2.0;
+        int hitIndex = -1;
+        double nearestEntry = Double.MAX_VALUE;
+
+        for (int index = 0; index < chain.size(); index++) {
+            ChainBall ball = chain.get(index);
+            double renderDistance = ball.distance + ball.visualOffset;
+            if (renderDistance < -BALL_RADIUS || renderDistance > pathLength) {
+                continue;
+            }
+            PathPoint point = pointAtDistance(renderDistance);
+            double offsetX = point.x - originX;
+            double offsetY = point.y - originY;
+            double forward = offsetX * directionX + offsetY * directionY;
+            if (forward <= 0.0) {
+                continue;
+            }
+            double lateral = Math.abs(offsetX * directionY - offsetY * directionX);
+            if (lateral > hitRadius) {
+                continue;
+            }
+            double entry = forward - Math.sqrt(hitRadius * hitRadius - lateral * lateral);
+            if (entry < nearestEntry) {
+                nearestEntry = entry;
+                hitIndex = index;
+            }
+        }
+
+        if (hitIndex < 0) {
+            return null;
+        }
+
+        ChainBall hit = chain.get(hitIndex);
+        double hitDistance = hit.distance + hit.visualOffset;
+        Vec tangent = tangentAtDistance(hitDistance);
+        double alongPath = directionX * tangent.x + directionY * tangent.y;
+        int insertIndex = alongPath >= 0.0 ? hitIndex : hitIndex + 1;
+
+        PathPoint boundary;
+        if (insertIndex > 0 && insertIndex < chain.size()) {
+            ChainBall before = chain.get(insertIndex - 1);
+            ChainBall after = chain.get(insertIndex);
+            PathPoint beforePoint = pointAtDistance(before.distance + before.visualOffset);
+            PathPoint afterPoint = pointAtDistance(after.distance + after.visualOffset);
+            boundary = new PathPoint((beforePoint.x + afterPoint.x) * 0.5,
+                    (beforePoint.y + afterPoint.y) * 0.5, 0.0);
+            double joinX = afterPoint.x - beforePoint.x;
+            double joinY = afterPoint.y - beforePoint.y;
+            double joinLength = Math.hypot(joinX, joinY);
+            if (joinLength > 1e-6) {
+                tangent = new Vec(joinX / joinLength, joinY / joinLength);
+            }
+        } else {
+            double side = insertIndex <= 0 ? -1.0 : 1.0;
+            PathPoint hitPoint = pointAtDistance(hitDistance);
+            boundary = new PathPoint(hitPoint.x + tangent.x * BALL_RADIUS * side,
+                    hitPoint.y + tangent.y * BALL_RADIUS * side, 0.0);
+        }
+
+        return new GuideGap(boundary.x, boundary.y, -tangent.y, tangent.x);
     }
 
     private void drawFrog(GraphicsContext graphics) {
@@ -1329,6 +1434,9 @@ public final class ZumaGame implements GameInterface {
     }
 
     private record PathPoint(double x, double y, double distance) {
+    }
+
+    private record GuideGap(double x, double y, double normalX, double normalY) {
     }
 
     private record Vec(double x, double y) {

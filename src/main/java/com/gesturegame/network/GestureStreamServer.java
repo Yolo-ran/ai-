@@ -60,8 +60,9 @@ public class GestureStreamServer extends WebSocketServer {
     private long lastTwoHandsSeen;
     private boolean navigationPalmNow;
     private long lastNavigationPalmTime;
-    private static final long DUAL_HAND_ENTER_MS = LOCAL_COMPAT_MODE ? 40L : 120L;
-    private static final long DUAL_HAND_EXIT_GRACE_MS = LOCAL_COMPAT_MODE ? 420L : 200L;
+    private static final long DUAL_HAND_ENTER_MS = 320L;
+    private static final long DUAL_HAND_EXIT_GRACE_MS = 240L;
+    private static final double DUAL_HAND_MIN_SPREAD = 0.12;
     private GestureType lastHoldGesture = GestureType.NONE;
     private long holdStartTime;
     private int handLostFrames;
@@ -243,8 +244,11 @@ public class GestureStreamServer extends WebSocketServer {
     private void updateDualHandState(JSONObject json) {
         long now = System.currentTimeMillis();
         boolean seesTwoHands = json.optInt("handCount", 0) >= 2;
-        seesTwoHandsNow = seesTwoHands;
-        if (seesTwoHands) {
+        double spread = seesTwoHands
+                ? clamp01(json.optDouble("twoHandSpread", 0.0)) : 0.0;
+        boolean validDualCandidate = seesTwoHands && spread >= DUAL_HAND_MIN_SPREAD;
+        seesTwoHandsNow = validDualCandidate;
+        if (validDualCandidate) {
             lastTwoHandsSeen = now;
             if (dualHandCandidateSince == 0L) {
                 dualHandCandidateSince = now;
@@ -260,17 +264,16 @@ public class GestureStreamServer extends WebSocketServer {
         }
 
         DualHandState previous = latestDualHandState;
-        double spread = seesTwoHands
-                ? clamp01(json.optDouble("twoHandSpread", 0.0)) : previous.spread();
+        double retainedSpread = validDualCandidate ? spread : previous.spread();
         double secondX = seesTwoHands
                 ? json.optDouble("secondHandX", 0.0) : previous.secondHandX();
         double secondY = seesTwoHands
                 ? json.optDouble("secondHandY", 0.0) : previous.secondHandY();
         latestDualHandState = new DualHandState(
-                seesTwoHands || dualHandMode,
                 dualHandMode,
-                spread,
-                dualHandMode && seesTwoHands && json.optBoolean("bothHandsOpen", false),
+                dualHandMode && validDualCandidate,
+                retainedSpread,
+                dualHandMode && validDualCandidate && json.optBoolean("bothHandsOpen", false),
                 secondX,
                 secondY);
     }
@@ -297,7 +300,7 @@ public class GestureStreamServer extends WebSocketServer {
             return GestureCommand.NONE;
         }
 
-        if (seesTwoHandsNow || latestDualHandState.active()) {
+        if (latestDualHandState.active()) {
             resetHoldState();
             resetSwipeState();
             return GestureCommand.NONE;
