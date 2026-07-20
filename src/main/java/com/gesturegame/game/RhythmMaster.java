@@ -93,7 +93,10 @@ public class RhythmMaster implements GameInterface {
     private int gameDurationFrames;
 
     // ===== 接口 =====
-    @Override public String getName() { return "节奏大师"; }
+    @Override
+    public String getName() {
+        return "节奏大师";
+    }
     @Override public String getDescription() { return "手势跳舞机，跟随音乐节拍！"; }
     @Override public String getIcon() { return "🥁"; }
 

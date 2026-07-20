@@ -47,7 +47,7 @@ public class FruitNinja implements GameInterface {
 
     @Override
     public String getName() {
-        return "切水果";
+        return "水果忍者";
     }
 
     @Override

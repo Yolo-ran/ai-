@@ -189,7 +189,7 @@ public final class ZumaGame implements GameInterface {
 
     @Override
     public String getName() {
-        return "祖玛";
+        return "星际祖玛";
     }
 
     @Override

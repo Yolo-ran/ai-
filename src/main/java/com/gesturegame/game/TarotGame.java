@@ -95,7 +95,7 @@ public class TarotGame implements GameInterface {
 
     @Override
     public String getName() {
-        return "塔罗牌";
+        return "命运演算";
     }
 
     @Override
