@@ -176,7 +176,8 @@ public class LoginController {
 
     public void handleAgentCommand(GestureCommand command, double c, String h) {
         if (entering) return;
-        if (!loggedIn) { tryLogin(); return; }
+        // 登录阶段不响应手势，只能点击按钮或回车登录
+        if (!loggedIn) return;
         // 引导页期间：SWIPE用于翻页，CONFIRM用于确认
         if (showGuide) {
             if (command == GestureCommand.SWIPE_RIGHT && guidePage < guideTotalPages - 1) {
