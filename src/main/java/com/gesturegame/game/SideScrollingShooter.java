@@ -859,6 +859,28 @@ public final class SideScrollingShooter implements GameInterface {
             gc.fillText("NEXT LEVEL LOADING...", width / 2.0, height / 2.0 + 30);
         }
 
+        // 右下角：道具持续时间
+        int timerY = height - 55;
+        if (multiShotTimer > 0) {
+            int secs = multiShotTimer / 60;
+            gc.setFill(Color.rgb(0, 180, 255, 0.8));
+            gc.setFont(Font.font("Arial", 14));
+            gc.fillText("🔫 多弹道 " + secs + "s", width - 165, timerY);
+            timerY -= 22;
+        }
+        if (speedBoostTimer > 0) {
+            int secs = speedBoostTimer / 60;
+            gc.setFill(Color.rgb(255, 200, 0, 0.8));
+            gc.setFont(Font.font("Arial", 14));
+            gc.fillText("⚡ 射速提升 " + secs + "s", width - 165, timerY);
+            timerY -= 22;
+        }
+        if (hasShield) {
+            gc.setFill(Color.rgb(100, 255, 180, 0.8));
+            gc.setFont(Font.font("Arial", 14));
+            gc.fillText("🛡️ 护盾 激活", width - 120, timerY);
+        }
+
         // 底部"双手入镜保持返回"提示
         gc.setFill(Color.rgb(5, 5, 5, 0.6));
         gc.fillRoundRect(width / 2.0 - 100, height - 40, 200, 24, 12, 12);

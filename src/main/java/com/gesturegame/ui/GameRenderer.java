@@ -528,7 +528,8 @@ public class GameRenderer {
                     if (selectedDifficulty == Difficulty.EASY) {
                         endlessSubMenu = false;
                         game.setDifficulty(Difficulty.ENDLESS);
-                        currentGame = null;
+                        initGame(game);
+                        currentGame = game;
                         AppStateManager.getInstance().switchState(AppStateManager.STATE_GAME);
                     } else {
                         endlessSubLeaderIdx = 2;
@@ -544,9 +545,8 @@ public class GameRenderer {
                     songSelectFrames = 0;
                     return;
                 }
-                // 选无尽模式 → 进子菜单
+                // 选无尽模式 → 进子菜单（不进游戏）
                 if (selectedDifficulty == Difficulty.ENDLESS) {
-                    initGame(game);
                     endlessSubMenu = true;
                     endlessSubLeaderIdx = -1;
                     endlessSubGame = game;
@@ -792,7 +792,8 @@ public class GameRenderer {
                     if (selectedDifficulty == Difficulty.EASY) {
                         endlessSubMenu = false;
                         activeGame.setDifficulty(Difficulty.ENDLESS);
-                        currentGame = null;
+                        initGame(activeGame);
+                        currentGame = activeGame;
                         AppStateManager.getInstance().switchState(AppStateManager.STATE_GAME);
                     } else {
                         endlessSubLeaderIdx = 2;
@@ -802,7 +803,6 @@ public class GameRenderer {
                 activeGame.setDifficulty(selectedDifficulty);
                 LOGGER.info("难度选择确认: " + selectedDifficulty.getLabel() + " → " + activeGame.getName());
                 if (selectedDifficulty == Difficulty.ENDLESS) {
-                    initGame(activeGame);
                     endlessSubMenu = true;
                     endlessSubLeaderIdx = -1;
                     endlessSubGame = activeGame;
