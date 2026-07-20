@@ -31,9 +31,6 @@ public class FruitNinja implements GameInterface {
     private WebView webView;
     private WebEngine webEngine;
     private JSObject jsWindow;
-    // WebKit keeps only a weak reference to Java bridge objects. Holding this
-    // instance prevents callbacks from silently disappearing after a GC cycle.
-    private JavaBridge javaBridge;
     private boolean isWebViewAdded = false;
     private Pane parentPane;
 
@@ -47,7 +44,7 @@ public class FruitNinja implements GameInterface {
 
     @Override
     public String getName() {
-        return "水果忍者";
+        return "切水果";
     }
 
     @Override
@@ -68,7 +65,6 @@ public class FruitNinja implements GameInterface {
         over = false;
         initErrorMsg = null;
         jsWindow = null;
-        javaBridge = null;
         lastX = -1;
         lastY = -1;
         lastDetected = false;
@@ -87,14 +83,20 @@ public class FruitNinja implements GameInterface {
                 webEngine.getLoadWorker().stateProperty().addListener((obs, oldState, newState) -> {
                     if (newState == Worker.State.SUCCEEDED) {
                         jsWindow = (JSObject) webEngine.executeScript("window");
-                        javaBridge = new JavaBridge();
-                        jsWindow.setMember("javaBackend", javaBridge);
+                        jsWindow.setMember("javaBackend", new JavaBridge());
                         LOGGER.info("Fruit Ninja WebView 加载成功，JSBridge 注入完毕");
-                        
-                        // 确保前端页面也处于全新状态
+
+                        // 传递难度设置给前端
+                        String mode;
+                        int livesCount = 3;
+                        switch (difficulty) {
+                            case EASY: mode = "easy"; break;
+                            case HARD: mode = "hard"; break;
+                            case ENDLESS: mode = "endless"; break;
+                            default: mode = "normal"; break;
+                        }
                         try {
-                            jsWindow.call("configureGame", difficulty.name());
-                            jsWindow.call("resetGame");
+                            jsWindow.call("resetGame", mode, livesCount);
                         } catch (Exception e) {
                             LOGGER.warning("重置前端游戏状态失败: " + e.getMessage());
                         }
@@ -111,7 +113,6 @@ public class FruitNinja implements GameInterface {
             // 如果 WebView 已经被复用（即没有被彻底销毁），我们需要在重新进入时调用前端的复位逻辑
             if (jsWindow != null) {
                 try {
-                    jsWindow.call("configureGame", difficulty.name());
                     jsWindow.call("resetGame");
                 } catch (Exception e) {
                     LOGGER.warning("复用 WebView 时重置前端状态失败: " + e.getMessage());
@@ -127,12 +128,12 @@ public class FruitNinja implements GameInterface {
     public void update(GestureData gesture) {
         if (over) return;
         
-        // 每帧发送食指尖坐标给前端
+        // 当页面加载完成时，将本地识别的手势坐标高频下发给前端 PixiJS/Canvas
         if (jsWindow != null) {
             boolean detected = gesture != null && gesture.isHandDetected();
             double x = detected ? gesture.getIndexTipX() : 0.5;
             double y = detected ? gesture.getIndexTipY() : 0.5;
-
+            
             try {
                 jsWindow.call("updateHandPosition", x, y, detected);
             } catch (Exception e) {
@@ -192,14 +193,8 @@ public class FruitNinja implements GameInterface {
         removeWebView();
         webView = null;
         webEngine = null;
-        jsWindow = null;
-        javaBridge = null;
-        parentPane = null;
         score = 0;
         over = false;
-        lastX = -1;
-        lastY = -1;
-        lastDetected = false;
     }
 
     @Override
@@ -213,13 +208,6 @@ public class FruitNinja implements GameInterface {
     }
 
     private void removeWebView() {
-        if (jsWindow != null) {
-            try {
-                jsWindow.call("stopGame");
-            } catch (RuntimeException ignored) {
-                // Page may already be unloading.
-            }
-        }
         if (parentPane != null && webView != null && isWebViewAdded) {
             parentPane.getChildren().remove(webView);
             isWebViewAdded = false;

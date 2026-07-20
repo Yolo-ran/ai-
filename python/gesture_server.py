@@ -147,7 +147,7 @@ class GestureState:
             "velocityX": round(velocity_x, 4),
             "velocityY": round(velocity_y, 4),
             "gesture": gesture,
-            # 可选兼容字段：Java 旧版本会忽略；新版仅用它确认“食指朝左上”退出。
+            # 可选兼容字段：Java 旧版本会忽略；新版仅用它确认"食指朝左上"退出。
             "pointingDirection": pointing_direction,
             "confidence": round(confidence, 4),
             "handDetected": True,
@@ -205,7 +205,7 @@ def is_navigation_palm(points) -> bool:
     extended = sum(is_finger_extended(points, tip, pip)
                    for tip, pip in ((8, 6), (12, 10), (16, 14), (20, 18)))
     if LOCAL_COMPAT_MODE and extended < 3:
-        # 笔记本内置摄像头下，用更宽松的“指尖高于第二关节”兜底大厅导航张手。
+        # 笔记本内置摄像头下，用更宽松的"指尖高于第二关节"兜底大厅导航张手。
         loose_extended = sum(
             1 for tip, pip in ((8, 6), (12, 10), (16, 14), (20, 18))
             if points[tip].y < points[pip].y
