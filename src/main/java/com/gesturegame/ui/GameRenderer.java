@@ -627,6 +627,8 @@ public class GameRenderer {
             compactHoldFrames = 0;
             diffDropoutFrames = 0;
             difficultyHoldIndex = -1;
+            exitHoldFrames = 0;
+            exitDropoutFrames = 0;
         }
         difficultyFade += (1.0 - difficultyFade) * 0.12;
 
@@ -749,6 +751,8 @@ public class GameRenderer {
                     compactHoldFrames / (double) DIFFICULTY_HOLD_FRAMES);
             g.restore();
         }
+
+        drawDifficultyExitCountdown(g, gesture, dualHands, w, h);
 
         return true;
     }
@@ -905,6 +909,48 @@ public class GameRenderer {
             g.strokeArc(x - 23, y - 23, 46, 46, 90,
                     -360 * clampDifficulty(progress, 0, 1), javafx.scene.shape.ArcType.OPEN);
         }
+    }
+
+    /** 难度选择页的双手返回倒计时，显示在两只手之间。 */
+    private void drawDifficultyExitCountdown(GraphicsContext g, GestureData gesture,
+                                             DualHandState dualHands, double width, double height) {
+        if (exitHoldFrames <= 0 || gesture == null || !gesture.isHandDetected()
+                || !dualHands.captured()) {
+            return;
+        }
+
+        double firstX = gesture.getHandX() * width;
+        double firstY = gesture.getHandY() * height;
+        double secondX = dualHands.secondHandX() * width;
+        double secondY = dualHands.secondHandY() * height;
+        double centerX = (firstX + secondX) * 0.5;
+        double centerY = (firstY + secondY) * 0.5;
+        double progress = clampDifficulty(exitHoldFrames / (double) HOLD_FRAMES, 0.0, 1.0);
+        double secondsLeft = Math.max(0.0, (HOLD_FRAMES - exitHoldFrames) / 60.0);
+
+        g.save();
+        g.setStroke(Color.rgb(167, 139, 250, 0.34));
+        g.setLineWidth(1.2);
+        g.strokeLine(firstX, firstY, secondX, secondY);
+
+        g.setFill(Color.rgb(9, 9, 11, 0.88));
+        g.fillOval(centerX - 38, centerY - 38, 76, 76);
+        g.setStroke(Color.rgb(167, 139, 250, 0.28));
+        g.setLineWidth(2.0);
+        g.strokeOval(centerX - 32, centerY - 32, 64, 64);
+        g.setStroke(Color.web("#a78bfa"));
+        g.setLineWidth(4.0);
+        g.strokeArc(centerX - 34, centerY - 34, 68, 68,
+                90, -360 * progress, javafx.scene.shape.ArcType.OPEN);
+
+        g.setTextAlign(TextAlignment.CENTER);
+        g.setFill(Color.WHITE);
+        g.setFont(Font.font("Microsoft YaHei UI", FontWeight.BOLD, 17));
+        g.fillText(String.format("%.1f", secondsLeft), centerX, centerY + 5);
+        g.setFill(Color.rgb(196, 181, 253, 0.86));
+        g.setFont(Font.font("Microsoft YaHei UI", 11));
+        g.fillText("返回大厅", centerX, centerY + 54);
+        g.restore();
     }
 
     private Color difficultyAccent(Difficulty difficulty) {
@@ -1275,7 +1321,7 @@ public class GameRenderer {
         if (dualHands.active()) {
             exitHoldFrames = Math.min(HOLD_FRAMES, exitHoldFrames + 1);
             exitDropoutFrames = 0;
-        } else if (dualHands.active() && exitHoldFrames > 0 && exitDropoutFrames < 6) {
+        } else if (dualHands.captured() && exitHoldFrames > 0 && exitDropoutFrames < 6) {
             exitDropoutFrames++;
         } else {
             exitHoldFrames = 0;

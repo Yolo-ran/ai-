@@ -27,6 +27,15 @@ public final class ZumaGame implements GameInterface {
     private static final double PROJECTILE_SPEED = 17.0;
     private static final int PATH_SAMPLES = 960;
     private static final int INPUT_GUARD_FRAMES = 30;
+    private static final int FIST_CONFIRM_FRAMES = 10;
+    private static final int FIST_RELEASE_FRAMES = 8;
+    private static final int FIST_DROPOUT_MAX = 3;
+    private static final int MAX_PROJECTILES = 4;
+    private static final double AIM_CENTER_X = 0.50;
+    private static final double AIM_CENTER_Y = 0.52;
+    private static final double AIM_DEAD_ZONE = 0.035;
+    private static final double AIM_SMOOTHING = 0.24;
+    private static final double AIM_ASSIST_ANGLE = Math.toRadians(9.0);
     private static final Color[] PALETTE = {
             Color.web("#ef4444"),
             Color.web("#f5cf45"),
@@ -40,6 +49,7 @@ public final class ZumaGame implements GameInterface {
     private final List<PathPoint> path = new ArrayList<>(PATH_SAMPLES);
     private final List<ChainBall> chain = new ArrayList<>();
     private final List<BurstParticle> particles = new ArrayList<>();
+    private final List<Projectile> projectiles = new ArrayList<>();
 
     private int width;
     private int height;
@@ -49,6 +59,7 @@ public final class ZumaGame implements GameInterface {
     private double aimX;
     private double aimY;
     private double aimAngle = -Math.PI / 2.0;
+    private double lockedShotAngle = -Math.PI / 2.0;
     private boolean handDetected;
 
     private Difficulty difficulty = Difficulty.NORMAL;
@@ -65,12 +76,10 @@ public final class ZumaGame implements GameInterface {
     private boolean won;
     private int frame;
     private int currentColor;
-    private int nextColor;
-    private Projectile projectile;
     private boolean fistLatched;
+    private int fistHoldFrames;
+    private int fistDropoutFrames;
     private int fistReleaseFrames;
-    private boolean peaceLatched;
-    private int peaceReleaseFrames;
     private int combo;
     private int comboDisplayFrames;
 
@@ -104,20 +113,20 @@ public final class ZumaGame implements GameInterface {
         frame = 0;
         combo = 1;
         comboDisplayFrames = 0;
-        projectile = null;
+        projectiles.clear();
         fistLatched = true; // Require a release after difficulty confirmation.
+        fistHoldFrames = 0;
+        fistDropoutFrames = 0;
         fistReleaseFrames = 0;
-        peaceLatched = false;
-        peaceReleaseFrames = 0;
         inputGuardFrames = INPUT_GUARD_FRAMES;
         chain.clear();
         particles.clear();
 
         applyDifficulty();
         createSpiralPath();
+        updateAimMarker();
         startWave();
         currentColor = choosePlayableColor();
-        nextColor = choosePlayableColor();
     }
 
     private void applyDifficulty() {
@@ -219,7 +228,7 @@ public final class ZumaGame implements GameInterface {
         updateInput(gesture == null ? new GestureData() : gesture);
         advanceChain();
         feedWave();
-        updateProjectile();
+        updateProjectiles();
         updateParticles();
 
         if (!chain.isEmpty()
@@ -235,61 +244,114 @@ public final class ZumaGame implements GameInterface {
 
     private void updateInput(GestureData gesture) {
         handDetected = gesture.isHandDetected();
-        if (handDetected) {
-            double targetX = clamp(gesture.getHandX(), 0.0, 1.0) * width;
-            double targetY = clamp(gesture.getHandY(), 0.0, 1.0) * height;
-            aimX += (targetX - aimX) * 0.34;
-            aimY += (targetY - aimY) * 0.34;
-            double dx = aimX - frogX;
-            double dy = aimY - frogY;
-            if (Math.hypot(dx, dy) > 22.0) {
-                aimAngle = Math.atan2(dy, dx);
-            }
-        }
-
         GestureType type = handDetected ? gesture.getGesture() : GestureType.NONE;
         boolean fistNow = type == GestureType.FIST;
-        if (fistNow) {
-            fistReleaseFrames = 0;
-            if (!fistLatched && inputGuardFrames == 0 && projectile == null) {
-                shoot();
-            }
-            fistLatched = true;
-        } else {
-            fistReleaseFrames++;
-            if (fistReleaseFrames >= 4) {
-                fistLatched = false;
-            }
+        boolean confirmingFist = !fistLatched && fistHoldFrames > 0;
+        // 握拳会改变手掌中心；确认阶段冻结枪口，避免发射瞬间方向跳动。
+        if (handDetected && !fistNow && !confirmingFist) {
+            updateComfortAim(gesture);
         }
 
-        boolean peaceNow = type == GestureType.PEACE;
-        if (peaceNow) {
-            peaceReleaseFrames = 0;
-            if (!peaceLatched && inputGuardFrames == 0 && projectile == null) {
-                int swap = currentColor;
-                currentColor = nextColor;
-                nextColor = swap;
+        if (fistNow) {
+            fistReleaseFrames = 0;
+            fistDropoutFrames = 0;
+            if (!fistLatched) {
+                if (fistHoldFrames == 0) {
+                    lockedShotAngle = aimAngle;
+                }
+                fistHoldFrames = Math.min(FIST_CONFIRM_FRAMES, fistHoldFrames + 1);
+                if (fistHoldFrames >= FIST_CONFIRM_FRAMES) {
+                    if (inputGuardFrames == 0 && projectiles.size() < MAX_PROJECTILES) {
+                        shoot(lockedShotAngle);
+                    }
+                    fistLatched = true;
+                    fistHoldFrames = 0;
+                }
             }
-            peaceLatched = true;
+        } else if (!fistLatched && fistHoldFrames > 0) {
+            // 确认中允许极短闪断，进度不会因一帧抖动突然归零。
+            if (fistDropoutFrames < FIST_DROPOUT_MAX) {
+                fistDropoutFrames++;
+            } else {
+                fistHoldFrames = 0;
+                fistDropoutFrames = 0;
+            }
+            fistReleaseFrames = 0;
         } else {
-            peaceReleaseFrames++;
-            if (peaceReleaseFrames >= 4) {
-                peaceLatched = false;
+            fistHoldFrames = 0;
+            fistDropoutFrames = 0;
+            // 只有持续检测到非握拳才重新解锁；短暂丢手不会造成二次发射。
+            if (fistLatched && handDetected) {
+                fistReleaseFrames = Math.min(FIST_RELEASE_FRAMES, fistReleaseFrames + 1);
+                if (fistReleaseFrames >= FIST_RELEASE_FRAMES) {
+                    fistLatched = false;
+                }
+            } else if (!handDetected) {
+                fistReleaseFrames = 0;
             }
         }
     }
 
-    private void shoot() {
+    private void updateComfortAim(GestureData gesture) {
+        double dx = clamp(gesture.getHandX(), 0.0, 1.0) - AIM_CENTER_X;
+        double dy = clamp(gesture.getHandY(), 0.0, 1.0) - AIM_CENTER_Y;
+        if (Math.hypot(dx, dy) < AIM_DEAD_ZONE) {
+            updateAimMarker();
+            return;
+        }
+
+        double targetAngle = applyAimAssist(Math.atan2(dy, dx));
+        aimAngle = normalizeAngle(aimAngle
+                + shortestAngleDelta(aimAngle, targetAngle) * AIM_SMOOTHING);
+        updateAimMarker();
+    }
+
+    private double applyAimAssist(double rawAngle) {
+        double bestDelta = AIM_ASSIST_ANGLE;
+        double bestAngle = rawAngle;
+        for (ChainBall ball : chain) {
+            if (ball.distance < 0.0 || ball.distance > pathLength) {
+                continue;
+            }
+            PathPoint point = pointAtDistance(ball.distance);
+            double ballAngle = Math.atan2(point.y - frogY, point.x - frogX);
+            double delta = Math.abs(shortestAngleDelta(rawAngle, ballAngle));
+            if (delta < bestDelta) {
+                bestDelta = delta;
+                bestAngle = ballAngle;
+            }
+        }
+        if (bestDelta >= AIM_ASSIST_ANGLE) {
+            return rawAngle;
+        }
+        double strength = 0.72 * (1.0 - bestDelta / AIM_ASSIST_ANGLE);
+        return normalizeAngle(rawAngle + shortestAngleDelta(rawAngle, bestAngle) * strength);
+    }
+
+    private void updateAimMarker() {
         double cos = Math.cos(aimAngle);
         double sin = Math.sin(aimAngle);
-        projectile = new Projectile(
+        double radiusX = Math.max(1.0, width * 0.43);
+        double radiusY = Math.max(1.0, height * 0.37);
+        double rayLength = 1.0 / Math.sqrt(
+                cos * cos / (radiusX * radiusX)
+                        + sin * sin / (radiusY * radiusY));
+        aimX = frogX + cos * rayLength;
+        aimY = frogY + sin * rayLength;
+    }
+
+    private void shoot(double shotAngle) {
+        double cos = Math.cos(shotAngle);
+        double sin = Math.sin(shotAngle);
+        int firedColor = currentColor;
+        projectiles.add(new Projectile(
                 frogX + cos * 42.0,
                 frogY + sin * 42.0,
                 cos * PROJECTILE_SPEED,
                 sin * PROJECTILE_SPEED,
-                currentColor);
-        currentColor = nextColor;
-        nextColor = choosePlayableColor();
+                firedColor));
+        // 每次发射后立即装填另一种颜色；持续握拳不会重复触发。
+        currentColor = chooseDifferentPlayableColor(firedColor);
     }
 
     private void advanceChain() {
@@ -315,50 +377,48 @@ public final class ZumaGame implements GameInterface {
             if (refillDelay >= 72 && (targetScore < 0 || score < targetScore)) {
                 startWave();
                 currentColor = choosePlayableColor();
-                nextColor = choosePlayableColor();
             }
         }
     }
 
-    private void updateProjectile() {
-        if (projectile == null) {
-            return;
-        }
-        projectile.x += projectile.vx;
-        projectile.y += projectile.vy;
+    private void updateProjectiles() {
+        for (int projectileIndex = projectiles.size() - 1;
+             projectileIndex >= 0; projectileIndex--) {
+            Projectile projectile = projectiles.get(projectileIndex);
+            projectile.x += projectile.vx;
+            projectile.y += projectile.vy;
 
-        int hitIndex = -1;
-        double hitDistance = Double.MAX_VALUE;
-        for (int index = 0; index < chain.size(); index++) {
-            ChainBall ball = chain.get(index);
-            if (ball.distance < -BALL_RADIUS || ball.distance > pathLength) {
+            int hitIndex = -1;
+            double hitDistance = Double.MAX_VALUE;
+            for (int index = 0; index < chain.size(); index++) {
+                ChainBall ball = chain.get(index);
+                if (ball.distance < -BALL_RADIUS || ball.distance > pathLength) {
+                    continue;
+                }
+                PathPoint point = pointAtDistance(ball.distance);
+                double distance = Math.hypot(projectile.x - point.x, projectile.y - point.y);
+                if (distance < BALL_RADIUS + PROJECTILE_RADIUS - 2.0
+                        && distance < hitDistance) {
+                    hitDistance = distance;
+                    hitIndex = index;
+                }
+            }
+
+            if (hitIndex >= 0) {
+                insertProjectile(hitIndex, projectile);
+                projectiles.remove(projectileIndex);
                 continue;
             }
-            PathPoint point = pointAtDistance(ball.distance);
-            double distance = Math.hypot(projectile.x - point.x, projectile.y - point.y);
-            if (distance < BALL_RADIUS + PROJECTILE_RADIUS - 2.0
-                    && distance < hitDistance) {
-                hitDistance = distance;
-                hitIndex = index;
+
+            double margin = 80.0;
+            if (projectile.x < -margin || projectile.x > width + margin
+                    || projectile.y < -margin || projectile.y > height + margin) {
+                projectiles.remove(projectileIndex);
             }
-        }
-
-        if (hitIndex >= 0) {
-            insertProjectile(hitIndex);
-            projectile = null;
-            currentColor = choosePlayableColor(currentColor);
-            nextColor = choosePlayableColor(nextColor);
-            return;
-        }
-
-        double margin = 80.0;
-        if (projectile.x < -margin || projectile.x > width + margin
-                || projectile.y < -margin || projectile.y > height + margin) {
-            projectile = null;
         }
     }
 
-    private void insertProjectile(int hitIndex) {
+    private void insertProjectile(int hitIndex, Projectile projectile) {
         ChainBall hit = chain.get(hitIndex);
         Vec tangent = tangentAtDistance(hit.distance);
         double alongPath = projectile.vx * tangent.x + projectile.vy * tangent.y;
@@ -486,6 +546,29 @@ public final class ZumaGame implements GameInterface {
         return 0;
     }
 
+    private int chooseDifferentPlayableColor(int previousColor) {
+        boolean[] present = new boolean[activeColors];
+        int alternatives = 0;
+        for (ChainBall ball : chain) {
+            if (ball.color != previousColor && !present[ball.color]) {
+                present[ball.color] = true;
+                alternatives++;
+            }
+        }
+        if (alternatives > 0) {
+            int pick = random.nextInt(alternatives);
+            for (int color = 0; color < activeColors; color++) {
+                if (present[color] && pick-- == 0) {
+                    return color;
+                }
+            }
+        }
+        if (activeColors <= 1) {
+            return previousColor;
+        }
+        return (previousColor + 1 + random.nextInt(activeColors - 1)) % activeColors;
+    }
+
     @Override
     public void render(GraphicsContext graphics) {
         drawBackground(graphics);
@@ -495,7 +578,7 @@ public final class ZumaGame implements GameInterface {
         drawParticles(graphics);
         drawAim(graphics);
         drawFrog(graphics);
-        drawProjectile(graphics);
+        drawProjectiles(graphics);
         drawHud(graphics);
     }
 
@@ -613,6 +696,13 @@ public final class ZumaGame implements GameInterface {
         graphics.strokeLine(aimX + 6.0, aimY, aimX + 18.0, aimY);
         graphics.strokeLine(aimX, aimY - 18.0, aimX, aimY - 6.0);
         graphics.strokeLine(aimX, aimY + 6.0, aimX, aimY + 18.0);
+        if (fistHoldFrames > 0) {
+            double progress = fistHoldFrames / (double) FIST_CONFIRM_FRAMES;
+            graphics.setStroke(Color.web("#f5d547"));
+            graphics.setLineWidth(3.0);
+            graphics.strokeArc(aimX - 22.0, aimY - 22.0, 44.0, 44.0,
+                    90.0, -360.0 * progress, javafx.scene.shape.ArcType.OPEN);
+        }
     }
 
     private void drawFrog(GraphicsContext graphics) {
@@ -642,8 +732,8 @@ public final class ZumaGame implements GameInterface {
         graphics.restore();
     }
 
-    private void drawProjectile(GraphicsContext graphics) {
-        if (projectile != null) {
+    private void drawProjectiles(GraphicsContext graphics) {
+        for (Projectile projectile : projectiles) {
             drawBall(graphics, projectile.x, projectile.y,
                     PROJECTILE_RADIUS, projectile.color, 1.0);
         }
@@ -672,7 +762,7 @@ public final class ZumaGame implements GameInterface {
         graphics.fillText("🐸  祖玛", 41.0, 49.0);
         graphics.setFill(Color.web("#9fb790"));
         graphics.setFont(Font.font("Microsoft YaHei UI", 13.0));
-        graphics.fillText("握拳发射  ·  剪刀手换球", 41.0, 76.0);
+        graphics.fillText("稳定握拳发射一颗  ·  发射后自动换色", 41.0, 76.0);
 
         graphics.setTextAlign(TextAlignment.RIGHT);
         graphics.setFill(Color.web("#f7ffe8"));
@@ -696,7 +786,7 @@ public final class ZumaGame implements GameInterface {
         graphics.setTextAlign(TextAlignment.RIGHT);
         graphics.setFill(Color.color(0.88, 1.0, 0.70, 0.72));
         graphics.setFont(Font.font("Microsoft YaHei UI", 13.0));
-        graphics.fillText("移动手掌瞄准 · ✊ 发射 · ✌ 交换下一颗",
+        graphics.fillText("手在中央小幅移动即可全场瞄准 · 握拳锁定并发射",
                 width - 28.0, height - 24.0);
         graphics.setTextAlign(TextAlignment.LEFT);
     }
@@ -775,6 +865,14 @@ public final class ZumaGame implements GameInterface {
 
     private static double clamp(double value, double min, double max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    private static double shortestAngleDelta(double from, double to) {
+        return Math.atan2(Math.sin(to - from), Math.cos(to - from));
+    }
+
+    private static double normalizeAngle(double angle) {
+        return Math.atan2(Math.sin(angle), Math.cos(angle));
     }
 
     private record PathPoint(double x, double y, double distance) {
