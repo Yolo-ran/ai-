@@ -361,19 +361,43 @@ final class LobbyCardDeck {
                             : new java.net.URL(card.imagePath);
                     BufferedImage bgImage = javax.imageio.ImageIO.read(url);
                     if (bgImage != null) {
-                        // 按比例缩放并居中裁剪 (cover)
-                        double scale = Math.max((double) width / bgImage.getWidth(), (double) height / bgImage.getHeight());
-                        int drawW = (int) (bgImage.getWidth() * scale);
-                        int drawH = (int) (bgImage.getHeight() * scale);
-                        int drawX = (width - drawW) / 2;
-                        int drawY = (height - drawH) / 2;
+                        // 先用封面图做一层铺满背景，保证整张卡片有完整氛围。
+                        double coverScale = Math.max((double) width / bgImage.getWidth(),
+                                (double) height / bgImage.getHeight());
+                        int coverW = (int) Math.round(bgImage.getWidth() * coverScale);
+                        int coverH = (int) Math.round(bgImage.getHeight() * coverScale);
+                        int coverX = (width - coverW) / 2;
+                        int coverY = (height - coverH) / 2;
+                        graphics.drawImage(bgImage, coverX, coverY, coverW, coverH, null);
 
-                        // 绘制背景图
-                        graphics.drawImage(bgImage, drawX, drawY, drawW, drawH, null);
-
-                        // 叠加一层极轻微的暗色遮罩，让底色不至于太刺眼
-                        graphics.setPaint(new java.awt.Color(0, 0, 0, 80));
+                        graphics.setPaint(new java.awt.Color(6, 8, 18, 165));
                         graphics.fillRect(0, 0, width, height);
+
+                        // 再居中完整展示原图，避免顶部标题和主体炮台被裁掉。
+                        int imagePaddingX = 30;
+                        int imagePaddingY = 18;
+                        double containScale = Math.min(
+                                (double) (width - imagePaddingX * 2) / bgImage.getWidth(),
+                                (double) (height - imagePaddingY * 2) / bgImage.getHeight());
+                        int posterW = (int) Math.round(bgImage.getWidth() * containScale);
+                        int posterH = (int) Math.round(bgImage.getHeight() * containScale);
+                        int posterX = (width - posterW) / 2;
+                        int posterY = imagePaddingY + Math.max(0, (height - imagePaddingY * 2 - posterH) / 2);
+
+                        graphics.setPaint(new java.awt.Color(0, 0, 0, 120));
+                        graphics.fillRoundRect(posterX - 10, posterY - 10,
+                                posterW + 20, posterH + 20, 30, 30);
+
+                        java.awt.Shape previousClip = graphics.getClip();
+                        RoundRectangle2D posterClip = new RoundRectangle2D.Double(
+                                posterX, posterY, posterW, posterH, 28.0, 28.0);
+                        graphics.setClip(posterClip);
+                        graphics.drawImage(bgImage, posterX, posterY, posterW, posterH, null);
+                        graphics.setClip(previousClip);
+
+                        graphics.setColor(new java.awt.Color(255, 255, 255, 88));
+                        graphics.setStroke(new BasicStroke(1.5f));
+                        graphics.drawRoundRect(posterX, posterY, posterW, posterH, 28, 28);
 
                         imageLoaded = true;
                     }
