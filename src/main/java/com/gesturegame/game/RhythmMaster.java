@@ -1025,6 +1025,7 @@ public class RhythmMaster implements GameInterface {
 
     @Override public boolean isOver() { return state == State.GAME_OVER; }
     @Override public int getScore() { return score; }
+    @Override public int getMaxCombo() { return maxCombo; }
 
     /** GameRenderer 用来判断选歌阶段是否完成 */
     public boolean isSongConfirmed() { return state == State.PLAYING || state == State.GAME_OVER; }

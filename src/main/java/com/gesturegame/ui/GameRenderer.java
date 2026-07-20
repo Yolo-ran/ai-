@@ -95,10 +95,20 @@ public class GameRenderer {
     // 选歌阶段
     private boolean songSelectPhase;
     private int songSelectIdx;
-    private int songSelectFrames;       // 帧计数器
-    private static final int SONG_SELECT_DEBOUNCE = 45; // 前45帧（~0.75秒）忽略握拳
-    private double mouseY = -1;         // 鼠标Y坐标，-1=鼠标不在画布上
-    private boolean mouseClicked;       // 本帧有点击
+    private int songSelectFrames;
+    private static final int SONG_SELECT_DEBOUNCE = 45;
+
+    // 无尽模式子菜单（复用难度选择界面）
+    private boolean endlessSubMenu;
+    private int endlessSubLeaderIdx;  // -1=菜单, 0=或1=选项, 2=看榜
+    private GameInterface endlessSubGame;
+    private java.util.List<com.gesturegame.persistence.LeaderboardStore.LeaderboardEntry> endlessLeaderboard;
+    private final com.gesturegame.persistence.LeaderboardStore leaderboard =
+            new com.gesturegame.persistence.LeaderboardStore();
+    private java.util.List<com.gesturegame.persistence.LeaderboardStore.LeaderboardEntry> settlementLeaderboard;
+
+    private double mouseY = -1;
+    private boolean mouseClicked;
     private double settlementParticleWidth = -1;
     private double settlementParticleHeight = -1;
     private WritableImage cssRainImage;
@@ -225,10 +235,19 @@ public class GameRenderer {
             gameOverHandled = true;
             settling = true;
             settlementStartedNanos = System.nanoTime();
-            if (statusLabel != null) {
-                statusLabel.setText("");
-            }
+            if (statusLabel != null) statusLabel.setText("");
             LOGGER.info(() -> "[GameRenderer] 游戏结束: " + game.getName() + " 得分=" + game.getScore());
+            // 无尽模式保存排行榜
+            if (game.getDifficulty() == Difficulty.ENDLESS && appStateManager != null) {
+                String user = appStateManager.getSignedInUser();
+                if (user != null && !user.isBlank()) {
+                    leaderboard.saveScore(game.getName(), "ENDLESS", user,
+                            game.getScore(), game.getMaxCombo());
+                }
+                settlementLeaderboard = leaderboard.getTop(game.getName(), "ENDLESS", 5);
+            } else {
+                settlementLeaderboard = null;
+            }
             if (appStateManager != null) {
                 appStateManager.switchState(AppStateManager.STATE_GAME_OVER);
             }
@@ -281,6 +300,7 @@ public class GameRenderer {
         openHoldFrames = 0;
         settlementStartedNanos = 0;
         songSelectPhase = false;
+        endlessSubMenu = false;
         mouseY = -1;
         // 重置当前游戏（清理WebView等资源）
         if (currentGame != null) {
@@ -303,6 +323,8 @@ public class GameRenderer {
         compactHoldFrames = 0;
         openHoldFrames = 0;
         settlementStartedNanos = 0;
+        songSelectPhase = false;
+        endlessSubMenu = false;
         GameInterface game = AppStateManager.getInstance().getActiveGame();
         if (game != null) {
             game.reset();
@@ -496,11 +518,23 @@ public class GameRenderer {
             diffDropoutFrames = 0;
         }
 
-        // 握拳确认(1.2s) → 进入选歌（节奏大师）或游戏
+        // 握拳确认(1.2s) → 进入选歌/无尽菜单/游戏
         if (compactHoldFrames >= HOLD_FRAMES) {
             compactHoldFrames = 0;
             GameInterface game = AppStateManager.getInstance().getActiveGame();
             if (game != null) {
+                // 无尽子菜单：确认开始游戏或查看排行榜
+                if (endlessSubMenu) {
+                    if (selectedDifficulty == Difficulty.EASY) {
+                        endlessSubMenu = false;
+                        game.setDifficulty(Difficulty.ENDLESS);
+                        currentGame = null;
+                        AppStateManager.getInstance().switchState(AppStateManager.STATE_GAME);
+                    } else {
+                        endlessSubLeaderIdx = 2;
+                    }
+                    return;
+                }
                 game.setDifficulty(selectedDifficulty);
                 LOGGER.info("难度选择确认: " + selectedDifficulty.getLabel() + " → " + game.getName());
                 // 节奏大师：先进选歌界面
@@ -508,6 +542,16 @@ public class GameRenderer {
                     initGame(game);
                     songSelectPhase = true;
                     songSelectFrames = 0;
+                    return;
+                }
+                // 选无尽模式 → 进子菜单
+                if (selectedDifficulty == Difficulty.ENDLESS) {
+                    initGame(game);
+                    endlessSubMenu = true;
+                    endlessSubLeaderIdx = -1;
+                    endlessSubGame = game;
+                    endlessLeaderboard = leaderboard.getTop(game.getName(), "ENDLESS", 5);
+                    selectedDifficulty = Difficulty.EASY;
                     return;
                 }
             }
@@ -519,6 +563,7 @@ public class GameRenderer {
         // 双手稳定保持 → 返回大厅
         if (exitHoldFrames >= HOLD_FRAMES) {
             exitHoldFrames = 0;
+            endlessSubMenu = false;
             LOGGER.info("难度选择取消，返回大厅");
             AppStateManager.getInstance().switchState(AppStateManager.STATE_LOBBY);
             return;
@@ -633,9 +678,15 @@ public class GameRenderer {
         difficultyFade += (1.0 - difficultyFade) * 0.12;
 
         java.util.List<Difficulty> supported = new java.util.ArrayList<>();
-        for (Difficulty difficulty : Difficulty.values()) {
-            if (activeGame == null || activeGame.supportsDifficulty(difficulty)) {
-                supported.add(difficulty);
+        // 无尽子菜单：只显示"开始游戏"和"查看排行榜"
+        if (endlessSubMenu) {
+            supported.add(Difficulty.EASY);   // → 开始游戏
+            supported.add(Difficulty.HARD);   // → 查看排行榜
+        } else {
+            for (Difficulty difficulty : Difficulty.values()) {
+                if (activeGame == null || activeGame.supportsDifficulty(difficulty)) {
+                    supported.add(difficulty);
+                }
             }
         }
         Difficulty[] diffs = supported.toArray(new Difficulty[0]);
@@ -669,6 +720,29 @@ public class GameRenderer {
         int hoveredIndex = -1;
         updateExitHold(dualHands);
         updateDifficultyCursor(gesture, dualHands, w, h);
+
+        // 排行榜查看模式：只响应双手入镜返回，不处理选卡手势
+        if (endlessSubLeaderIdx == 2) {
+            if (dualHands.captured()) {
+                exitHoldFrames++;
+                if (exitHoldFrames >= HOLD_FRAMES) {
+                    endlessSubLeaderIdx = -1;
+                    exitHoldFrames = 0;
+                }
+            } else {
+                exitHoldFrames = 0;
+            }
+            // 直接渲染排行榜，跳过卡片手势
+            drawDifficultyGlassBackground(g, w, h, activeGame);
+            renderLeaderboardOverlay(g, w, h);
+            if (difficultyCursorOpacity > 0.015 && !Double.isNaN(difficultyCursorX)) {
+                g.save(); g.setGlobalAlpha(difficultyCursorOpacity);
+                drawDifficultyCursor(g, difficultyCursorX, difficultyCursorY, 0, 0);
+                g.restore();
+            }
+            return true;
+        }
+
         if (gesture != null && gesture.isHandDetected() && !dualHands.captured()) {
             double hx = gesture.getHandX() * w;
             double hy = gesture.getHandY() * h;
@@ -713,8 +787,29 @@ public class GameRenderer {
             compactHoldFrames = 0;
             difficultyHoldIndex = -1;
             if (activeGame != null) {
+                // 无尽子菜单确认
+                if (endlessSubMenu) {
+                    if (selectedDifficulty == Difficulty.EASY) {
+                        endlessSubMenu = false;
+                        activeGame.setDifficulty(Difficulty.ENDLESS);
+                        currentGame = null;
+                        AppStateManager.getInstance().switchState(AppStateManager.STATE_GAME);
+                    } else {
+                        endlessSubLeaderIdx = 2;
+                    }
+                    return true;
+                }
                 activeGame.setDifficulty(selectedDifficulty);
                 LOGGER.info("难度选择确认: " + selectedDifficulty.getLabel() + " → " + activeGame.getName());
+                if (selectedDifficulty == Difficulty.ENDLESS) {
+                    initGame(activeGame);
+                    endlessSubMenu = true;
+                    endlessSubLeaderIdx = -1;
+                    endlessSubGame = activeGame;
+                    endlessLeaderboard = leaderboard.getTop(activeGame.getName(), "ENDLESS", 5);
+                    selectedDifficulty = Difficulty.EASY;
+                    return true;
+                }
             }
             currentGame = null;
             AppStateManager.getInstance().switchState(AppStateManager.STATE_GAME);
@@ -723,6 +818,7 @@ public class GameRenderer {
 
         if (exitHoldFrames >= HOLD_FRAMES) {
             exitHoldFrames = 0;
+            endlessSubMenu = false;
             LOGGER.info("难度选择取消，返回大厅");
             AppStateManager.getInstance().switchState(AppStateManager.STATE_LOBBY);
             return true;
@@ -739,16 +835,37 @@ public class GameRenderer {
         for (int i = 0; i < n; i++) {
             double progress = i == selectedIndex
                     ? compactHoldFrames / (double) DIFFICULTY_HOLD_FRAMES : 0;
+            String labelOverride = null;
+            if (endlessSubMenu) {
+                labelOverride = (i == 0) ? "🎮  开始游戏" : "🏆  查看排行榜";
+            }
             drawDifficultyGlassCard(g, diffs[i], activeGame, cardX[i], cardY[i],
-                    cardW, cardH, i == selectedIndex, progress);
+                    cardW, cardH, i == selectedIndex, progress, labelOverride);
         }
         g.setGlobalAlpha(1.0);
+
+        // 无尽子菜单：替换卡片上的文字
+        if (endlessSubMenu) {
+            String[] labels = {"🎮  开始游戏", "🏆  查看排行榜"};
+            for (int i = 0; i < n; i++) {
+                boolean sel = i == selectedIndex;
+                double shear = Math.tan(Math.toRadians(-8));
+                g.save();
+                g.translate(cardX[i], cardY[i]);
+                g.transform(1, shear, 0, 1, 0, -shear * cardW / 2.0);
+                g.setFill(sel ? Color.web("#3B82F6") : Color.rgb(161, 161, 170, 0.68));
+                g.setFont(Font.font("Microsoft YaHei", FontWeight.BOLD, 18));
+                g.fillText(labels[i], 54, 35);
+                g.restore();
+            }
+        }
 
         if (difficultyCursorOpacity > 0.015 && !Double.isNaN(difficultyCursorX)) {
             g.save();
             g.setGlobalAlpha(difficultyCursorOpacity);
-            drawDifficultyCursor(g, difficultyCursorX, difficultyCursorY,
-                    compactHoldFrames / (double) DIFFICULTY_HOLD_FRAMES);
+            double fistPct = compactHoldFrames / (double) DIFFICULTY_HOLD_FRAMES;
+            double exitPct = exitHoldFrames / (double) HOLD_FRAMES;
+            drawDifficultyCursor(g, difficultyCursorX, difficultyCursorY, fistPct, exitPct);
             g.restore();
         }
 
@@ -757,8 +874,40 @@ public class GameRenderer {
         return true;
     }
 
+    /** 排行榜全屏覆盖 */
+    private void renderLeaderboardOverlay(GraphicsContext g, double w, double h) {
+        g.setFill(Color.rgb(0, 0, 0, 0.78));
+        g.fillRect(0, 0, w, h);
+        g.setFill(Color.WHITE);
+        g.setFont(Font.font("Microsoft YaHei UI", 24));
+        g.setTextAlign(TextAlignment.CENTER);
+        String gn = endlessSubGame != null ? endlessSubGame.getName() : "";
+        g.fillText("🏆 " + gn + " 排行榜 TOP 5", w * 0.5, h * 0.15);
+
+        int en = endlessLeaderboard != null ? Math.min(endlessLeaderboard.size(), 5) : 0;
+        if (en == 0) {
+            g.setFill(Color.rgb(255, 255, 255, 0.4));
+            g.setFont(Font.font("Microsoft YaHei UI", 16));
+            g.fillText("暂无记录", w * 0.5, h * 0.50);
+        } else {
+            g.setFont(Font.font("Consolas", 15));
+            for (int i = 0; i < en; i++) {
+                var e = endlessLeaderboard.get(i);
+                g.setFill(i == 0 ? Color.GOLD : i == 1 ? Color.SILVER : i == 2
+                        ? Color.web("#cd7f32") : Color.rgb(200, 200, 200));
+                g.fillText(String.format("%d.  %-10s  %6d  %d combo",
+                        i + 1, e.username(), e.score(), e.maxCombo()),
+                        w * 0.5, h * 0.30 + i * 28);
+            }
+        }
+        g.setFill(Color.rgb(255, 255, 255, 0.4));
+        g.setFont(Font.font("Microsoft YaHei UI", 14));
+        g.fillText("🤲 双手入镜返回菜单", w * 0.5, h * 0.85);
+        g.setTextAlign(TextAlignment.LEFT);
+    }
+
     /**
-     * 叠卡大量重合，不能再用“当前卡优先”的矩形命中，否则选中后会把其他卡全部挡住。
+     * 叠卡大量重合，不能再用"当前卡优先"的矩形命中，否则选中后会把其他卡全部挡住。
      * 在整个卡堆的扩展范围内选择距离各卡左上可见标签最近的一张，卡片抬升动画不影响命中区。
      */
     private int resolveDifficultyHover(double handX, double handY,
@@ -793,13 +942,25 @@ public class GameRenderer {
     private void updateDifficultyCursor(GestureData gesture, DualHandState dualHands,
                                         double width, double height) {
         boolean visible = gesture != null && gesture.isHandDetected() && !dualHands.captured();
+        // 双手退出时也要保持光标显示进度
+        if (!visible && exitHoldFrames > 0 && dualHands.captured()) {
+            visible = true;
+            difficultyCursorOpacity = Math.min(1.0, difficultyCursorOpacity + 0.1);
+        }
         if (!visible) {
             difficultyCursorOpacity *= 0.74;
             return;
         }
 
-        double targetX = clampDifficulty(gesture.getHandX(), 0.0, 1.0) * width;
-        double targetY = clampDifficulty(gesture.getHandY(), 0.0, 1.0) * height;
+        double targetX, targetY;
+        if (dualHands.captured() && exitHoldFrames > 0) {
+            // 双手退出：用两手中心点
+            targetX = ((gesture != null ? gesture.getHandX() : 0.5) + dualHands.secondHandX()) * 0.5 * width;
+            targetY = ((gesture != null ? gesture.getHandY() : 0.5) + dualHands.secondHandY()) * 0.5 * height;
+        } else {
+            targetX = clampDifficulty(gesture.getHandX(), 0.0, 1.0) * width;
+            targetY = clampDifficulty(gesture.getHandY(), 0.0, 1.0) * height;
+        }
         if (Double.isNaN(difficultyCursorX) || difficultyCursorOpacity < 0.02) {
             difficultyCursorX = targetX;
             difficultyCursorY = targetY;
@@ -822,7 +983,7 @@ public class GameRenderer {
     private void drawDifficultyGlassCard(GraphicsContext g, Difficulty difficulty,
                                          GameInterface activeGame, double x, double y,
                                          double cardW, double cardH, boolean selected,
-                                         double holdProgress) {
+                                         double holdProgress, String labelOverride) {
         Color accent = difficultyAccent(difficulty);
         double shear = Math.tan(Math.toRadians(-8));
         g.save();
@@ -859,19 +1020,22 @@ public class GameRenderer {
         g.setTextAlign(TextAlignment.CENTER);
         g.fillText("✦", 30, 34);
 
-        String label = activeGame == null
-                ? difficulty.getLabel() : activeGame.getDifficultyLabel(difficulty);
+        String label = labelOverride != null
+                ? labelOverride
+                : (activeGame == null ? difficulty.getLabel() : activeGame.getDifficultyLabel(difficulty));
         g.setTextAlign(TextAlignment.LEFT);
         g.setFill(selected ? Color.web("#3B82F6") : Color.rgb(161, 161, 170, 0.68));
         g.setFont(Font.font("Microsoft YaHei", FontWeight.BOLD, 18));
         g.fillText(label, 54, 35);
 
-        g.setFill(Color.rgb(244, 244, 245, selected ? 0.91 : 0.52));
-        g.setFont(Font.font("Microsoft YaHei", 16));
-        g.fillText(difficultyDescription(difficulty), 16, cardH - 48, cardW - 32);
-        g.setFill(Color.rgb(161, 161, 170, selected ? 0.72 : 0.40));
-        g.setFont(Font.font("Consolas", 11));
-        g.fillText(difficultyTag(difficulty), 16, cardH - 19);
+        if (labelOverride == null) {
+            g.setFill(Color.rgb(244, 244, 245, selected ? 0.91 : 0.52));
+            g.setFont(Font.font("Microsoft YaHei", 16));
+            g.fillText(difficultyDescription(difficulty), 16, cardH - 48, cardW - 32);
+            g.setFill(Color.rgb(161, 161, 170, selected ? 0.72 : 0.40));
+            g.setFont(Font.font("Consolas", 11));
+            g.fillText(difficultyTag(difficulty), 16, cardH - 19);
+        }
 
         // Mirrors the reference card's oversized right-side ::after mask.
         LinearGradient fade = new LinearGradient(0, 0, 1, 0, true,
@@ -896,7 +1060,7 @@ public class GameRenderer {
         g.restore();
     }
 
-    private void drawDifficultyCursor(GraphicsContext g, double x, double y, double progress) {
+    private void drawDifficultyCursor(GraphicsContext g, double x, double y, double fistProgress, double exitProgress) {
         g.setFill(Color.rgb(147, 197, 253, 0.13));
         g.fillOval(x - 18, y - 18, 36, 36);
         g.setStroke(Color.web("#bfdbfe"));
@@ -904,10 +1068,19 @@ public class GameRenderer {
         g.strokeOval(x - 9, y - 9, 18, 18);
         g.setFill(Color.WHITE);
         g.fillOval(x - 2.5, y - 2.5, 5, 5);
-        if (progress > 0) {
+        // 握拳确认进度（金色）
+        if (fistProgress > 0) {
+            g.setStroke(Color.web("#f0ca79"));
             g.setLineWidth(3);
             g.strokeArc(x - 23, y - 23, 46, 46, 90,
-                    -360 * clampDifficulty(progress, 0, 1), javafx.scene.shape.ArcType.OPEN);
+                    -360 * clampDifficulty(fistProgress, 0, 1), javafx.scene.shape.ArcType.OPEN);
+        }
+        // 双手返回进度（紫色）
+        if (exitProgress > 0) {
+            g.setStroke(Color.web("#a78bfa"));
+            g.setLineWidth(3);
+            g.strokeArc(x - 28, y - 28, 56, 56, 90,
+                    -360 * clampDifficulty(exitProgress, 0, 1), javafx.scene.shape.ArcType.OPEN);
         }
     }
 
@@ -1114,6 +1287,23 @@ public class GameRenderer {
         g.setFont(Font.font("Consolas", FontWeight.NORMAL, clampDifficulty(w * 0.014, 14, 20)));
         g.setFill(Color.hsb(hue, 0.62, 0.92, 0.62));
         g.fillText(result, w * 0.5, titleY + titleSize * 0.60);
+
+        // 无尽模式排行榜
+        if (settlementLeaderboard != null && !settlementLeaderboard.isEmpty()) {
+            double lbAlpha = clampDifficulty((elapsed - 1.8) / 1.0, 0, 1);
+            g.setGlobalAlpha(lbAlpha);
+            double lbY = titleY + titleSize * 0.85;
+            g.setFill(Color.GOLD.deriveColor(0, 1, 1, 0.85));
+            g.setFont(Font.font("Microsoft YaHei UI", 14));
+            g.fillText("🏆 排行榜 TOP 5", w * 0.5, lbY);
+            g.setFont(Font.font("Consolas", 12));
+            for (int i = 0; i < settlementLeaderboard.size(); i++) {
+                var e = settlementLeaderboard.get(i);
+                g.setFill(i == 0 ? Color.GOLD : Color.rgb(200, 200, 200));
+                g.fillText(String.format("%d. %-8s  %6d",
+                        i + 1, e.username(), e.score()), w * 0.5, lbY + 18 + i * 16);
+            }
+        }
 
         g.setGlobalAlpha(1.0);
         g.setTextAlign(TextAlignment.LEFT);
