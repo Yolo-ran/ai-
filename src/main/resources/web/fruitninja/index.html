@@ -4,8 +4,10 @@
     <meta charset="UTF-8">
     <title>Fruit Ninja Local</title>
     <style>
-        body, html { margin: 0; padding: 0; overflow: hidden; background: #111 url('assets/background.png') no-repeat center center; background-size: 100% 100%; width: 100%; height: 100%; }
+        body, html { position: relative; margin: 0; padding: 0; overflow: hidden; background: #111 url('assets/background.png') no-repeat center center; background-size: 100% 100%; width: 100%; height: 100%; }
         canvas { display: block; width: 100vw; height: 100vh; }
+        #gameCanvas { position: absolute; inset: 0; z-index: 0; }
+        #hitCanvas { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
         
         #ui-layer {
             position: absolute;
@@ -17,6 +19,7 @@
             color: #fff;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            z-index: 2;
         }
         
         .score-container {
@@ -58,6 +61,7 @@
 </head>
 <body>
     <canvas id="gameCanvas"></canvas>
+    <canvas id="hitCanvas"></canvas>
     <div id="ui-layer">
         <img src="assets/score.png" class="score-icon">
         <div class="score-container"><span id="scoreDisplay">0</span></div>
@@ -77,9 +81,23 @@
 
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
+        const hitCanvas = document.getElementById('hitCanvas');
+        const hitContext = hitCanvas.getContext('2d');
         
         let w = canvas.width = window.innerWidth;
         let h = canvas.height = window.innerHeight;
+        hitCanvas.width = w;
+        hitCanvas.height = h;
+        const scanlineCanvas = document.createElement('canvas');
+        const scanlineContext = scanlineCanvas.getContext('2d');
+        function rebuildScanlines() {
+            scanlineCanvas.width = w;
+            scanlineCanvas.height = h;
+            scanlineContext.clearRect(0, 0, w, h);
+            scanlineContext.fillStyle = 'rgba(0, 0, 0, 0.03)';
+            for (let y = 0; y < h; y += 4) scanlineContext.fillRect(0, y, w, 2);
+        }
+        rebuildScanlines();
 
         const scoreDisplay = document.getElementById('scoreDisplay');
         const livesDisplay = document.getElementById('livesDisplay');
@@ -104,14 +122,31 @@
         };
 
         // --- Audio ---
+        const soundCache = Object.create(null);
         function playSound(name) {
             try {
-                let snd = new Audio(`assets/${name}.mp3`);
-                snd.play();
+                let snd = soundCache[name];
+                if (!snd) {
+                    snd = new Audio(`assets/${name}.mp3`);
+                    snd.preload = 'auto';
+                    soundCache[name] = snd;
+                }
+                snd.currentTime = 0;
+                const playback = snd.play();
+                if (playback) playback.catch(() => {});
             } catch(e) {
                 console.log("Audio play error: " + e);
             }
         }
+        function queueSound(name) {
+            setTimeout(() => playSound(name), 0);
+        }
+        ['throw', 'splatter', 'boom', 'over'].forEach(name => {
+            const snd = new Audio(`assets/${name}.mp3`);
+            snd.preload = 'auto';
+            snd.load();
+            soundCache[name] = snd;
+        });
 
         // --- Game Entities ---
         const FRUIT_TYPES = ['apple', 'banana', 'basaha', 'peach', 'sandia'];
@@ -134,16 +169,140 @@
         IMAGES['flash'] = new Image(); IMAGES['flash'].src = 'assets/flash.png';
         IMAGES['smoke'] = new Image(); IMAGES['smoke'].src = 'assets/smoke.png';
 
+        const SPRITES = Object.create(null);
+        function cacheSprite(key, image) {
+            if (!image || !image.complete || image.naturalWidth <= 0 || image.naturalHeight <= 0) return null;
+            const sprite = document.createElement('canvas');
+            sprite.width = image.naturalWidth;
+            sprite.height = image.naturalHeight;
+            sprite.getContext('2d').drawImage(image, 0, 0);
+            SPRITES[key] = sprite;
+            return sprite;
+        }
+        function getSprite(key) {
+            if (SPRITES[key]) return SPRITES[key];
+            return cacheSprite(key, IMAGES[key]);
+        }
+        Object.keys(IMAGES).forEach(key => {
+            const image = IMAGES[key];
+            const cache = () => cacheSprite(key, image);
+            if (image.complete && image.naturalWidth > 0) cache();
+            else image.addEventListener('load', cache, { once: true });
+        });
+
         // --- Screen Flash for Bomb ---
         let screenFlashAlpha = 0;
 
         const fruits = [];
+        const slicedPieces = [];
+        const cutBursts = [];
         const particles = [];
         const trailHistory = [];
         const juiceStains = []; // 沾染在背景上的果汁
         const shockwaves = [];  // 环境扩散冲击波
         const gridParticles = []; // 底部透视网格升腾微粒
         const maxHistoryLength = 15;
+        const MAX_PARTICLES = 120;
+        const MAX_JUICE_STAINS = 8;
+        const MAX_SLICED_PIECES = 16;
+        const MAX_CUT_BURSTS = 6;
+        const TRAIL_EFFECT_INTERVAL_MS = 50;
+        const SLICE_COOLDOWN_MS = 95;
+        const SLICE_RELEASE_DISTANCE = 70;
+        let lastTrailEffectTime = 0;
+        let sliceCooldownUntil = 0;
+        let sliceLockX = -1;
+        let sliceLockY = -1;
+        let hitOverlayAnimation = 0;
+
+        function drawHitOverlay(now) {
+            hitContext.setTransform(1, 0, 0, 1, 0, 0);
+            hitContext.globalAlpha = 1;
+            hitContext.globalCompositeOperation = 'source-over';
+            hitContext.clearRect(0, 0, w, h);
+
+            for (let i = juiceStains.length - 1; i >= 0; i--) {
+                const stain = juiceStains[i];
+                const age = now - stain.createdAt;
+                if (age >= stain.duration) {
+                    juiceStains.splice(i, 1);
+                    continue;
+                }
+                const fade = age < 1750 ? 1 : 1 - (age - 1750) / (stain.duration - 1750);
+                hitContext.save();
+                hitContext.translate(stain.x, stain.y);
+                hitContext.rotate(stain.angle || 0);
+                hitContext.globalAlpha = 0.86 * Math.max(0, fade);
+                hitContext.fillStyle = stain.color;
+                hitContext.beginPath();
+                hitContext.ellipse(0, 0, stain.radius * 2, stain.radius * 0.5, 0, 0, Math.PI * 2);
+                hitContext.fill();
+
+                let seed = Math.floor(stain.x + stain.y);
+                for (let j = 0; j < 6; j++) {
+                    seed = (seed * 9301 + 49297) % 233280;
+                    const rand1 = seed / 233280;
+                    seed = (seed * 9301 + 49297) % 233280;
+                    const rand2 = seed / 233280;
+                    hitContext.beginPath();
+                    hitContext.arc((rand1 - 0.5) * stain.radius * 6,
+                        (rand2 - 0.5) * stain.radius * 2,
+                        Math.max(2, rand1 * stain.radius * 0.4), 0, Math.PI * 2);
+                    hitContext.fill();
+                }
+                hitContext.restore();
+            }
+
+            for (let i = cutBursts.length - 1; i >= 0; i--) {
+                const burst = cutBursts[i];
+                const progress = Math.min(1, (now - burst.createdAt) / burst.duration);
+                if (progress >= 1) {
+                    cutBursts.splice(i, 1);
+                    continue;
+                }
+                const alpha = 1 - progress;
+                hitContext.save();
+                hitContext.translate(burst.x, burst.y);
+                hitContext.rotate(burst.angle);
+                hitContext.globalCompositeOperation = 'lighter';
+                hitContext.globalAlpha = alpha;
+                hitContext.strokeStyle = burst.color;
+                hitContext.lineCap = 'round';
+                hitContext.lineWidth = 10 - progress * 7;
+                hitContext.beginPath();
+                hitContext.moveTo(-48 - progress * 24, 0);
+                hitContext.lineTo(48 + progress * 44, 0);
+                hitContext.stroke();
+                hitContext.strokeStyle = '#ffffff';
+                hitContext.lineWidth = Math.max(1, 4 - progress * 3);
+                hitContext.stroke();
+                hitContext.fillStyle = burst.color;
+                for (let j = 0; j < 8; j++) {
+                    const angle = Math.PI * 2 * j / 8;
+                    const distance = 25 + progress * (55 + j * 3);
+                    hitContext.beginPath();
+                    hitContext.arc(Math.cos(angle) * distance,
+                        Math.sin(angle) * distance * 0.55,
+                        Math.max(1, 6 * alpha), 0, Math.PI * 2);
+                    hitContext.fill();
+                }
+                hitContext.restore();
+            }
+        }
+
+        function animateHitOverlay(now) {
+            hitOverlayAnimation = 0;
+            drawHitOverlay(now);
+            if (juiceStains.length > 0 || cutBursts.length > 0) {
+                hitOverlayAnimation = requestAnimationFrame(animateHitOverlay);
+            }
+        }
+
+        function showHitOverlayImmediately() {
+            const now = performance.now ? performance.now() : Date.now();
+            drawHitOverlay(now);
+            if (!hitOverlayAnimation) hitOverlayAnimation = requestAnimationFrame(animateHitOverlay);
+        }
 
         // JS 端暴露的 resetGame 方法，供 Java 端在重新进入游戏时调用
         window.resetGame = function(mode, livesCount) {
@@ -152,12 +311,21 @@
             isGameOver = false;
             isLevelComplete = false;
             fruits.length = 0;
+            slicedPieces.length = 0;
+            cutBursts.length = 0;
             particles.length = 0;
             trailHistory.length = 0;
             juiceStains.length = 0;
             shockwaves.length = 0;
             gridParticles.length = 0;
             screenFlashAlpha = 0;
+            lastTrailEffectTime = 0;
+            sliceCooldownUntil = 0;
+            sliceLockX = -1;
+            sliceLockY = -1;
+            if (hitOverlayAnimation) cancelAnimationFrame(hitOverlayAnimation);
+            hitOverlayAnimation = 0;
+            hitContext.clearRect(0, 0, w, h);
 
             if (gameMode === 'endless') {
                 lives = livesCount || 3;
@@ -249,37 +417,56 @@
             if (l2 === 0) return Math.hypot(px - vx, py - vy);
             let t = ((px - vx) * (wx - vx) + (py - vy) * (wy - vy)) / l2;
             t = Math.max(0, Math.min(1, t));
-            return Math.hypot(px - (vx + t * (wx - vx)), py - (vy + t * (wy - wy)));
+            return Math.hypot(px - (vx + t * (wx - vx)), py - (vy + t * (wy - vy)));
         }
 
         function checkSlices() {
             if (trailHistory.length < 2) return;
             const p1 = trailHistory[trailHistory.length - 2];
             const p2 = trailHistory[trailHistory.length - 1];
-            
             const speed = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-            if (speed < 2) return; // 降低速度阈值，兼容高帧率下每帧移动距离小的情况
+            if (speed < 1.2) return;
 
-            // 计算刀光切入角度，用于决定水果切开后两半的旋转和分离方向
+            const now = performance.now ? performance.now() : Date.now();
+            if (now < sliceCooldownUntil) return;
+            if (sliceLockX >= 0) {
+                if (Math.hypot(p2.x - sliceLockX, p2.y - sliceLockY) < SLICE_RELEASE_DISTANCE) return;
+                sliceLockX = -1;
+                sliceLockY = -1;
+            }
+
             const sliceAngle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
-
+            let hitIndex = -1;
+            let hitDistance = Infinity;
             for (let i = fruits.length - 1; i >= 0; i--) {
                 const f = fruits[i];
                 if (f.sliced) continue;
                 const d = distToSegment(f.x, f.y, p1.x, p1.y, p2.x, p2.y);
-                if (d < f.radius) {
-                    f.sliced = true;
-                    sliceFruit(f, i, sliceAngle);
+                if (d < f.radius + 6 && d < hitDistance) {
+                    hitIndex = i;
+                    hitDistance = d;
                 }
+            }
+
+            if (hitIndex >= 0) {
+                const hit = fruits[hitIndex];
+                hit.sliced = true;
+                sliceCooldownUntil = now + SLICE_COOLDOWN_MS;
+                sliceLockX = hit.x;
+                sliceLockY = hit.y;
+                sliceFruit(hit, hitIndex, sliceAngle);
             }
         }
 
         function createJuice(x, y, color, sliceAngle) {
             if (!color) return;
+            const createdAt = performance.now ? performance.now() : Date.now();
+            cutBursts.push({ x: x, y: y, color: color, angle: sliceAngle, createdAt: createdAt, duration: 260 });
+            if (cutBursts.length > MAX_CUT_BURSTS) cutBursts.shift();
             // 创建飞溅的果汁粒子，增强爆发感
-            for(let i=0; i<15; i++) {
+            for(let i=0; i<10; i++) {
                 const dir = sliceAngle + (Math.random() - 0.5) * Math.PI; // 沿切击方向散开
-                const speed = Math.random() * 25 + 10;
+                const speed = Math.random() * 18 + 8;
                 const life = 0.5 + Math.random() * 0.5;
                 particles.push({
                     type: 'juice',
@@ -298,10 +485,12 @@
                 x: x, y: y,
                 color: color,
                 radius: Math.random() * 15 + 30, // 增加果汁印记大小
-                angle: sliceAngle, 
-                alpha: 0.85,
-                life: 180 // 存活帧数（60帧/秒，约 3 秒）
+                angle: sliceAngle,
+                createdAt: createdAt,
+                duration: 2600
             });
+            if (juiceStains.length > MAX_JUICE_STAINS) juiceStains.shift();
+            showHitOverlayImmediately();
         }
 
         function sliceFruit(f, index, sliceAngle) {
@@ -309,9 +498,9 @@
 
             // 触发切中处青色环境冲击波
             shockwaves.push({ x: f.x, y: f.y, radius: 0, life: 1.0, color: '#00ffff' });
+            if (shockwaves.length > 8) shockwaves.shift();
 
             if (f.isBomb) {
-                playSound('boom');
                 screenFlashAlpha = 1.0;
 
                 // 炸弹爆炸黑烟
@@ -334,21 +523,8 @@
                     // 非无尽模式：碰炸弹直接结束
                     endGame();
                 }
+                queueSound('boom');
             } else {
-                playSound('splatter');
-                score += 10;
-                updateHUD();
-
-                // 非无尽模式：检查是否通关
-                if (gameMode !== 'endless' && scoreTarget > 0 && score >= scoreTarget && !isGameOver) {
-                    isLevelComplete = true;
-                    isGameOver = true;
-                    gameOverDisplay.style.display = 'block';
-                    gameOverDisplay.innerHTML = '<span style="color:#f7b13f;font-size:48px">🎉 通关！</span><br><span style="font-size:24px;color:white">得分: ' + score + '</span>';
-                    window.addEventListener('mousedown', exitGame);
-                    setTimeout(exitGame, 3000);
-                }
-                
                 // 根据刀光角度，计算垂直方向作为水果分离方向
                 const apartAngle = sliceAngle + Math.PI / 2;
                 const speedSpread = 5;
@@ -356,21 +532,22 @@
                 const spreadY = Math.sin(apartAngle) * speedSpread;
                 
                 // 左半边/上边
-                particles.push({
+                slicedPieces.push({
                     type: f.type + '-1',
                     x: f.x - spreadX * 3, y: f.y - spreadY * 3,
                     vx: f.vx - spreadX, vy: f.vy - spreadY,
                     rotation: f.rotation, rotSpeed: f.rotSpeed - 0.1,
-                    life: 2.0, maxLife: 2.0
+                    life: 1.25, maxLife: 1.25
                 });
                 // 右半边/下边
-                particles.push({
+                slicedPieces.push({
                     type: f.type + '-2',
                     x: f.x + spreadX * 3, y: f.y + spreadY * 3,
                     vx: f.vx + spreadX, vy: f.vy + spreadY,
                     rotation: f.rotation, rotSpeed: f.rotSpeed + 0.1,
-                    life: 2.0, maxLife: 2.0
+                    life: 1.25, maxLife: 1.25
                 });
+                while (slicedPieces.length > MAX_SLICED_PIECES) slicedPieces.shift();
                 
                 // 切击刀光特效 (flash.png)，旋转角度对齐刀光
                 particles.push({
@@ -387,7 +564,7 @@
                 createJuice(f.x, f.y, FRUIT_COLORS[f.type], sliceAngle);
 
                 // 青色星芒粒子 (Cyan Starburst)
-                for (let j = 0; j < 30; j++) {
+                for (let j = 0; j < 10; j++) {
                     const dir = Math.random() * Math.PI * 2;
                     const speed = Math.random() * 20 + 5;
                     particles.push({
@@ -405,7 +582,7 @@
                 }
 
                 // 生成赛博故障像素块 (Glitch Cubes)
-                for (let j = 0; j < 10; j++) {
+                for (let j = 0; j < 3; j++) {
                     particles.push({
                         type: 'glitch-cube',
                         x: f.x + (Math.random() - 0.5) * 60,
@@ -422,7 +599,7 @@
                 }
 
                 // 生成闪电电弧 (Lightning Arcs)
-                for (let j = 0; j < 5; j++) {
+                for (let j = 0; j < 1; j++) {
                     particles.push({
                         type: 'lightning',
                         x: f.x,
@@ -432,6 +609,19 @@
                         life: 0.2 + Math.random() * 0.2,
                         maxLife: 0.4
                     });
+                }
+                queueSound('splatter');
+
+                // Update score only after all first-frame visual feedback is ready.
+                score += 10;
+                updateHUD();
+                if (gameMode !== 'endless' && scoreTarget > 0 && score >= scoreTarget && !isGameOver) {
+                    isLevelComplete = true;
+                    isGameOver = true;
+                    gameOverDisplay.style.display = 'block';
+                    gameOverDisplay.innerHTML = '<span style="color:#f7b13f;font-size:48px">🎉 通关！</span><br><span style="font-size:24px;color:white">得分: ' + score + '</span>';
+                    window.addEventListener('mousedown', exitGame);
+                    setTimeout(exitGame, 3000);
                 }
             }
         }
@@ -469,12 +659,53 @@
             }
         }
 
+        function drawRasterSprites(targetContext) {
+            for (let i = 0; i < fruits.length; i++) {
+                const f = fruits[i];
+                const sprite = getSprite(f.type);
+                if (!sprite) continue;
+                targetContext.save();
+                targetContext.globalAlpha = 1;
+                targetContext.globalCompositeOperation = 'source-over';
+                targetContext.translate(f.x, f.y);
+                targetContext.rotate(f.rotation);
+                if (!f.isBomb) {
+                    targetContext.save();
+                    targetContext.strokeStyle = '#00f0ff';
+                    targetContext.lineWidth = 3;
+                    targetContext.setLineDash([20, 10, 5, 10]);
+                    targetContext.rotate(-Date.now() * 0.003);
+                    targetContext.beginPath();
+                    targetContext.arc(0, 0, f.radius + 10, 0, Math.PI * 2);
+                    targetContext.stroke();
+                    targetContext.restore();
+                    targetContext.shadowColor = '#00f0ff';
+                    targetContext.shadowBlur = 12;
+                }
+                targetContext.drawImage(sprite, -sprite.width / 2, -sprite.height / 2);
+                targetContext.restore();
+            }
+
+            for (let i = 0; i < slicedPieces.length; i++) {
+                const piece = slicedPieces[i];
+                const sprite = getSprite(piece.type);
+                if (!sprite) continue;
+                targetContext.save();
+                targetContext.globalCompositeOperation = 'source-over';
+                targetContext.globalAlpha = Math.min(1, piece.life / 0.2);
+                targetContext.translate(piece.x, piece.y);
+                targetContext.rotate(piece.rotation);
+                targetContext.drawImage(sprite, -sprite.width / 2, -sprite.height / 2);
+                targetContext.restore();
+            }
+        }
+
         // --- Render Loop ---
         let lastTime = performance.now ? performance.now() : Date.now();
         function loop(time) {
             requestAnimationFrame(loop);
             const currentTime = time || (performance.now ? performance.now() : Date.now());
-            const delta = (currentTime - lastTime) / 16.66; // approx 60fps multiplier
+            const delta = Math.min(2.1, Math.max(0.25, (currentTime - lastTime) / 16.66));
             lastTime = currentTime;
 
             // Clear old trail history naturally based on time
@@ -485,13 +716,13 @@
 
             // Lerp hand position for ultra-smooth 60fps trails regardless of camera FPS
             if (isHandDetected && currentHandX !== -1) {
-                currentHandX += (targetHandX - currentHandX) * 0.4;
-                currentHandY += (targetHandY - currentHandY) * 0.4;
+                currentHandX += (targetHandX - currentHandX) * 0.66;
+                currentHandY += (targetHandY - currentHandY) * 0.66;
 
                 if (trailHistory.length > 0) {
                     const lastPt = trailHistory[trailHistory.length - 1];
                     const dist = Math.hypot(currentHandX - lastPt.x, currentHandY - lastPt.y);
-                    if (dist >= 10) {
+                    if (dist >= 4) {
                         trailHistory.push({ x: currentHandX, y: currentHandY, time: now });
                         if (trailHistory.length > maxHistoryLength) trailHistory.shift();
                         checkSlices();
@@ -505,7 +736,10 @@
                 }
             }
 
-            // Clear screen
+            // Draw directly to the visible canvas so hit feedback is shown on the next frame.
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.globalAlpha = 1;
+            ctx.globalCompositeOperation = 'source-over';
             ctx.clearRect(0, 0, w, h);
 
             // --- Environmental VFX: Core Pulse, Shockwaves, Grid Particles ---
@@ -582,53 +816,6 @@
                 screenFlashAlpha -= 0.02 * delta; // fade out slowly
             }
 
-            // Draw juice stains on background (零延迟精确绘制)
-            for (let i = juiceStains.length - 1; i >= 0; i--) {
-                let s = juiceStains[i];
-                
-                ctx.save();
-                ctx.globalAlpha = s.alpha;
-                // 赛博边缘微发光
-                ctx.shadowColor = s.color;
-                ctx.shadowBlur = 8;
-                
-                ctx.fillStyle = s.color;
-                ctx.translate(s.x, s.y);
-                if (s.angle) ctx.rotate(s.angle); // 根据切击角度旋转
-                
-                // 绘制主液体块
-                ctx.beginPath();
-                ctx.scale(2.0, 0.5);
-                ctx.arc(0, 0, s.radius, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.scale(0.5, 2.0);
-                
-                // 绘制四周爆溅出来的果汁小点
-                let seed = Math.floor(s.x + s.y);
-                for(let j=0; j<6; j++) {
-                    seed = (seed * 9301 + 49297) % 233280;
-                    let rand1 = seed / 233280;
-                    seed = (seed * 9301 + 49297) % 233280;
-                    let rand2 = seed / 233280;
-                    
-                    ctx.beginPath();
-                    let offsetX = (rand1 - 0.5) * s.radius * 6;
-                    let offsetY = (rand2 - 0.5) * s.radius * 2;
-                    ctx.arc(offsetX, offsetY, rand1 * s.radius * 0.4, 0, Math.PI * 2);
-                    ctx.fill();
-                }
-                ctx.restore();
-
-                // 生命周期更新：前 2 秒保持，第 3 秒透明度渐隐
-                s.life -= delta;
-                if (s.life < 60) {
-                    s.alpha = Math.max(0, s.life / 60); // 1秒内淡出
-                }
-                if (s.life <= 0) {
-                    juiceStains.splice(i, 1); // 自动清理释放内存
-                }
-            }
-
             // Spawn fruitsDraw and Update Fruits
             for (let i = fruits.length - 1; i >= 0; i--) {
                 const f = fruits[i];
@@ -643,36 +830,27 @@
                     continue;
                 }
 
-                ctx.save();
-                ctx.translate(f.x, f.y);
-                ctx.rotate(f.rotation);
+            }
 
-                // --- 赛博能量护盾光环 (Cyber Aura) ---
-                if (!f.isBomb) {
-                    ctx.save();
-                    ctx.strokeStyle = '#00f0ff';
-                    ctx.lineWidth = 3;
-                    ctx.setLineDash([20, 10, 5, 10]);
-                    // 逆向旋转光环
-                    ctx.rotate(-Date.now() * 0.003);
-                    ctx.beginPath();
-                    ctx.arc(0, 0, f.radius + 10, 0, Math.PI * 2);
-                    ctx.stroke();
-                    ctx.restore();
+            // Sliced fruit is rendered independently from lightweight VFX.
+            for (let i = slicedPieces.length - 1; i >= 0; i--) {
+                const piece = slicedPieces[i];
+                piece.x += piece.vx * delta;
+                piece.y += piece.vy * delta;
+                piece.vy += 0.38 * delta;
+                piece.rotation += piece.rotSpeed * delta;
+                piece.life -= 0.018 * delta;
+                if (piece.life <= 0 || piece.y > h + 180) {
+                    slicedPieces.splice(i, 1);
+                    continue;
+                }
 
-                    // 水果外发光
-                    ctx.shadowColor = '#00f0ff';
-                    ctx.shadowBlur = 15 + Math.sin(Date.now() * 0.01) * 8;
-                }
-                
-                let img = IMAGES[f.type];
-                if (img && img.complete && img.naturalWidth > 0) {
-                    ctx.drawImage(img, -img.width/2, -img.height/2);
-                }
-                ctx.restore();
             }
 
             // Draw and Update Particles
+            if (particles.length > MAX_PARTICLES) {
+                particles.splice(0, particles.length - MAX_PARTICLES);
+            }
             for (let i = particles.length - 1; i >= 0; i--) {
                 const p = particles[i];
                 p.x += p.vx * delta;
@@ -703,16 +881,12 @@
                     ctx.fillStyle = p.color;
                     ctx.globalAlpha = p.life / p.maxLife;
                     ctx.globalCompositeOperation = 'lighter';
-                    ctx.shadowColor = p.color;
-                    ctx.shadowBlur = 10;
                     ctx.fillRect(-p.radius, -p.radius, p.radius * 2, p.radius * 2);
                 } else if (p.type === 'lightning') {
                     if (p.angle) ctx.rotate(p.angle);
                     ctx.strokeStyle = '#00f0ff';
                     ctx.globalCompositeOperation = 'lighter';
                     ctx.lineWidth = 3 * (p.life / p.maxLife);
-                    ctx.shadowColor = '#00f0ff';
-                    ctx.shadowBlur = 15;
                     ctx.beginPath();
                     ctx.moveTo(0, 0);
                     // 闪电折线
@@ -737,25 +911,23 @@
                     ctx.globalCompositeOperation = 'lighter';
                     ctx.strokeStyle = '#80ffff';
                     ctx.lineWidth = 1.5 * (p.life / p.maxLife);
-                    ctx.shadowColor = '#00ffff';
-                    ctx.shadowBlur = 5;
                     ctx.beginPath();
                     ctx.moveTo(0, 0);
                     ctx.lineTo((Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20);
                     ctx.stroke();
                 } else if (p.type === 'flash') {
                     // Flash image stretches out and fades
-                    const img = IMAGES['flash'];
+                    const img = getSprite('flash');
                     const scaleX = (1 - (p.life / p.maxLife)) * 3; // stretch along cut
                     const scaleY = (p.life / p.maxLife); // thin out
                     ctx.globalAlpha = p.life / p.maxLife;
-                    if (img && img.complete) {
+                    if (img) {
                         ctx.scale(scaleX, scaleY);
                         ctx.drawImage(img, -img.width / 2, -img.height / 2);
                     }
                 } else {
-                    const img = IMAGES[p.type];
-                    if (img && img.complete) {
+                    const img = getSprite(p.type);
+                    if (img) {
                         ctx.globalAlpha = p.life / p.maxLife;
                         const scale = p.scale || 1.0;
                         ctx.scale(scale, scale);
@@ -780,10 +952,11 @@
                 const speed = Math.sqrt(dx * dx + dy * dy) / delta;
 
                 // 生成尾部青焰与爆裂粒子 (Cyan Flame Trail)
-                if (speed > 300) {
+                if (speed > 300 && currentTime - lastTrailEffectTime >= TRAIL_EFFECT_INTERVAL_MS) {
+                    lastTrailEffectTime = currentTime;
                     const dirX = dx / (speed * delta);
                     const dirY = dy / (speed * delta);
-                    let sparkCount = Math.min(Math.floor(speed / 100), 25);
+                    let sparkCount = Math.min(Math.max(2, Math.floor(speed / 180)), 4);
                     for(let k = 0; k < sparkCount; k++) {
                         particles.push({
                             type: 'plasma-spark',
@@ -800,8 +973,8 @@
                     }
                     
                     // 生成刀痕两侧能量撕裂电弧 (Lightning Arcs along Trail)
-                    if (Math.random() > 0.5) {
-                        for(let k = 0; k < 2; k++) {
+                    if (Math.random() > 0.65) {
+                        for(let k = 0; k < 1; k++) {
                             const pIndex = Math.floor(Math.random() * (trailHistory.length - 1));
                             const p1 = trailHistory[pIndex];
                             particles.push({
@@ -851,11 +1024,11 @@
                 ctx.restore();
             }
 
-            // --- CRT 扫描线 (CRT Scanlines) ---
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.03)';
-            for (let i = 0; i < h; i += 4) {
-                ctx.fillRect(0, i, w, 2);
-            }
+            // Cached CRT overlay: same look, one draw call per frame.
+            ctx.drawImage(scanlineCanvas, 0, 0);
+
+            // Draw raster sprites last so no hit effect can cover or invalidate them.
+            drawRasterSprites(ctx);
         }
 
         requestAnimationFrame(loop);
@@ -863,6 +1036,10 @@
         window.addEventListener('resize', () => {
             w = canvas.width = window.innerWidth;
             h = canvas.height = window.innerHeight;
+            hitCanvas.width = w;
+            hitCanvas.height = h;
+            rebuildScanlines();
+            if (juiceStains.length > 0 || cutBursts.length > 0) showHitOverlayImmediately();
         });
         
         console.log("Fruit Ninja HTML5 Canvas initialized.");
