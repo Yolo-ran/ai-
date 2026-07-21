@@ -33,6 +33,7 @@ public class FruitNinja implements GameInterface {
     private JSObject jsWindow;
     private boolean isWebViewAdded = false;
     private Pane parentPane;
+    private javafx.scene.canvas.Canvas gameCanvas;
 
     private int score = 0;
     private boolean over = false;
@@ -124,16 +125,18 @@ public class FruitNinja implements GameInterface {
         }
     }
 
+    private int updateSkip; // 帧计数器，每2帧发一次坐标
     @Override
     public void update(GestureData gesture) {
         if (over) return;
-        
-        // 当页面加载完成时，将本地识别的手势坐标高频下发给前端 PixiJS/Canvas
-        if (jsWindow != null) {
+
+        // 每2帧发送一次坐标给前端（30fps），JS 端自动 lerp 平滑
+        updateSkip = (updateSkip + 1) % 2;
+        if (jsWindow != null && updateSkip == 0) {
             boolean detected = gesture != null && gesture.isHandDetected();
             double x = detected ? gesture.getIndexTipX() : 0.5;
             double y = detected ? gesture.getIndexTipY() : 0.5;
-            
+
             try {
                 jsWindow.call("updateHandPosition", x, y, detected);
             } catch (Exception e) {
@@ -149,33 +152,31 @@ public class FruitNinja implements GameInterface {
             gc.setFill(Color.RED);
             gc.setFont(Font.font(24));
             gc.setTextAlign(TextAlignment.CENTER);
-            gc.fillText("WebView 引擎初始化失败！\n\n原因: " + initErrorMsg + 
+            gc.fillText("WebView 引擎初始化失败！\n\n原因: " + initErrorMsg +
                         "\n\n在 Trae IDE 的终端中运行可能会触发 Sandbox 安全拦截 (jfxwebkit.dll)\n" +
                         "请在你的本地系统命令行（如 CMD/PowerShell）中执行 mvn javafx:run\n" +
                         "或者在 Trae 的设置中配置 Sandbox 规则放行 .openjfx 目录。\n\n" +
-                        "（挥手或握拳返回大厅）", 
+                        "（挥手或握拳返回大厅）",
                         gc.getCanvas().getWidth() / 2, gc.getCanvas().getHeight() / 2 - 50);
             return;
         }
-
-        // 由于 GameRenderer 使用 Canvas，我们需要将 WebView 作为兄弟节点（覆盖在 Canvas 之上）添加到父容器 Pane 中
+        // 首次：添加 WebView 并隐藏 Canvas
         if (!isWebViewAdded && webView != null) {
             parentPane = (Pane) gc.getCanvas().getParent();
             if (parentPane != null) {
-                parentPane.getChildren().add(webView);
+                parentPane.getChildren().add(0, webView);
                 if (parentPane instanceof AnchorPane) {
                     AnchorPane.setTopAnchor(webView, 0.0);
                     AnchorPane.setBottomAnchor(webView, 0.0);
                     AnchorPane.setLeftAnchor(webView, 0.0);
                     AnchorPane.setRightAnchor(webView, 0.0);
                 }
+                gameCanvas = gc.getCanvas();
+                gameCanvas.setVisible(false);
                 isWebViewAdded = true;
             }
         }
-        
-        // 游戏界面的实际渲染由 WebView 内部的 WebGL/Canvas 完成
-        // 这里可以清空底层的 JavaFX Canvas 避免透出杂乱背景
-        gc.clearRect(0, 0, gc.getCanvas().getWidth(), gc.getCanvas().getHeight());
+        // 后续 render 什么都不做，WebView 独立渲染
     }
 
     @Override
@@ -211,6 +212,7 @@ public class FruitNinja implements GameInterface {
         if (parentPane != null && webView != null && isWebViewAdded) {
             parentPane.getChildren().remove(webView);
             isWebViewAdded = false;
+            if (gameCanvas != null) gameCanvas.setVisible(true);
         }
     }
 

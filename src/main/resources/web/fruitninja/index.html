@@ -104,14 +104,7 @@
         };
 
         // --- Audio ---
-        function playSound(name) {
-            try {
-                let snd = new Audio(`assets/${name}.mp3`);
-                snd.play();
-            } catch(e) {
-                console.log("Audio play error: " + e);
-            }
-        }
+        function playSound(name, minGap) { /* 暂时禁音效排查闪烁 */ }
 
         // --- Game Entities ---
         const FRUIT_TYPES = ['apple', 'banana', 'basaha', 'peach', 'sandia'];
@@ -227,10 +220,12 @@
             }
         });
 
+        let handLostFrames = 0;
         window.updateHandPosition = function(x, y, isDetected) {
             if (isGameOver) return;
-            isHandDetected = isDetected;
             if (isDetected) {
+                handLostFrames = 0;
+                isHandDetected = true;
                 targetHandX = x * w;
                 targetHandY = y * h;
                 if (currentHandX === -1) {
@@ -238,9 +233,14 @@
                     currentHandY = targetHandY;
                 }
             } else {
-                trailHistory.length = 0;
-                currentHandX = -1;
-                targetHandX = -1;
+                handLostFrames++;
+                // 短暂丢手不立即清空（容忍5帧），避免快速滑动时闪烁
+                if (handLostFrames > 5) {
+                    trailHistory.length = 0;
+                    currentHandX = -1;
+                    targetHandX = -1;
+                    isHandDetected = false;
+                }
             }
         };
 
@@ -276,7 +276,6 @@
 
         function createJuice(x, y, color, sliceAngle) {
             if (!color) return;
-            // 创建飞溅的果汁粒子，增强爆发感
             for(let i=0; i<15; i++) {
                 const dir = sliceAngle + (Math.random() - 0.5) * Math.PI; // 沿切击方向散开
                 const speed = Math.random() * 25 + 10;
@@ -335,7 +334,7 @@
                     endGame();
                 }
             } else {
-                playSound('splatter');
+                playSound('splatter', 80);
                 score += 10;
                 updateHUD();
 
@@ -505,8 +504,10 @@
                 }
             }
 
-            // Clear screen
-            ctx.clearRect(0, 0, w, h);
+            // 用深色背景覆盖避免透明闪烁
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.fillStyle = '#0a0a0f';
+            ctx.fillRect(0, 0, w, h);
 
             // --- Environmental VFX: Core Pulse, Shockwaves, Grid Particles ---
             const coreX = w * 0.5;
