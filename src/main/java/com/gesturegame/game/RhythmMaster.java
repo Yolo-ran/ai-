@@ -886,19 +886,23 @@ public class RhythmMaster implements GameInterface {
                 double hl = note.holdLength;
                 double vw = r * 0.55;
 
-                // 按住时：外发光脉冲 + 粒子飞散
+                // 按住时：多层光晕 + 每帧两侧粒子 + 底部电光
                 if (note.holdStarted && !note.holdBroken) {
-                    double pulse = 1.0 + 0.15 * Math.sin(frameCount * 0.3);
-                    // 外层大光晕
-                    gc.setFill(nc.deriveColor(0, 1, 1, 0.12 * pulse));
-                    gc.fillRoundRect(x - vw - 16, y - 4, vw * 2 + 32, hl + 8, vw + 16, vw + 16);
-                    // 中层光晕
-                    gc.setFill(nc.deriveColor(0, 1, 1, 0.2 * pulse));
-                    gc.fillRoundRect(x - vw - 10, y - 2, vw * 2 + 20, hl + 4, vw + 10, vw + 10);
-                    // 粒子（每隔几帧在长条边缘生成）
-                    if (frameCount % 3 == 0) {
-                        floatTexts.add(new FloatText("✦", x + (RAND.nextDouble() - 0.5) * vw * 2,
-                                note.y + RAND.nextDouble() * hl, 15, nc.deriveColor(0, 1, 1, 0.7)));
+                    double pulse = 1.0 + 0.22 * Math.sin(frameCount * 0.22);
+                    gc.setFill(nc.deriveColor(0, 1, 1, 0.06 * pulse));
+                    gc.fillRoundRect(x - vw - 22, y - 6, vw * 2 + 44, hl + 12, vw + 22, vw + 22);
+                    gc.setFill(nc.deriveColor(0, 1, 1, 0.14 * pulse));
+                    gc.fillRoundRect(x - vw - 14, y - 3, vw * 2 + 28, hl + 6, vw + 14, vw + 14);
+                    gc.setFill(nc.deriveColor(0, 1, 1, 0.24 * pulse));
+                    gc.fillRoundRect(x - vw - 6, y - 1, vw * 2 + 12, hl + 2, vw + 6, vw + 6);
+                    // 每帧两侧火花
+                    floatTexts.add(new FloatText("✦", x + vw + 2 + RAND.nextDouble() * 14,
+                            note.y + RAND.nextDouble() * hl, 10, nc.deriveColor(0, 1, 1, 0.95)));
+                    floatTexts.add(new FloatText("✦", x - vw - 2 - RAND.nextDouble() * 14,
+                            note.y + RAND.nextDouble() * hl, 10, nc.deriveColor(0, 1, 1, 0.95)));
+                    if (frameCount % 2 == 0) {
+                        floatTexts.add(new FloatText("⚡", x + (RAND.nextDouble() - 0.5) * vw * 4,
+                                note.y + hl, 8, Color.WHITE));
                     }
                 }
 

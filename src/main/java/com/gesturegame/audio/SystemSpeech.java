@@ -54,7 +54,7 @@ public final class SystemSpeech {
             java.nio.file.Path mp3 = java.nio.file.Files.createTempFile("speech_", ".mp3");
             String cmd = "import edge_tts,asyncio;"
                     + "async def f():"
-                    + " tts=edge_tts.Communicate('" + safe + "','zh-CN-YunjianNeural');"
+                    + " tts=edge_tts.Communicate('" + safe + "','zh-CN-XiaoxiaoNeural');"
                     + " await tts.save('" + mp3.toString().replace("\\", "\\\\") + "');"
                     + "asyncio.run(f())";
             Process p = new ProcessBuilder("python", "-c", cmd)

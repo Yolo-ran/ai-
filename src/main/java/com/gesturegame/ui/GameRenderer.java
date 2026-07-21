@@ -200,7 +200,7 @@ public class GameRenderer {
             settlementStartedNanos = 0;
             initGame(game);
             if (statusLabel != null) {
-                statusLabel.setText("塔罗牌".equals(game.getName()) ? "" : "双手入镜保持返回");
+                statusLabel.setText("命运演算".equals(game.getName()) ? "" : "双手入镜保持返回");
             }
         }
 
@@ -217,7 +217,7 @@ public class GameRenderer {
         // 保留全局退出判定及确认进度，但不再绘制统一文字提示。
         drawExitProgress(gesture, dualHands);
 
-        boolean tarotMode = "塔罗牌".equals(game.getName());
+        boolean tarotMode = "命运演算".equals(game.getName());
         boolean fruitNinjaMode = "切水果".equals(game.getName());
         boolean catchFruitMode = "接水果".equals(game.getName());
         if (gameNameLabel != null) {
@@ -465,7 +465,7 @@ public class GameRenderer {
         g.fillRect(0, 0, w, h);
 
         GameInterface activeGame = AppStateManager.getInstance().getActiveGame();
-        boolean tarotMode = activeGame != null && "塔罗牌".equals(activeGame.getName());
+        boolean tarotMode = activeGame != null && "命运演算".equals(activeGame.getName());
         if (tarotMode) {
             drawTarotEntryScreen(g, gesture, dualHands, w, h, activeGame);
             return;
@@ -1175,7 +1175,7 @@ public class GameRenderer {
 
         if (exitHoldFrames >= HOLD_FRAMES) {
             exitHoldFrames = 0;
-            LOGGER.info("塔罗牌入口取消，返回大厅");
+            LOGGER.info("命运演算入口取消，返回大厅");
             AppStateManager.getInstance().switchState(AppStateManager.STATE_LOBBY);
             return;
         }
@@ -1200,7 +1200,7 @@ public class GameRenderer {
 
         g.setFill(Color.web("#d8c2e6"));
         g.setFont(javafx.scene.text.Font.font(16));
-        g.fillText("塔罗牌不使用普通难度系统，将直接按你的自定义占读逻辑进入。", x + 28, y + 126);
+        g.fillText("命运演算不使用普通难度系统，将直接按你的自定义占读逻辑进入。", x + 28, y + 126);
         g.fillText("当前保留：紫金界面、78张牌、两种牌阵、完整解读。", x + 28, y + 154);
 
         g.setFill(Color.web("#2e143f"));
