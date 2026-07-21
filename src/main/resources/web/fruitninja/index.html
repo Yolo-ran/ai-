@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <title>Fruit Ninja Local</title>
     <style>
-        body, html { margin: 0; padding: 0; overflow: hidden; background: #111 url('assets/background.jpg') no-repeat center center; background-size: cover; width: 100%; height: 100%; }
+        body, html { margin: 0; padding: 0; overflow: hidden; background: #111 url('assets/background.png') no-repeat center center; background-size: 100% 100%; width: 100%; height: 100%; }
         canvas { display: block; width: 100vw; height: 100vh; }
         
         #ui-layer {
@@ -94,7 +94,7 @@
 
         // --- Background ---
         const bgImg = new Image();
-        bgImg.src = 'assets/bg.jpg';
+        bgImg.src = 'assets/background.png';
 
         // --- Error Capture ---
         window.onerror = function(msg, url, line, col, err) {
