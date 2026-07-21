@@ -27,7 +27,9 @@ public final class ZumaGame implements GameInterface {
     private static final double BALL_RADIUS = 17.0;
     private static final double BALL_SPACING = BALL_RADIUS * 1.92;
     private static final double PROJECTILE_RADIUS = 15.5;
-    private static final double PROJECTILE_SPEED = 17.0;
+    // Faster travel shortens the gap between the frozen guide-line shot and
+    // its impact, while remaining below the collision sampling safe range.
+    private static final double PROJECTILE_SPEED = 21.5;
     private static final int PATH_SAMPLES = 960;
     private static final int INPUT_GUARD_FRAMES = 30;
     // 30fps 下约 0.17 秒确认；必须明确张开手掌约 0.17 秒才可再次发射。
@@ -316,19 +318,39 @@ public final class ZumaGame implements GameInterface {
         int visibleSeed = Math.min(22, waveSize);
         for (int index = visibleSeed - 1; index >= 0; index--) {
             double distance = 165.0 - index * BALL_SPACING;
-            chain.add(new ChainBall(distance, randomChainColor()));
+            chain.add(new ChainBall(distance, randomChainColorForTail()));
         }
         chain.sort(Comparator.comparingDouble(ball -> ball.distance));
         waveRemaining = Math.max(0, waveSize - visibleSeed);
         refillDelay = 0;
     }
 
-    private int randomChainColor() {
+    /** Selects a colour for the tail while building the opening chain. */
+    private int randomChainColorForTail() {
         int color = random.nextInt(activeColors);
         if (chain.size() >= 2) {
             int last = chain.get(chain.size() - 1).color;
             int before = chain.get(chain.size() - 2).color;
             if (last == color && before == color) {
+                color = (color + 1 + random.nextInt(activeColors - 1)) % activeColors;
+            }
+        }
+        return color;
+    }
+
+    /**
+     * New wave balls enter at index 0 (the leading edge), not at the tail.
+     * Looking at the tail here previously allowed the feeder to create an
+     * untouched three-ball run at the front of the chain.  Only shots should
+     * be able to make three of a colour, so that every triple has a matching
+     * resolve path.
+     */
+    private int randomChainColorForFront() {
+        int color = random.nextInt(activeColors);
+        if (chain.size() >= 2) {
+            int first = chain.get(0).color;
+            int next = chain.get(1).color;
+            if (first == color && next == color) {
                 color = (color + 1 + random.nextInt(activeColors - 1)) % activeColors;
             }
         }
@@ -486,7 +508,7 @@ public final class ZumaGame implements GameInterface {
                 double distance = chain.isEmpty()
                         ? -BALL_SPACING
                         : chain.get(0).distance - BALL_SPACING;
-                chain.add(0, new ChainBall(distance, randomChainColor()));
+                chain.add(0, new ChainBall(distance, randomChainColorForFront()));
                 waveRemaining--;
             }
             return;

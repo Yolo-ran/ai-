@@ -101,11 +101,27 @@ class GestureState:
                 "secondHandY": 0.0,
                 "twoHandSpread": 0.0,
                 "bothHandsOpen": False,
+                "secondGesture": "none",
+                "bothHandsFists": False,
                 "indexTipX": 0.0,
                 "indexTipY": 0.0,
             }
 
-        hand_landmarks, handedness_label = hands[0]
+        # 画面在送入 MediaPipe 前已经镜像。因而 MediaPipe 的 Left 标签
+        # 对应玩家实际的右手；双手入镜时固定使用它，避免控制跳到左手。
+        ordered_hands = list(hands)
+        if len(ordered_hands) >= 2:
+            control_hand_index = next(
+                (index for index, (_, label) in enumerate(ordered_hands)
+                 if str(label).lower() == "left"),
+                0,
+            )
+            if control_hand_index != 0:
+                ordered_hands[0], ordered_hands[control_hand_index] = (
+                    ordered_hands[control_hand_index], ordered_hands[0]
+                )
+
+        hand_landmarks, handedness_label = ordered_hands[0]
         hand_x, hand_y = calculate_hand_center(hand_landmarks)
         if self.previous_detected:
             velocity_x = clamp(hand_x - self.prev_hand_x)
@@ -131,13 +147,16 @@ class GestureState:
         second_hand_y = 0.0
         two_hand_spread = 0.0
         both_hands_open = False
-        if len(hands) >= 2:
-            second_landmarks, second_handedness = hands[1]
+        second_gesture = "none"
+        both_hands_fists = False
+        if len(ordered_hands) >= 2:
+            second_landmarks, second_handedness = ordered_hands[1]
             second_hand_x, second_hand_y = calculate_hand_center(second_landmarks)
             _, second_gesture, _ = classify_gesture(second_landmarks, second_handedness)
             center_distance = ((hand_x - second_hand_x) ** 2 + (hand_y - second_hand_y) ** 2) ** 0.5
             two_hand_spread = max(0.0, min(1.0, (center_distance - 0.15) / 0.50))
             both_hands_open = gesture == "open" and second_gesture == "open"
+            both_hands_fists = gesture == "fist" and second_gesture == "fist"
 
         return {
             "handX": round(hand_x, 4),
@@ -157,6 +176,10 @@ class GestureState:
             "secondHandY": round(second_hand_y, 4),
             "twoHandSpread": round(two_hand_spread, 4),
             "bothHandsOpen": both_hands_open,
+            # Optional compatibility fields. Old Java clients ignore them;
+            # new clients use them for the explicit two-fists exit gesture.
+            "secondGesture": second_gesture,
+            "bothHandsFists": both_hands_fists,
             "indexTipX": round(hand_landmarks[8].x, 4),
             "indexTipY": round(hand_landmarks[8].y, 4),
         }

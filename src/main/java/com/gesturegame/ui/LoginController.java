@@ -74,7 +74,7 @@ public class LoginController {
     private int guidePage;
     private int guideTotalPages = 4;
     private int guideHoldFrames;
-    private static final int GUIDE_HOLD_REQUIRED = 120; // 2秒
+    private static final int GUIDE_HOLD_REQUIRED = 60; // 1秒
     private double guideLastHandY = -1;
     private double guideScrollAccum;
 
@@ -195,7 +195,7 @@ public class LoginController {
     public void tick(GestureData gesture) {
         if (!showGuide || gesture == null || !gesture.isHandDetected()) return;
 
-        // 最后一页：握拳保持2秒进入（锁定翻页）
+        // 最后一页：握拳保持 1 秒进入（锁定翻页）
         if (guidePage == guideTotalPages - 1 && gesture.getGesture() == GestureType.FIST) {
             guideHoldFrames++;
             if (guideHoldFrames >= GUIDE_HOLD_REQUIRED) {
@@ -358,7 +358,7 @@ public class LoginController {
                 gc.fillText("准备好了吗？", cx, 200);
                 gc.setFont(Font.font("Microsoft YaHei UI", 28));
                 gc.setFill(Color.GOLD);
-                gc.fillText("✊ 握拳保持 2 秒进入游戏大厅", cx, 300);
+                gc.fillText("✊ 握拳保持 1 秒进入游戏大厅", cx, 300);
 
                 // 进度环
                 if (guideHoldFrames > 0) {

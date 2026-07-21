@@ -158,7 +158,7 @@ public class GameRenderer {
      * 仅在 GAME / GAME_OVER 状态下由 MainApp 的 AnimationTimer 调用。
      */
     public void tick(GestureData gesture, GameInterface game) {
-        tick(gesture, game, new DualHandState(false, false, 0.0, false, 0.0, 0.0));
+        tick(gesture, game, new DualHandState(false, false, 0.0, false, false, 0.0, 0.0));
     }
 
     public void tick(GestureData gesture, GameInterface game, DualHandState dualHands) {
@@ -179,6 +179,7 @@ public class GameRenderer {
                 return;
             }
             drawSettlementScreen(gc, game, gameCanvas.getWidth(), gameCanvas.getHeight());
+            drawExitProgress(gesture, dualHands);
             return;
         }
         if (!AppStateManager.STATE_GAME.equals(state)) {
@@ -212,7 +213,7 @@ public class GameRenderer {
         }
 
         // 单手基础手势完整交给游戏；双手系统模式只屏蔽输入，不暂停游戏动画。
-        game.update(dualHands.active() ? new GestureData() : gesture);
+        game.update(dualHands.bothFists() ? new GestureData() : gesture);
         game.render(gc);
         // 保留全局退出判定及确认进度，但不再绘制统一文字提示。
         drawExitProgress(gesture, dualHands);
@@ -371,7 +372,7 @@ public class GameRenderer {
 
     /** 难度选择界面：手移选难度，握拳确认 */
     public void tickDifficultySelect(GestureData gesture) {
-        tickDifficultySelect(gesture, new DualHandState(false, false, 0.0, false, 0.0, 0.0));
+        tickDifficultySelect(gesture, new DualHandState(false, false, 0.0, false, false, 0.0, 0.0));
     }
 
     public void tickDifficultySelect(GestureData gesture, DualHandState dualHands) {
@@ -388,7 +389,7 @@ public class GameRenderer {
             if (game == null) return;
 
             // 双手入镜返回难度选择
-            if (dualHands.captured()) {
+            if (dualHands.bothFists()) {
                 songSelectPhase = false;
                 mouseY = -1;
                 exitToDifficulty();
@@ -502,7 +503,7 @@ public class GameRenderer {
             }
 
             GestureType gestureType = gesture.getGesture();
-            boolean isFist = !dualHands.captured() && gestureType == GestureType.FIST;
+            boolean isFist = !dualHands.bothFists() && gestureType == GestureType.FIST;
 
             if (isFist && hoveredIndex >= 0) {
                 compactHoldFrames++;
@@ -723,13 +724,8 @@ public class GameRenderer {
 
         // 排行榜查看模式：只响应双手入镜返回，不处理选卡手势
         if (endlessSubLeaderIdx == 2) {
-            if (dualHands.captured()) {
-                exitHoldFrames++;
-                if (exitHoldFrames >= HOLD_FRAMES) {
-                    endlessSubLeaderIdx = -1;
-                    exitHoldFrames = 0;
-                }
-            } else {
+            if (dualHands.bothFists() && exitHoldFrames >= HOLD_FRAMES) {
+                endlessSubLeaderIdx = -1;
                 exitHoldFrames = 0;
             }
             // 直接渲染排行榜，跳过卡片手势
@@ -743,7 +739,7 @@ public class GameRenderer {
             return true;
         }
 
-        if (gesture != null && gesture.isHandDetected() && !dualHands.captured()) {
+        if (gesture != null && gesture.isHandDetected() && !dualHands.bothFists()) {
             double hx = gesture.getHandX() * w;
             double hy = gesture.getHandY() * h;
             hoveredIndex = resolveDifficultyHover(
@@ -941,9 +937,9 @@ public class GameRenderer {
     /** 实时手势光标：大位移快速追随，小抖动平滑过滤。 */
     private void updateDifficultyCursor(GestureData gesture, DualHandState dualHands,
                                         double width, double height) {
-        boolean visible = gesture != null && gesture.isHandDetected() && !dualHands.captured();
+        boolean visible = gesture != null && gesture.isHandDetected() && !dualHands.bothFists();
         // 双手退出时也要保持光标显示进度
-        if (!visible && exitHoldFrames > 0 && dualHands.captured()) {
+        if (!visible && exitHoldFrames > 0 && dualHands.bothFists()) {
             visible = true;
             difficultyCursorOpacity = Math.min(1.0, difficultyCursorOpacity + 0.1);
         }
@@ -953,7 +949,7 @@ public class GameRenderer {
         }
 
         double targetX, targetY;
-        if (dualHands.captured() && exitHoldFrames > 0) {
+        if (dualHands.bothFists() && exitHoldFrames > 0) {
             // 双手退出：用两手中心点
             targetX = ((gesture != null ? gesture.getHandX() : 0.5) + dualHands.secondHandX()) * 0.5 * width;
             targetY = ((gesture != null ? gesture.getHandY() : 0.5) + dualHands.secondHandY()) * 0.5 * height;
@@ -1088,7 +1084,7 @@ public class GameRenderer {
     private void drawDifficultyExitCountdown(GraphicsContext g, GestureData gesture,
                                              DualHandState dualHands, double width, double height) {
         if (exitHoldFrames <= 0 || gesture == null || !gesture.isHandDetected()
-                || !dualHands.captured()) {
+                || !dualHands.bothFists()) {
             return;
         }
 
@@ -1159,7 +1155,7 @@ public class GameRenderer {
             updateExitHold(dualHands);
         }
         boolean isFist = !questionOpen && gesture != null
-                && gesture.getGesture() == GestureType.FIST && !dualHands.captured();
+                && gesture.getGesture() == GestureType.FIST && !dualHands.bothFists();
 
         if (isFist) {
             compactHoldFrames++;
@@ -1508,11 +1504,9 @@ public class GameRenderer {
     }
 
     private void updateExitHold(DualHandState dualHands) {
-        if (dualHands.active()) {
+        if (dualHands.bothFists()) {
             exitHoldFrames = Math.min(HOLD_FRAMES, exitHoldFrames + 1);
             exitDropoutFrames = 0;
-        } else if (dualHands.captured() && exitHoldFrames > 0 && exitDropoutFrames < 6) {
-            exitDropoutFrames++;
         } else {
             exitHoldFrames = 0;
             exitDropoutFrames = 0;
@@ -1533,16 +1527,14 @@ public class GameRenderer {
         }
         double cx = (gesture.getHandX() + dualHands.secondHandX()) * 0.5 * gameCanvas.getWidth();
         double cy = (gesture.getHandY() + dualHands.secondHandY()) * 0.5 * gameCanvas.getHeight();
-        double progress = (double) exitHoldFrames / HOLD_FRAMES;
+        double progress = clampDifficulty(exitHoldFrames / (double) HOLD_FRAMES, 0.0, 1.0);
 
-        gc.setFill(Color.color(0.87, 1.0, 0.6, 0.12));
-        gc.fillOval(cx - 24, cy - 24, 48, 48);
-        gc.setStroke(Color.web("#deff9a"));
-        gc.setLineWidth(3.0);
-        gc.strokeArc(cx - 21, cy - 21, 42, 42,
-                90, -360 * progress, javafx.scene.shape.ArcType.OPEN);
-        gc.setFill(Color.web("#deff9a"));
-        gc.fillOval(cx - 3, cy - 3, 6, 6);
+        // Use the exact same cursor and ring language as difficulty
+        // confirmation.  Only the location differs: a two-hand exit is shown
+        // at the midpoint between the hands instead of at a single-hand cursor.
+        gc.save();
+        drawDifficultyCursor(gc, cx, cy, 0.0, progress);
+        gc.restore();
     }
 
     private static final class SettlementParticle {
