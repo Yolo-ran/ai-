@@ -37,10 +37,10 @@ final class LobbyCardDeck {
     private static final double CARD_VERTICAL_OFFSET = -94.0;
     private static final long TRANSITION_NS = 690_000_000L;
     private static final List<CardData> CARDS = List.of(
-            new CardData("暗星采矿", "Catch the rhythm of falling color", "01", "#06b6d4", "#0f766e", null),
-            new CardData("矩阵博弈", "Read the moment. Make your move.", "02", "#f43f5e", "#7c3aed", null),
+            new CardData("星系战线", "Navigate the cosmos. Destroy the core.", "01", "#0ea5e9", "#4f46e5", "/assets/cards/galaxy-card.png"),
+            new CardData("矩阵博弈", "Read the moment. Make your move.", "02", "#f43f5e", "#7c3aed", "/assets/cards/matrix-card.png"),
             new CardData("星际祖玛", "Match the orbit. Break the chain.", "03", "#84cc16", "#ca8a04", "/assets/cards/cosmic-zuma-card.png"),
-            new CardData("命运演算", "Three cards reveal one direction", "04", "#d8b4fe", "#4338ca", null),
+            new CardData("命运演算", "Three cards reveal one direction", "04", "#d8b4fe", "#4338ca", "/assets/cards/tarot-card.png"),
             new CardData("水果忍者", "Draw the blade through color", "05", "#f97316", "#e11d48", "/assets/cards/fruit-ninja-card.png"),
             new CardData("节奏大师", "Move precisely inside the beat", "06", "#a78bfa", "#0ea5e9", null),
             new CardData("星系战线", "A new path generated every run", "07", "#38bdf8", "#1d4ed8", null)

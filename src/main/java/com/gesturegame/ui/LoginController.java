@@ -196,6 +196,7 @@ public class LoginController {
         if (!showGuide || gesture == null || !gesture.isHandDetected()) return;
 
         // 最后一页：握拳保持 1 秒进入（锁定翻页）
+        // 最后一页：握拳保持1秒进入（锁定翻页）
         if (guidePage == guideTotalPages - 1 && gesture.getGesture() == GestureType.FIST) {
             guideHoldFrames++;
             if (guideHoldFrames >= GUIDE_HOLD_REQUIRED) {
