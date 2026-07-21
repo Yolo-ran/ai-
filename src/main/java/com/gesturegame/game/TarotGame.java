@@ -616,7 +616,7 @@ public class TarotGame implements GameInterface {
     }
 
     private void drawChosenSlots(GraphicsContext gc) {
-        double baseScale = canvasHeight / 1080.0;
+        double baseScale = getResponsiveScale();
         double canvasW = canvasWidth;
         double canvasH = canvasHeight;
         double centerX = canvasW / 2;
@@ -988,9 +988,18 @@ public class TarotGame implements GameInterface {
         gc.restore();
     }
 
+    private double getResponsiveScale() {
+        double scale = canvasHeight / 1080.0;
+        // 如果是小窗口，整体缩放牌阵以防止拥挤和文字遮挡
+        if (canvasHeight < 800 || canvasWidth < 1200) {
+            scale *= 0.85;
+        }
+        return scale;
+    }
+
     private double centerCardWidth() {
-        double baseScale = canvasHeight / 1080.0;
-        return 180.0 * baseScale;
+        // 缩小上方轮播卡牌基础尺寸约 15%~20%
+        return 145.0 * getResponsiveScale();
     }
 
     private double fanCenterX() {
@@ -998,21 +1007,18 @@ public class TarotGame implements GameInterface {
     }
 
     private double fanCenterY() {
-        // ====== 【核心修改 3：阻断旋转牌组向下渗透】 ======
-        // 将上方抽卡池的圆心往上提，绝对保证即使窗口变小，它的底部也不会撞到下方的祭坛卡牌
-        return canvasHeight * 0.30;
+        // 下移上方牌阵容器，避免卡牌升起时遮挡顶部文字
+        return canvasHeight * 0.36;
     }
 
     private double spreadCardWidth() {
-        double baseScale = canvasHeight / 1080.0;
-        double altarW = 180.0 * baseScale;
-        // ====== 【核心修改 1：让卡牌的尺寸绝对受限于祭坛底座的尺寸】 ======
-        // 无论窗口怎么缩放，祭坛上的卡牌宽度【绝对不允许】超过当前底座精度的 0.8 倍
-        return altarW * 0.8;
+        double altarW = 180.0 * getResponsiveScale();
+        // 缩小下方已选卡片比例（显著小于上方卡牌）
+        return altarW * 0.65;
     }
 
     private double spreadSlotX(int index) {
-        double baseScale = canvasHeight / 1080.0;
+        double baseScale = getResponsiveScale();
         double canvasW = canvasWidth;
         double centerX = canvasW / 2;
         double altarW = 180.0 * baseScale;
@@ -1027,7 +1033,7 @@ public class TarotGame implements GameInterface {
     }
 
     private double spreadSlotY() {
-        double baseScale = canvasHeight / 1080.0;
+        double baseScale = getResponsiveScale();
         double canvasH = canvasHeight;
         double scrollH = 90.0 * baseScale;
         double scrollY = canvasH - scrollH - (10.0 * baseScale);
@@ -1230,7 +1236,7 @@ public class TarotGame implements GameInterface {
         double elapsedSec = now / 1_000_000_000.0;
         // CSS特效中：2000px 每 speedDurationSec 秒
         double speed = 2000.0 / speedDurationSec; 
-        double baseScale = canvasH / 1080.0;
+        double baseScale = getResponsiveScale();
         
         double actualSize = Math.max(1.0, size * baseScale);
         double actualYOffset = elapsedSec * speed * baseScale;
@@ -1968,7 +1974,7 @@ public class TarotGame implements GameInterface {
 
     private void drawBottomHint(GraphicsContext gc) {
         if (scrollImage != null) {
-            double baseScale = canvasHeight / 1080.0;
+            double baseScale = getResponsiveScale();
             double canvasW = canvasWidth;
             double canvasH = canvasHeight;
             double centerX = canvasW / 2;
