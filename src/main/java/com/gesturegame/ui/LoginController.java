@@ -75,8 +75,15 @@ public class LoginController {
     private int guideTotalPages = 4;
     private int guideHoldFrames;
     private static final int GUIDE_HOLD_REQUIRED = 60; // 1秒
-    private double guideLastHandY = -1;
-    private double guideScrollAccum;
+    private static final double GUIDE_SWIPE_THRESHOLD = 0.065;
+    private static final double GUIDE_SWIPE_NOISE = 0.0015;
+    private static final double GUIDE_SWIPE_MAX_STEP = 0.20;
+    private static final long GUIDE_SWIPE_COOLDOWN_NS = 260_000_000L;
+    private double guideLastHandX = -1;
+    private double guideSwipeAnchorX = -1;
+    private double guideWheelAccum;
+    private int guideMissingHandFrames;
+    private long guideLastSwipeNs;
 
     // Star arrays
     private final double[] dx = new double[NUMBER_OF_STARS];
@@ -171,10 +178,10 @@ public class LoginController {
         if (!loggedIn) return;
         // 引导页期间：SWIPE用于翻页，CONFIRM用于确认
         if (showGuide) {
-            if (command == GestureCommand.SWIPE_LEFT && guidePage < guideTotalPages - 1) {
-                guidePage++; guideHoldFrames = 0;
-            } else if (command == GestureCommand.SWIPE_RIGHT && guidePage > 0) {
-                guidePage--; guideHoldFrames = 0;
+            if (command == GestureCommand.SWIPE_RIGHT) {
+                changeGuidePage(1);
+            } else if (command == GestureCommand.SWIPE_LEFT) {
+                changeGuidePage(-1);
             }
             return;
         }
@@ -193,14 +200,22 @@ public class LoginController {
 
     /** 每帧手势数据，用于引导页左右滑动 */
     public void tick(GestureData gesture) {
-        if (!showGuide || gesture == null || !gesture.isHandDetected()) return;
+        if (!showGuide) return;
+        if (gesture == null || !gesture.isHandDetected()) {
+            guideHoldFrames = 0;
+            if (++guideMissingHandFrames >= 4) {
+                resetGuideSwipeTracking();
+            }
+            return;
+        }
+        guideMissingHandFrames = 0;
 
-        // 最后一页：握拳保持 1 秒进入（锁定翻页）
         // 最后一页：握拳保持1秒进入（锁定翻页）
         if (guidePage == guideTotalPages - 1 && gesture.getGesture() == GestureType.FIST) {
             guideHoldFrames++;
             if (guideHoldFrames >= GUIDE_HOLD_REQUIRED) {
                 showGuide = false;
+                resetGuideSwipeTracking();
                 if (starTimer != null) starTimer.stop();
                 starTimer = null;
                 Platform.runLater(this::showStarField);
@@ -211,16 +226,55 @@ public class LoginController {
         }
 
         double hx = gesture.getHandX();
-        if (guideLastHandY >= 0) {
-            double delta = hx - guideLastHandY;
-            guideScrollAccum += delta * 100;
-            if (guideScrollAccum >= 15 && guidePage < guideTotalPages - 1) {
-                guidePage++; guideScrollAccum = 0;
-            } else if (guideScrollAccum <= -15 && guidePage > 0) {
-                guidePage--; guideScrollAccum = 0;
-            }
+        if (!Double.isFinite(hx) || hx < 0.0 || hx > 1.0) {
+            resetGuideSwipeTracking();
+            return;
         }
-        guideLastHandY = hx;
+        if (guideLastHandX < 0) {
+            guideLastHandX = hx;
+            guideSwipeAnchorX = hx;
+            return;
+        }
+
+        double delta = hx - guideLastHandX;
+        guideLastHandX = hx;
+        // 跟踪瞬移通常来自手部重新识别，不应当被当作滑动。
+        if (Math.abs(delta) > GUIDE_SWIPE_MAX_STEP) {
+            resetGuideSwipeTracking();
+            return;
+        }
+        if (Math.abs(delta) < GUIDE_SWIPE_NOISE) {
+            // 静止时让基准点缓慢跟随微小漂移，防止摄像头噪声累积成误翻页。
+            double offset = hx - guideSwipeAnchorX;
+            if (Math.abs(offset) < GUIDE_SWIPE_THRESHOLD * 0.45) {
+                guideSwipeAnchorX += offset * 0.08;
+            }
+            return;
+        }
+
+        long now = System.nanoTime();
+        if (now - guideLastSwipeNs < GUIDE_SWIPE_COOLDOWN_NS) return;
+        double displacement = hx - guideSwipeAnchorX;
+        if (displacement >= GUIDE_SWIPE_THRESHOLD) {
+            changeGuidePage(1);
+        } else if (displacement <= -GUIDE_SWIPE_THRESHOLD) {
+            changeGuidePage(-1);
+        }
+    }
+
+    private void changeGuidePage(int direction) {
+        int nextPage = Math.max(0, Math.min(guideTotalPages - 1, guidePage + direction));
+        guideSwipeAnchorX = guideLastHandX;
+        if (nextPage == guidePage) return;
+        guidePage = nextPage;
+        guideHoldFrames = 0;
+        guideLastSwipeNs = System.nanoTime();
+    }
+
+    private void resetGuideSwipeTracking() {
+        guideLastHandX = -1;
+        guideSwipeAnchorX = -1;
+        guideMissingHandFrames = 0;
     }
 
     private void tryLogin() {
@@ -278,16 +332,19 @@ public class LoginController {
         showGuide = true;
         guidePage = 0;
         guideHoldFrames = 0;
-        guideLastHandY = -1;
-        guideScrollAccum = 0;
+        guideLastSwipeNs = 0;
+        guideWheelAccum = 0;
+        resetGuideSwipeTracking();
 
         // 鼠标滚轮翻页
         rootPane.setOnScroll(e -> {
-            guideScrollAccum += e.getDeltaY();
-            if (guideScrollAccum <= -40 && guidePage < guideTotalPages - 1) {
-                guidePage++; guideScrollAccum = 0; guideHoldFrames = 0;
-            } else if (guideScrollAccum >= 40 && guidePage > 0) {
-                guidePage--; guideScrollAccum = 0; guideHoldFrames = 0;
+            guideWheelAccum += e.getDeltaY();
+            if (guideWheelAccum <= -40) {
+                changeGuidePage(1);
+                guideWheelAccum = 0;
+            } else if (guideWheelAccum >= 40) {
+                changeGuidePage(-1);
+                guideWheelAccum = 0;
             }
         });
 
