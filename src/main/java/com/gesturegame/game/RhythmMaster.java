@@ -44,6 +44,17 @@ public class RhythmMaster implements GameInterface {
     private List<FloatText> floatTexts;
     private List<LaneHit> laneHits;
 
+    // ===== VFX =====
+    private List<Particle> particles;
+    private List<Shockwave> shockwaves;
+    private List<MissGlitch> misses;
+
+    // 宇宙深潭同心涟漪 (Cosmic Pond Ripples) -> 升级为液态玻璃波纹
+    private List<BgRipple> bgRipples;
+
+    // 量子玻璃碎块 (Quantum Glass Shards)
+    private List<GlassShard> glassShards;
+
     // ===== 游戏数据 =====
     private int canvasWidth, canvasHeight;
     private int score, combo, maxCombo;
@@ -53,6 +64,9 @@ public class RhythmMaster implements GameInterface {
     private boolean handDetected;
     private String performanceComment;
 
+    // 背景环境粒子
+    private List<Particle> ambientParticles;
+    
     // ===== 难度 =====
     private Difficulty difficulty = Difficulty.NORMAL;
     private double noteSpeed;
@@ -110,6 +124,12 @@ public class RhythmMaster implements GameInterface {
         this.notes = new ArrayList<>();
         this.floatTexts = new ArrayList<>();
         this.laneHits = new ArrayList<>();
+        this.particles = new ArrayList<>();
+        this.ambientParticles = new ArrayList<>();
+        this.shockwaves = new ArrayList<>();
+        this.misses = new ArrayList<>();
+        this.bgRipples = new ArrayList<>();
+        this.glassShards = new ArrayList<>();
         this.currentGesture = GestureType.NONE;
         this.handDetected = false;
         this.state = State.SONG_SELECT;
@@ -495,6 +515,7 @@ public class RhythmMaster implements GameInterface {
                 // 头部错过
                 if (!note.holdStarted && headDist > greatWindow) {
                     note.judged = true; combo = 0; missCount++;
+                    createMissGlitch(laneX[note.lane], judgeLineY);
                     floatTexts.add(new FloatText("MISS", laneX[note.lane], judgeLineY - 30, 30, Color.RED));
                     laneHits.add(new LaneHit(note.lane, Color.RED));
                 }
@@ -507,10 +528,13 @@ public class RhythmMaster implements GameInterface {
                     note.judged = true;
                     if (!note.holdBroken) {
                         score += (int)(200 * getComboMultiplier()); combo++; perfectCount++;
-                        floatTexts.add(new FloatText("HOLD OK!", laneX[note.lane], judgeLineY - 50, 30, Color.GOLD));
-                        laneHits.add(new LaneHit(note.lane, Color.GOLD));
+                        createPerfectBlast(laneX[note.lane], judgeLineY);
+                        floatTexts.add(new FloatText("PERFECT +200", laneX[note.lane], judgeLineY - 50, 40, Color.CYAN));
+                        if (combo > 0) floatTexts.add(new FloatText("COMBO +" + combo, laneX[note.lane], judgeLineY - 80, 40, Color.GOLD));
+                        laneHits.add(new LaneHit(note.lane, Color.CYAN));
                     } else {
                         combo = 0; missCount++;
+                        createMissGlitch(laneX[note.lane], judgeLineY);
                         floatTexts.add(new FloatText("MISS", laneX[note.lane], judgeLineY - 30, 30, Color.RED));
                         laneHits.add(new LaneHit(note.lane, Color.RED));
                     }
@@ -518,17 +542,21 @@ public class RhythmMaster implements GameInterface {
             } else {
                 if (dist > greatWindow) {
                     note.judged = true; combo = 0; missCount++;
+                    createMissGlitch(laneX[note.lane], judgeLineY);
                     floatTexts.add(new FloatText("MISS", laneX[note.lane], judgeLineY - 30, 30, Color.RED));
                     laneHits.add(new LaneHit(note.lane, Color.RED));
                 } else if (Math.abs(dist) <= perfectWindow && match) {
                     note.judged = true;
                     score += (int)(100 * getComboMultiplier()); combo++; perfectCount++;
-                    floatTexts.add(new FloatText("PERFECT", laneX[note.lane], judgeLineY - 50, 30, Color.GOLD));
-                    laneHits.add(new LaneHit(note.lane, Color.GOLD));
+                    createPerfectBlast(laneX[note.lane], judgeLineY);
+                    floatTexts.add(new FloatText("PERFECT +1000", laneX[note.lane], judgeLineY - 50, 40, Color.CYAN));
+                    if (combo > 0) floatTexts.add(new FloatText("COMBO +" + combo, laneX[note.lane], judgeLineY - 80, 40, Color.GOLD));
+                    laneHits.add(new LaneHit(note.lane, Color.CYAN));
                 } else if (Math.abs(dist) <= greatWindow && match) {
                     note.judged = true;
                     score += (int)(50 * getComboMultiplier()); combo++; greatCount++;
-                    floatTexts.add(new FloatText("GREAT", laneX[note.lane], judgeLineY - 50, 30, Color.LIME));
+                    createGreatBlast(laneX[note.lane], judgeLineY);
+                    floatTexts.add(new FloatText("GREAT +500", laneX[note.lane], judgeLineY - 50, 30, Color.LIME));
                     laneHits.add(new LaneHit(note.lane, Color.LIME));
                 }
             }
@@ -540,6 +568,80 @@ public class RhythmMaster implements GameInterface {
         floatTexts.removeIf(ft -> ft.life <= 0);
         for (LaneHit lh : laneHits) { lh.life--; }
         laneHits.removeIf(lh -> lh.life <= 0);
+
+        // 更新特效
+        for (Particle p : particles) {
+            p.x += p.vx; p.y += p.vy;
+            p.life--;
+        }
+        particles.removeIf(p -> p.life <= 0);
+
+        for (Particle p : ambientParticles) {
+            p.x += p.vx; p.y += p.vy;
+            p.life--;
+        }
+        ambientParticles.removeIf(p -> p.life <= 0);
+
+        // 随机生成背景深空粒子 (Gravitational Particle Vortex & Cosmic light streaks)
+        if (RAND.nextDouble() < 0.4) {
+            boolean isStreak = RAND.nextDouble() < 0.15;
+            // Arcaea-inspired Vortex: Particles flow inward and downward towards the center-bottom
+            double ax = RAND.nextDouble() * canvasWidth;
+            double ay = RAND.nextDouble() * canvasHeight * 0.8; 
+            
+            // Calculate velocity vector towards a gravitational center (bottom center of the screen)
+            double targetX = canvasWidth / 2.0;
+            double targetY = canvasHeight + 200; // Far below the screen
+            double dx = targetX - ax;
+            double dy = targetY - ay;
+            double dist = Math.sqrt(dx * dx + dy * dy);
+            
+            double baseSpeed = isStreak ? 20 + RAND.nextDouble() * 15 : 2 + RAND.nextDouble() * 4;
+            double avx = (dx / dist) * baseSpeed + (RAND.nextDouble() - 0.5) * (isStreak ? 2 : 4);
+            double avy = (dy / dist) * baseSpeed + (RAND.nextDouble() - 0.5) * (isStreak ? 2 : 4);
+            
+            double alife = isStreak ? 25 : 80 + RAND.nextInt(60);
+            double asize = isStreak ? 2.5 : 1.5 + RAND.nextDouble() * 4;
+            Color ac = isStreak ? Color.CYAN : (RAND.nextBoolean() ? Color.web("#8b5cf6") : Color.web("#3b82f6"));
+            ambientParticles.add(new Particle(ax, ay, avx, avy, alife, asize, ac));
+        }
+
+        // 随机生成判定区反重力粒子 (Rising Energy Particles)
+        if (RAND.nextDouble() < 0.6) {
+            double rx = laneX[0] - laneWidth / 2.0 + RAND.nextDouble() * (laneWidth * laneCount);
+            double ry = judgeLineY + targetZoneH + RAND.nextDouble() * 30;
+            ambientParticles.add(new Particle(rx, ry, (RAND.nextDouble() - 0.5) * 2.5, -3 - RAND.nextDouble() * 6, 40 + RAND.nextInt(20), 2.5 + RAND.nextDouble() * 4, Color.MAGENTA));
+        }
+
+        for (Shockwave s : shockwaves) {
+            s.radius += (s.maxRadius - s.radius) * 0.2;
+            s.life--;
+        }
+        shockwaves.removeIf(s -> s.life <= 0);
+
+        for (MissGlitch m : misses) {
+            m.life--;
+        }
+        misses.removeIf(m -> m.life <= 0);
+
+        // 更新玻璃碎片
+        for (GlassShard gs : glassShards) {
+            gs.x += gs.vx; gs.y += gs.vy;
+            gs.vy += 0.5; // 重力
+            gs.angle += gs.rotSpeed;
+            gs.life--;
+        }
+        glassShards.removeIf(gs -> gs.life <= 0);
+
+        // 宇宙深潭：生成同心波纹涟漪 (Cosmic Pond Ripples)
+        if (frameCount % 60 == 0) {
+            bgRipples.add(new BgRipple(canvasWidth / 2.0, canvasHeight / 2.0, canvasWidth * 0.8, 300));
+        }
+        for (BgRipple r : bgRipples) {
+            r.radius += (r.maxRadius - r.radius) * 0.006;
+            r.life--;
+        }
+        bgRipples.removeIf(r -> r.life <= 0);
     }
 
     private int renderCallCount = 0;
@@ -550,13 +652,93 @@ public class RhythmMaster implements GameInterface {
             System.out.println("[RhythmMaster] render() called, state=" + state + " songs=" + (songs != null ? songs.size() : 0));
             renderCallCount++;
         }
-        gc.setFill(Color.web("#05051a"));
+        
+        // Deep space nebula background (DEEP BLUE AND CYBER PURPLE PARTICLE FIELD)
+        gc.setFill(Color.web("#030310"));
         gc.fillRect(0, 0, canvasWidth, canvasHeight);
+        
+        // Nebula gradients
+        gc.setFill(new RadialGradient(0, 0, canvasWidth * 0.3, canvasHeight * 0.2, canvasWidth * 0.8, false, CycleMethod.NO_CYCLE,
+                new Stop(0, Color.rgb(40, 10, 80, 0.6)), new Stop(1, Color.TRANSPARENT)));
+        gc.fillRect(0, 0, canvasWidth, canvasHeight);
+        
+        gc.setFill(new RadialGradient(0, 0, canvasWidth * 0.7, canvasHeight * 0.8, canvasWidth * 0.7, false, CycleMethod.NO_CYCLE,
+                new Stop(0, Color.rgb(10, 30, 100, 0.5)), new Stop(1, Color.TRANSPARENT)));
+        gc.fillRect(0, 0, canvasWidth, canvasHeight);
+
+        // Draw Cosmic Pond Ripples (宇宙深潭涟漪)
+        for (BgRipple r : bgRipples) {
+            double prog = 1.0 - (r.life / r.maxLife); // 0.0 to 1.0
+            Color rc;
+            if (prog < 0.2) rc = Color.rgb(128, 0, 128); // Deep Purple (内环)
+            else if (prog < 0.5) rc = Color.rgb(0, 0, 139); // Dark Blue (过渡)
+            else if (prog < 0.8) rc = Color.CYAN; // Cyan (外圈)
+            else rc = Color.rgb(173, 255, 47); // Green-Yellow/Gold-green (外缘)
+            
+            gc.setStroke(rc.deriveColor(0, 1, 1, Math.sin(prog * Math.PI) * 0.4));
+            gc.setLineWidth(3 + prog * 6);
+            gc.strokeOval(r.x - r.radius, r.y - r.radius, r.radius * 2, r.radius * 2);
+        }
+
+        // Stars & Dynamic Particles
         if (stars != null) {
+            double twinkle = Math.sin(frameCount * 0.05) * 0.3 + 0.7;
             for (double[] s : stars) {
-                gc.setFill(Color.rgb(180, 200, 255, s[2] * 0.5));
-                gc.fillOval(s[0], s[1], 1.2, 1.2);
+                gc.setFill(Color.rgb(150, 200, 255, s[2] * 0.6 * twinkle));
+                gc.fillOval(s[0], s[1], 1.5, 1.5);
             }
+        }
+        
+        // Draw ambient particles (stardust & light streaks)
+        for (Particle p : ambientParticles) {
+            double alpha = p.life / p.maxLife;
+            gc.setFill(p.color.deriveColor(0, 1, 1, alpha));
+            if (p.vy > 10) {
+                // Light streak
+                gc.fillRoundRect(p.x - 1, p.y - p.size * 5, 2, p.size * 10, 1, 1);
+            } else {
+                // Glow dust
+                gc.fillOval(p.x - p.size, p.y - p.size, p.size * 2, p.size * 2);
+            }
+        }
+        
+        // Circuit pattern overlay (subtle lines)
+        gc.setStroke(Color.rgb(0, 255, 150, 0.05));
+        gc.setLineWidth(1);
+        for (int i = 0; i < canvasWidth; i += 80) {
+            gc.strokeLine(i, 0, i, canvasHeight);
+        }
+        for (int i = 0; i < canvasHeight; i += 80) {
+            gc.strokeLine(0, i, canvasWidth, i);
+        }
+        
+        // Dynamic scan lines
+        double scanY = (frameCount * 3) % canvasHeight;
+        gc.setFill(new LinearGradient(0, scanY - 50, 0, scanY + 50, false, CycleMethod.NO_CYCLE,
+                new Stop(0, Color.TRANSPARENT), new Stop(0.5, Color.rgb(0, 255, 255, 0.1)), new Stop(1, Color.TRANSPARENT)));
+        gc.fillRect(0, scanY - 50, canvasWidth, 100);
+
+        // 动态音频声波背景 (Equalizer audio waves)
+        double waveTime = frameCount * 0.1;
+        double centerX = canvasWidth / 2.0;
+        double waveH = 150;
+        gc.setLineWidth(2);
+        for (int i = 0; i < 40; i++) {
+            double wx = centerX - 400 + i * 20;
+            // 模拟音乐频谱跳动，如果音乐播放中则跳动更剧烈
+            double amp = musicStarted && mediaPlayer != null ? 
+                    (Math.sin(waveTime * (1.2 + i * 0.1)) * Math.cos(waveTime * 0.8 + i) * 0.5 + 0.5) :
+                    (Math.sin(waveTime + i * 0.2) * 0.3 + 0.3);
+            
+            double h = 20 + amp * waveH;
+            
+            gc.setStroke(new LinearGradient(0, canvasHeight - h, 0, canvasHeight, false, CycleMethod.NO_CYCLE,
+                    new Stop(0, Color.rgb(0, 255, 255, 0.6)), new Stop(1, Color.TRANSPARENT)));
+            gc.strokeLine(wx, canvasHeight - h, wx, canvasHeight);
+            
+            // 对称的另一侧
+            double wx2 = centerX + 400 - i * 20;
+            gc.strokeLine(wx2, canvasHeight - h, wx2, canvasHeight);
         }
 
         if (state == State.SONG_SELECT) { renderSongSelect(gc); return; }
@@ -807,59 +989,177 @@ public class RhythmMaster implements GameInterface {
 
     // ========== 游戏画面 ==========
     private void renderGame(GraphicsContext gc) {
-        Color[] laneColors = {Color.web("#ff4477"), Color.web("#7c3aed"), Color.web("#06b6d4")};
-        String[] labels;
-        if (laneCount == 1) labels = new String[]{"中轨"};
-        else if (laneCount == 2) labels = new String[]{"左轨", "右轨"};
-        else labels = new String[]{"左轨", "中轨", "右轨"};
+        // Window frame with a sci-fi border titled 'AI 手势交互游戏大厅 2026_7_22 18_57_44.png'
+        gc.setStroke(Color.rgb(0, 255, 255, 0.6));
+        gc.setLineWidth(2);
+        gc.strokeRect(10, 10, canvasWidth - 20, canvasHeight - 20);
+        gc.setFill(Color.rgb(0, 255, 255, 0.2));
+        gc.fillRect(10, 10, canvasWidth - 20, 30);
+        gc.setFill(Color.CYAN);
+        gc.setFont(Font.font("Courier New", 16));
+        gc.fillText("AI 手势交互游戏大厅 2026_7_22 18_57_44.png", 20, 30);
 
-        for (int i = 0; i < laneCount; i++) {
-            double x = laneX[i]; Color lc = laneColors[i];
-            gc.setStroke(new LinearGradient(0, 0, 0, 1, true, CycleMethod.NO_CYCLE,
+        // 轨道：pulsing cyan laser track
+        double trackW = laneWidth * laneCount;
+        double trackX = laneX[0] - laneWidth / 2.0;
+        
+        // 垂直激光扫描线 / 透光柱 (Vertical holographic laser line)
+        if (handDetected) {
+            double activeX = laneX[activeLane];
+            gc.setFill(new LinearGradient(0, 0, 0, 1, true, CycleMethod.NO_CYCLE,
                     new Stop(0, Color.TRANSPARENT),
-                    new Stop(0.3, lc.deriveColor(0, 1, 1, 0.55)),
-                    new Stop(0.85, lc.deriveColor(0, 1, 1, 0.55)),
-                    new Stop(1, Color.TRANSPARENT)));
-            gc.setLineWidth(2); gc.setLineDashes(12, 8);
-            gc.strokeLine(x, 0, x, canvasHeight); gc.setLineDashes(null);
-
-            double za = 0.2;
-            for (Note n : notes) {
-                if (!n.judged && n.lane == i && Math.abs(n.y - judgeLineY) < greatWindow * 2)
-                { za = 0.55; break; }
-            }
-            if (handDetected && activeLane == i) za = Math.max(za, 0.45);
-            gc.setFill(lc.deriveColor(0, 1, 1, za));
-            gc.fillRoundRect(x - laneWidth * 0.38, judgeLineY - targetZoneH,
-                    laneWidth * 0.76, targetZoneH * 2, 12, 12);
-
-            for (LaneHit lh : laneHits) {
-                if (lh.lane == i) {
-                    gc.setFill(lh.color.deriveColor(0, 1, 1, lh.life / 12.0 * 0.6));
-                    gc.fillRoundRect(x - laneWidth * 0.42, judgeLineY - targetZoneH * 1.2,
-                            laneWidth * 0.84, targetZoneH * 2.4, 14, 14);
-                }
-            }
-
-            gc.setFill(lc.deriveColor(0, 1, 1, 0.55));
-            gc.setFont(Font.font(11));
+                    new Stop(0.5, Color.rgb(0, 255, 255, 0.2)),
+                    new Stop(1, Color.rgb(0, 255, 255, 0.5))));
+            gc.fillRect(activeX - laneWidth / 2.0, 40, laneWidth, judgeLineY - 40);
+            
+            // 激光中轴线 (Thin vertical laser beam)
+            gc.setStroke(Color.CYAN);
+            gc.setLineWidth(2.0);
+            gc.setLineDashes(15, 10);
+            gc.strokeLine(activeX, 40, activeX, judgeLineY);
+            gc.setLineDashes(null);
+            
+            // 全息目标光标虚影 & 动态缩放光环 (Shrinking Target Ring & Ghost Cursor & Fist Halo)
+            double targetY = judgeLineY - targetZoneH - 30;
+            double shrinkPhase = (frameCount % 60) / 60.0; // 0.0 to 1.0 every second
+            double ringSize = 80 - shrinkPhase * 40; // Shrinks from 80 to 40
+            
+            // Miniature smooth gradient ripple halos (cyan-purple) around the fist/gesture
+            gc.setStroke(new LinearGradient(0, 0, 1, 1, true, CycleMethod.NO_CYCLE,
+                    new Stop(0, Color.CYAN), new Stop(1, Color.PURPLE)));
+            gc.setLineWidth(4);
+            gc.strokeOval(activeX - ringSize/2, targetY - ringSize/2, ringSize, ringSize);
+            
+            gc.setStroke(Color.rgb(0, 255, 255, 0.5));
+            gc.setLineWidth(2);
+            gc.strokeOval(activeX - 30, targetY - 30, 60, 60);
+            
+            gc.setFill(Color.rgb(0, 255, 255, 0.3));
+            gc.fillOval(activeX - 30, targetY - 30, 60, 60);
+            
+            gc.setFill(Color.CYAN);
+            gc.setFont(Font.font(28));
             gc.setTextAlign(TextAlignment.CENTER);
-            gc.fillText(labels[i], x, judgeLineY + targetZoneH + 16);
+            gc.fillText(gEmoji(currentGesture), activeX, targetY + 10);
             gc.setTextAlign(TextAlignment.LEFT);
         }
+        
+        // Track Background
+        gc.setFill(new LinearGradient(0, 0, 0, 1, true, CycleMethod.NO_CYCLE,
+                new Stop(0, Color.TRANSPARENT),
+                new Stop(0.8, Color.rgb(0, 255, 255, 0.1)),
+                new Stop(1, Color.TRANSPARENT)));
+        gc.fillRect(trackX, 40, trackW, canvasHeight - 40);
+        
+        // Lane dividers
+        gc.setStroke(Color.rgb(0, 255, 255, 0.3));
+        gc.setLineWidth(1);
+        for (int i = 0; i <= laneCount; i++) {
+            double lx = trackX + i * laneWidth;
+            gc.strokeLine(lx, 40, lx, canvasHeight - 20);
+            
+            // "左中右" 文本与周围涟漪回声 (Left Center Right text with tiny ripple echoes)
+            if (i < laneCount) {
+                double textX = lx + laneWidth / 2.0;
+                double textY = canvasHeight - 35;
+                String[] labels = laneCount == 1 ? new String[]{"中"} : (laneCount == 2 ? new String[]{"左", "右"} : new String[]{"左", "中", "右"});
+                String label = i < labels.length ? labels[i] : "";
+                
+                gc.setStroke(Color.rgb(0, 255, 255, Math.sin(frameCount * 0.1) * 0.4 + 0.2));
+                gc.setLineWidth(1);
+                gc.strokeOval(textX - 15, textY - 15, 30, 30); // Ripple echo
+                
+                gc.setFill(Color.CYAN);
+                gc.setFont(Font.font(16));
+                gc.setTextAlign(TextAlignment.CENTER);
+                gc.fillText(label, textX, textY + 5);
+                gc.setTextAlign(TextAlignment.LEFT);
+            }
+        }
 
-        gc.setStroke(Color.rgb(255, 255, 255, 0.25));
-        gc.setLineWidth(1.5);
-        gc.strokeLine(laneWidth * 0.3, judgeLineY, canvasWidth - laneWidth * 0.3, judgeLineY);
+        // 底部核对区域（Hit / Check Zone）-> 升级为量子棱镜镜面 (Quantum Prism Mirror)
+        // 根据要求：固定渲染，不再使用 pulse 和随机粒子避免一闪一闪
+        double checkZoneY = judgeLineY - targetZoneH;
+        double checkZoneH = targetZoneH * 2;
+        
+        // Vortex background & Plasma Glowing Halo (始终渲染，不依赖手势状态)
+        // 棱镜折射渐变底色，固定透明度不闪烁
+        gc.setFill(new RadialGradient(0, 0, trackX + trackW/2, judgeLineY, trackW * 0.8, false, CycleMethod.NO_CYCLE,
+                new Stop(0, Color.rgb(0, 255, 255, 0.5)),              // 固定 Cyan center
+                new Stop(0.3, Color.rgb(180, 0, 255, 0.5)),            // Magenta/Purple
+                new Stop(0.8, Color.rgb(0, 0, 100, 0.3)),
+                new Stop(1, Color.TRANSPARENT)));
+        gc.fillRect(trackX - 50, checkZoneY - 50, trackW + 100, checkZoneH + 100);
+        
+        // 玻璃折射网格 (Refractive Glass Lattice) - 固定渲染
+        gc.setLineWidth(2);
+        for (double y = checkZoneY; y < checkZoneY + checkZoneH; y += 20) {
+            for (double x = trackX; x < trackX + trackW; x += 30) {
+                // 绘制带色散的多边形
+                gc.setStroke(Color.rgb(255, 0, 150, 0.5));
+                gc.strokeLine(x, y, x + 15, y + 15);
+                gc.setStroke(Color.rgb(0, 255, 255, 0.8));
+                gc.strokeLine(x + 15, y + 15, x + 30, y);
+            }
+        }
+        
+        // 移除了随机生成的 Quantum Sparkles，避免雪花屏般的闪烁感
+        
+        // Reactive neon boundary - 固定线宽
+        gc.setStroke(Color.MAGENTA);
+        gc.setLineWidth(4);
+        gc.strokeRect(trackX, checkZoneY, trackW, checkZoneH);
+        
+        // 绘制特效在音符下方
+        for (Shockwave s : shockwaves) {
+            gc.setStroke(s.color.deriveColor(0, 1, 1, s.life / s.maxLife));
+            gc.setLineWidth(4);
+            gc.strokeOval(s.x - s.radius, s.y - s.radius, s.radius * 2, s.radius * 2);
+        }
+        for (Particle p : particles) {
+            gc.setFill(p.color.deriveColor(0, 1, 1, p.life / p.maxLife));
+            gc.fillOval(p.x - p.size, p.y - p.size, p.size * 2, p.size * 2);
+        }
+        for (MissGlitch m : misses) {
+            gc.setStroke(Color.RED);
+            gc.setLineWidth(2);
+            double a = m.life / m.maxLife;
+            for (int i = 0; i < 5; i++) {
+                double gx = m.x + (RAND.nextDouble() - 0.5) * 60;
+                double gy = m.y + (RAND.nextDouble() - 0.5) * 60;
+                gc.strokeLine(m.x, m.y, gx, gy);
+            }
+            gc.setFill(Color.rgb(0, 0, 0, 0.5 * a));
+            gc.fillRect(m.x - 40, m.y - 40, 80, 80);
+        }
 
-        // 光标
+        // 渲染玻璃碎块 (Quantum Glass Shards)
+        for (GlassShard gs : glassShards) {
+            double a = gs.life / gs.maxLife;
+            gc.save();
+            gc.translate(gs.x, gs.y);
+            gc.rotate(gs.angle);
+            // 色散边缘 (Chromatic Aberration)
+            gc.setFill(Color.rgb(255, 0, 100, 0.6 * a));
+            double[] xPoints = {-gs.size, gs.size, 0};
+            double[] yPoints = {-gs.size, -gs.size, gs.size};
+            gc.fillPolygon(xPoints, yPoints, 3);
+            
+            gc.setFill(Color.rgb(0, 255, 255, 0.8 * a));
+            double[] xPoints2 = {-gs.size + 1, gs.size - 1, 0};
+            double[] yPoints2 = {-gs.size + 1, -gs.size + 1, gs.size - 1};
+            gc.fillPolygon(xPoints2, yPoints2, 3);
+            gc.restore();
+        }
+
+        // 光标与悬停指示 (不再覆盖或清除之前的渲染内容)
         if (cursorAlpha > 0.01) {
             double cx = cursorX, cy = judgeLineY + targetZoneH + 35, cr = 14;
             gc.setFill(Color.rgb(255, 255, 255, 0.18 * cursorAlpha));
             gc.fillOval(cx - cr - 12, cy - cr - 12, (cr + 12) * 2, (cr + 12) * 2);
             gc.setFill(Color.rgb(255, 255, 255, 0.7 * cursorAlpha));
             gc.fillOval(cx - cr, cy - cr, cr * 2, cr * 2);
-            gc.setFill(Color.rgb(100, 200, 255, 0.8 * cursorAlpha));
+            gc.setFill(Color.rgb(0, 255, 255, 0.8 * cursorAlpha));
             gc.fillOval(cx - cr * 0.5, cy - cr * 0.5, cr, cr);
             if (handDetected) {
                 gc.setFill(Color.WHITE.deriveColor(0, 1, 1, cursorAlpha));
@@ -882,54 +1182,67 @@ public class RhythmMaster implements GameInterface {
             double r = 26 * scale;
 
             if (note.holdLength > 0) {
-                // 长条：竖条，窄而长
+                // 长条 (Molten Neon Glass Trail / 熔融液态玻璃拖尾)
                 double hl = note.holdLength;
                 double vw = r * 0.55;
-
-                // 按住时：多层光晕 + 每帧两侧粒子 + 底部电光
                 if (note.holdStarted && !note.holdBroken) {
-                    double pulse = 1.0 + 0.22 * Math.sin(frameCount * 0.22);
-                    gc.setFill(nc.deriveColor(0, 1, 1, 0.06 * pulse));
-                    gc.fillRoundRect(x - vw - 22, y - 6, vw * 2 + 44, hl + 12, vw + 22, vw + 22);
-                    gc.setFill(nc.deriveColor(0, 1, 1, 0.14 * pulse));
-                    gc.fillRoundRect(x - vw - 14, y - 3, vw * 2 + 28, hl + 6, vw + 14, vw + 14);
-                    gc.setFill(nc.deriveColor(0, 1, 1, 0.24 * pulse));
-                    gc.fillRoundRect(x - vw - 6, y - 1, vw * 2 + 12, hl + 2, vw + 6, vw + 6);
-                    // 每帧两侧火花
+                    double p = 1.0 + 0.22 * Math.sin(frameCount * 0.22);
+                    // 色散边缘光晕
+                    gc.setFill(Color.rgb(255, 0, 150, 0.2 * p));
+                    gc.fillRoundRect(x - vw - 25, y - 6, vw * 2 + 50, hl + 12, vw + 22, vw + 22);
+                    gc.setFill(nc.deriveColor(0, 1, 1, 0.3 * p));
+                    gc.fillRoundRect(x - vw - 20, y - 6, vw * 2 + 40, hl + 12, vw + 22, vw + 22);
                     floatTexts.add(new FloatText("✦", x + vw + 2 + RAND.nextDouble() * 14,
                             note.y + RAND.nextDouble() * hl, 10, nc.deriveColor(0, 1, 1, 0.95)));
                     floatTexts.add(new FloatText("✦", x - vw - 2 - RAND.nextDouble() * 14,
                             note.y + RAND.nextDouble() * hl, 10, nc.deriveColor(0, 1, 1, 0.95)));
-                    if (frameCount % 2 == 0) {
-                        floatTexts.add(new FloatText("⚡", x + (RAND.nextDouble() - 0.5) * vw * 4,
-                                note.y + hl, 8, Color.WHITE));
-                    }
                 }
-
-                // 发光底
-                gc.setFill(nc.deriveColor(0, 1, 1, 0.15));
-                gc.fillRoundRect(x - vw - 6, y - 2, vw * 2 + 12, hl + 4, vw + 8, vw + 8);
-                // 主体
-                gc.setFill(nc.deriveColor(0, 1, 1, note.holdStarted ? 0.95 : 0.55));
+                
+                // 晶体化高光层 (Crystalline Highlight Layer)
+                gc.setFill(new LinearGradient(x - vw, 0, x + vw, 0, false, CycleMethod.NO_CYCLE,
+                        new Stop(0, nc.deriveColor(0, 1, 1, 0.8)),
+                        new Stop(0.5, Color.WHITE.deriveColor(0, 1, 1, 0.9)),
+                        new Stop(1, nc.deriveColor(0, 1, 1, 0.8))));
                 gc.fillRoundRect(x - vw, y, vw * 2, hl, vw, vw);
-                // 亮边框
-                gc.setStroke(nc.deriveColor(0, 1, 1, note.holdStarted ? 0.9 : 0.5));
-                gc.setLineWidth(2.5);
+                
+                // 内部折射阴影
+                gc.setFill(Color.rgb(0, 0, 0, 0.3));
+                gc.fillRoundRect(x - vw + 4, y + 4, vw * 2 - 8, hl - 8, vw - 4, vw - 4);
+                
+                gc.setStroke(nc.deriveColor(0, 1, 1, note.holdStarted ? 1.0 : 0.8));
+                gc.setLineWidth(3.0);
                 gc.strokeRoundRect(x - vw, y, vw * 2, hl, vw, vw);
-                // 手势标识在长条底部
+                
                 gc.setFill(Color.WHITE);
                 gc.setFont(Font.font(20));
                 gc.setTextAlign(TextAlignment.CENTER);
                 gc.fillText(gEmoji(note.gestureType), x, y + hl + 16);
                 gc.setTextAlign(TextAlignment.LEFT);
             } else {
-                // 普通圆形音符
-                gc.setFill(nc.deriveColor(0, 1, 1, 0.15));
-                gc.fillOval(x - r - 8, y - r - 8, (r + 8) * 2, (r + 8) * 2);
-                gc.setFill(nc.deriveColor(0, 1, 1, 0.85));
+                // 普通音符: Stylized crystalline hand-sign notes
+                double haloPhase = frameCount * 0.05;
+                gc.setStroke(Color.rgb(255, 0, 150, 0.4)); // Chromatic red shift
+                gc.setLineWidth(2);
+                gc.strokeOval(x - r * 1.5 - 2, y - r * 1.5, r * 3, r * 3);
+                
+                gc.setStroke(Color.rgb(0, 255, 255, 0.4)); // Chromatic blue shift
+                gc.strokeOval(x - r * 1.5 + 2, y - r * 1.5, r * 3, r * 3);
+                
+                gc.setStroke(nc.deriveColor(0, 1, 1, 0.8));
+                gc.setLineWidth(1.5);
+                gc.strokeOval(x - r * 1.2 - Math.sin(haloPhase)*5, y - r * 1.2 - Math.cos(haloPhase)*5, r * 2.4, r * 2.4);
+                
+                // 玻璃高光面
+                gc.setFill(new LinearGradient(x - r, y - r, x + r, y + r, false, CycleMethod.NO_CYCLE,
+                        new Stop(0, nc.deriveColor(0, 1, 1, 0.9)),
+                        new Stop(0.3, Color.WHITE.deriveColor(0, 1, 1, 0.8)),
+                        new Stop(1, nc.deriveColor(0, 1, 1, 0.5))));
                 gc.fillOval(x - r, y - r, r * 2, r * 2);
-                gc.setStroke(nc.deriveColor(0, 1, 1, 0.5));
-                gc.setLineWidth(2); gc.strokeOval(x - r, y - r, r * 2, r * 2);
+                
+                gc.setStroke(Color.WHITE);
+                gc.setLineWidth(2);
+                gc.strokeOval(x - r, y - r, r * 2, r * 2);
+                
                 gc.setFill(Color.WHITE);
                 gc.setFont(Font.font(24 * scale));
                 gc.setTextAlign(TextAlignment.CENTER);
@@ -938,72 +1251,71 @@ public class RhythmMaster implements GameInterface {
             }
         }
 
+        // Float Texts
         for (FloatText ft : floatTexts) {
             gc.setFill(ft.color.deriveColor(0, 1, 1, Math.max(0, ft.life / 30.0)));
-            gc.setFont(Font.font(22));
-            gc.setTextAlign(TextAlignment.CENTER); gc.fillText(ft.text, ft.x, ft.y);
+            gc.setFont(Font.font("Courier New", 22));
+            gc.setTextAlign(TextAlignment.CENTER); 
+            gc.fillText(ft.text, ft.x, ft.y);
             gc.setTextAlign(TextAlignment.LEFT);
         }
 
-        // HUD
-        gc.setFill(Color.color(0.04, 0.05, 0.16, 0.80));
-        gc.fillRoundRect(22, 18, 265, 70, 18, 18);
-        gc.setStroke(Color.color(0.58, 0.44, 1.0, 0.40));
-        gc.setLineWidth(1.2); gc.strokeRoundRect(22, 18, 265, 70, 18, 18);
-        gc.setFill(Color.web("#ddd6fe"));
-        gc.setFont(Font.font("Microsoft YaHei UI", 19));
-        gc.fillText("🥁  节奏大师", 40, 46);
-        gc.setFill(Color.web("#a5b4fc"));
-        gc.setFont(Font.font("Microsoft YaHei UI", 13));
-        gc.fillText((selectedSong != null ? selectedSong.title : "") + "  连击 " + combo, 40, 72);
+        // Modular high-tech HUD boxes
+        // Top-left with '节奏大师' and track info
+        gc.setFill(Color.rgb(0, 20, 40, 0.8));
+        gc.setStroke(Color.CYAN);
+        gc.setLineWidth(1.5);
+        gc.fillRect(20, 50, 200, 60);
+        gc.strokeRect(20, 50, 200, 60);
+        gc.setFill(Color.CYAN);
+        gc.setFont(Font.font("Courier New", 18));
+        gc.fillText("节奏大师", 30, 75);
+        gc.setFill(Color.rgb(0, 255, 255, 0.7));
+        gc.setFont(Font.font("Courier New", 12));
+        gc.fillText((selectedSong != null ? selectedSong.title : "") + " | L:" + laneCount, 30, 95);
 
-        // 中间大号分数
-        gc.setFill(Color.WHITE.deriveColor(0, 1, 1, 0.85));
-        gc.setFont(Font.font("Microsoft YaHei UI", 36));
-        gc.setTextAlign(TextAlignment.CENTER);
-        gc.fillText(String.valueOf(score), canvasWidth / 2.0, 58);
-        gc.setTextAlign(TextAlignment.LEFT);
-
-        gc.setFill(Color.GOLD); gc.setFont(Font.font(14));
-        gc.fillText("P:" + perfectCount, canvasWidth - 150, 36);
-        gc.setFill(Color.LIME); gc.fillText("G:" + greatCount, canvasWidth - 105, 36);
-        gc.setFill(Color.RED); gc.fillText("M:" + missCount, canvasWidth - 60, 36);
-
-        if (combo >= 10) {
-            gc.setFill(Color.GOLD.deriveColor(0, 1, 1, 0.7));
-            gc.setFont(Font.font(18));
-            gc.setTextAlign(TextAlignment.CENTER);
-            gc.fillText("🔥 " + combo + " combo  x" + String.format("%.1f", getComboMultiplier()),
-                    canvasWidth / 2.0, judgeLineY - targetZoneH - 50);
-            gc.setTextAlign(TextAlignment.LEFT);
-        }
-
-        gc.setFill(Color.WHITE.deriveColor(0, 1, 1, 0.4));
-        gc.setFont(Font.font(14));
-        gc.setTextAlign(TextAlignment.RIGHT);
-        gc.fillText(handDetected ? "手势: " + gEmoji(currentGesture) + " | 轨道: " + (activeLane + 1) : "未检测到手",
-                canvasWidth - 28, canvasHeight - 20);
-        gc.setTextAlign(TextAlignment.LEFT);
-
-        // 进度条
-        double progress = 0;
-        if (musicStarted && mediaPlayer != null) {
-            progress = Math.min(1.0, mediaPlayer.getCurrentTime().toSeconds() / selectedSong.duration);
-        } else if (noMusicFallback) {
-            progress = (double) frameCount / gameDurationFrames;
-        }
-        gc.setFill(progress < 0.5 ? Color.web("#7c3aed") : progress < 0.8 ? Color.web("#f59e0b") : Color.web("#ef4444"));
-        gc.fillRect(0, 0, canvasWidth * progress, 3);
-
+        // Top-center with timer '305s' and large score '0'
+        gc.fillRect(canvasWidth / 2.0 - 100, 50, 200, 60);
+        gc.strokeRect(canvasWidth / 2.0 - 100, 50, 200, 60);
         int remSecs = 0;
         if (musicStarted && mediaPlayer != null) {
             remSecs = Math.max(0, (int)(selectedSong.duration - mediaPlayer.getCurrentTime().toSeconds()));
         }
-        gc.setFill(Color.rgb(200, 180, 255));
-        gc.setFont(Font.font(14));
+        gc.setFill(Color.CYAN);
+        gc.setFont(Font.font("Courier New", 14));
+        gc.fillText("TIMER: " + remSecs + "s", canvasWidth / 2.0 - 80, 70);
+        gc.setFill(Color.WHITE);
+        gc.setFont(Font.font("Courier New", 28));
         gc.setTextAlign(TextAlignment.CENTER);
-        gc.fillText("⏱ " + remSecs + "s", canvasWidth / 2.0, 24);
+        gc.fillText(String.valueOf(score), canvasWidth / 2.0, 100);
         gc.setTextAlign(TextAlignment.LEFT);
+
+        // Top-right with score breakdown
+        gc.fillRect(canvasWidth - 220, 50, 200, 60);
+        gc.strokeRect(canvasWidth - 220, 50, 200, 60);
+        gc.setFill(Color.CYAN);
+        gc.setFont(Font.font("Courier New", 16));
+        gc.fillText("P:" + perfectCount, canvasWidth - 200, 75);
+        gc.setFill(Color.LIME);
+        gc.fillText("G:" + greatCount, canvasWidth - 140, 75);
+        gc.setFill(Color.RED);
+        gc.fillText("M:" + missCount, canvasWidth - 80, 75);
+        if (combo >= 10) {
+            gc.setFill(Color.GOLD);
+            gc.fillText("COMBO: " + combo, canvasWidth - 200, 95);
+        }
+
+        // Progress bar at very bottom
+        double prog = 0;
+        if (musicStarted && mediaPlayer != null) {
+            prog = Math.min(1.0, mediaPlayer.getCurrentTime().toSeconds() / selectedSong.duration);
+        } else if (noMusicFallback) {
+            prog = (double) frameCount / gameDurationFrames;
+        }
+        gc.setFill(Color.rgb(0, 255, 255, 0.3));
+        gc.fillRect(20, canvasHeight - 20, canvasWidth - 40, 4);
+        gc.setFill(Color.CYAN);
+        gc.fillRect(20, canvasHeight - 20, (canvasWidth - 40) * prog, 4);
     }
 
     private void renderGameOver(GraphicsContext gc) {
@@ -1095,6 +1407,35 @@ public class RhythmMaster implements GameInterface {
     }
 
     // ===== 工具方法 =====
+    private void createPerfectBlast(double x, double y) {
+        shockwaves.add(new Shockwave(x, y, 150, 30, Color.CYAN));
+        shockwaves.add(new Shockwave(x, y, 100, 20, Color.GOLD));
+        for (int i = 0; i < 40; i++) {
+            double angle = RAND.nextDouble() * Math.PI * 2;
+            double speed = 2 + RAND.nextDouble() * 8;
+            particles.add(new Particle(x, y, Math.cos(angle) * speed, Math.sin(angle) * speed, 20 + RAND.nextInt(20), 3 + RAND.nextDouble() * 5, RAND.nextBoolean() ? Color.CYAN : Color.GOLD));
+        }
+        // 量子玻璃碎裂 (Quantum Glass Shards)
+        for (int i = 0; i < 15; i++) {
+            double angle = RAND.nextDouble() * Math.PI * 2;
+            double speed = 4 + RAND.nextDouble() * 12;
+            glassShards.add(new GlassShard(x, y, Math.cos(angle) * speed, Math.sin(angle) * speed, 20 + RAND.nextInt(15), 6 + RAND.nextDouble() * 10, Color.CYAN));
+        }
+    }
+
+    private void createGreatBlast(double x, double y) {
+        shockwaves.add(new Shockwave(x, y, 100, 25, Color.LIME));
+        for (int i = 0; i < 20; i++) {
+            double angle = RAND.nextDouble() * Math.PI * 2;
+            double speed = 2 + RAND.nextDouble() * 5;
+            particles.add(new Particle(x, y, Math.cos(angle) * speed, Math.sin(angle) * speed, 15 + RAND.nextInt(15), 2 + RAND.nextDouble() * 4, Color.LIME));
+        }
+    }
+
+    private void createMissGlitch(double x, double y) {
+        misses.add(new MissGlitch(x, y, 30));
+    }
+
     private String generatePerformanceComment() {
         int total = perfectCount + greatCount + missCount;
         double acc = total > 0 ? (perfectCount * 1.0 + greatCount * 0.5) / total : 0;
@@ -1174,5 +1515,45 @@ public class RhythmMaster implements GameInterface {
     private static class LaneHit {
         int lane, life = 12; Color color;
         LaneHit(int l, Color c) { lane = l; color = c; }
+    }
+
+    private static class Particle {
+        double x, y, vx, vy, life, maxLife, size;
+        Color color;
+        Particle(double x, double y, double vx, double vy, double life, double size, Color c) {
+            this.x = x; this.y = y; this.vx = vx; this.vy = vy; this.life = life; this.maxLife = life; this.size = size; this.color = c;
+        }
+    }
+
+    private static class Shockwave {
+        double x, y, radius, maxRadius, life, maxLife;
+        Color color;
+        Shockwave(double x, double y, double maxRadius, double life, Color c) {
+            this.x = x; this.y = y; this.radius = 0; this.maxRadius = maxRadius; this.life = life; this.maxLife = life; this.color = c;
+        }
+    }
+
+    private static class MissGlitch {
+        double x, y, life, maxLife;
+        MissGlitch(double x, double y, double life) {
+            this.x = x; this.y = y; this.life = life; this.maxLife = life;
+        }
+    }
+
+    private static class BgRipple {
+        double x, y, radius, maxRadius, life, maxLife;
+        BgRipple(double x, double y, double maxRadius, double life) {
+            this.x = x; this.y = y; this.radius = 0; this.maxRadius = maxRadius; this.life = life; this.maxLife = life;
+        }
+    }
+
+    private static class GlassShard {
+        double x, y, vx, vy, angle, rotSpeed, life, maxLife, size;
+        Color color;
+        GlassShard(double x, double y, double vx, double vy, double life, double size, Color c) {
+            this.x = x; this.y = y; this.vx = vx; this.vy = vy; this.life = life; this.maxLife = life; this.size = size; this.color = c;
+            this.angle = RAND.nextDouble() * 360;
+            this.rotSpeed = (RAND.nextDouble() - 0.5) * 20;
+        }
     }
 }

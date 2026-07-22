@@ -96,21 +96,23 @@ public final class ZumaGame implements GameInterface {
 
     private void loadAssets() {
         try {
-            bgImage = new javafx.scene.image.Image("file:///C:/Users/Justin/Desktop/实训项目素材/background.png", 0, 0, false, true);
-            turretImage = new javafx.scene.image.Image("file:///C:/Users/Justin/Desktop/实训项目素材/炮台.png", 0, 0, false, true);
+            bgImage = new javafx.scene.image.Image(getClass().getResourceAsStream("/assets/zuma/background.png"));
+            turretImage = new javafx.scene.image.Image(getClass().getResourceAsStream("/assets/zuma/炮台.png"));
 
             ballImages = new javafx.scene.image.Image[6];
-            ballImages[0] = new javafx.scene.image.Image("file:///C:/Users/Justin/Desktop/实训项目素材/红球.png", 0, 0, false, true); // Red
-            ballImages[1] = new javafx.scene.image.Image("file:///C:/Users/Justin/Desktop/实训项目素材/黄球.png", 0, 0, false, true); // Yellow
-            ballImages[2] = new javafx.scene.image.Image("file:///C:/Users/Justin/Desktop/实训项目素材/绿球.png", 0, 0, false, true); // Green
-            ballImages[3] = new javafx.scene.image.Image("file:///C:/Users/Justin/Desktop/实训项目素材/蓝球.png", 0, 0, false, true); // Blue
+            ballImages[0] = new javafx.scene.image.Image(getClass().getResourceAsStream("/assets/zuma/红球.png")); // Red
+            ballImages[1] = new javafx.scene.image.Image(getClass().getResourceAsStream("/assets/zuma/黄球.png")); // Yellow
+            ballImages[2] = new javafx.scene.image.Image(getClass().getResourceAsStream("/assets/zuma/绿球.png")); // Green
+            ballImages[3] = new javafx.scene.image.Image(getClass().getResourceAsStream("/assets/zuma/蓝球.png")); // Blue
             // Reuse for other indices or leave null to use fallback rendering
             ballImages[4] = null;
             ballImages[5] = null;
 
             assetsLoaded = isUsableImage(bgImage) || isUsableImage(turretImage);
             for (javafx.scene.image.Image ballImage : ballImages) {
-                assetsLoaded |= isUsableImage(ballImage);
+                if (ballImage != null) {
+                    assetsLoaded |= isUsableImage(ballImage);
+                }
             }
         } catch (Exception e) {
             System.err.println("Failed to load Zuma assets: " + e.getMessage());
