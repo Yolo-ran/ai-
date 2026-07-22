@@ -681,8 +681,8 @@ public class GameRenderer {
         java.util.List<Difficulty> supported = new java.util.ArrayList<>();
         // 无尽子菜单：只显示"开始游戏"和"查看排行榜"
         if (endlessSubMenu) {
-            supported.add(Difficulty.EASY);   // → 开始游戏
-            supported.add(Difficulty.HARD);   // → 查看排行榜
+            supported.add(Difficulty.HARD);   // 后层 → 查看排行榜
+            supported.add(Difficulty.EASY);   // 中央前层 → 开始游戏
         } else {
             for (Difficulty difficulty : Difficulty.values()) {
                 if (activeGame == null || activeGame.supportsDifficulty(difficulty)) {
@@ -709,8 +709,16 @@ public class GameRenderer {
         double offsetY = n > 3 ? 32 : 40;
         double stackW = cardW + offsetX * (n - 1);
         double stackH = cardH + offsetY * (n - 1);
-        double baseX = (w - stackW) / 2.0;
-        double baseY = (h - stackH) / 2.0 + 18;
+        double baseX;
+        double baseY;
+        if (endlessSubMenu && n == 2) {
+            // 第二张是开始游戏：让它的卡面中心与屏幕中心完全重合。
+            baseX = w * 0.5 - cardW * 0.5 - offsetX;
+            baseY = h * 0.5 - cardH * 0.5 - offsetY;
+        } else {
+            baseX = (w - stackW) / 2.0;
+            baseY = (h - stackH) / 2.0 + 18;
+        }
         double[] cardX = new double[n];
         double[] cardY = new double[n];
         for (int i = 0; i < n; i++) {
@@ -833,7 +841,8 @@ public class GameRenderer {
                     ? compactHoldFrames / (double) DIFFICULTY_HOLD_FRAMES : 0;
             String labelOverride = null;
             if (endlessSubMenu) {
-                labelOverride = (i == 0) ? "🎮  开始游戏" : "🏆  查看排行榜";
+                labelOverride = diffs[i] == Difficulty.EASY
+                        ? "🎮  开始游戏" : "🏆  查看排行榜";
             }
             drawDifficultyGlassCard(g, diffs[i], activeGame, cardX[i], cardY[i],
                     cardW, cardH, i == selectedIndex, progress, labelOverride);
@@ -842,16 +851,17 @@ public class GameRenderer {
 
         // 无尽子菜单：替换卡片上的文字
         if (endlessSubMenu) {
-            String[] labels = {"🎮  开始游戏", "🏆  查看排行榜"};
             for (int i = 0; i < n; i++) {
                 boolean sel = i == selectedIndex;
+                String label = diffs[i] == Difficulty.EASY
+                        ? "🎮  开始游戏" : "🏆  查看排行榜";
                 double shear = Math.tan(Math.toRadians(-8));
                 g.save();
                 g.translate(cardX[i], cardY[i]);
                 g.transform(1, shear, 0, 1, 0, -shear * cardW / 2.0);
                 g.setFill(sel ? Color.web("#3B82F6") : Color.rgb(161, 161, 170, 0.68));
                 g.setFont(Font.font("Microsoft YaHei", FontWeight.BOLD, 18));
-                g.fillText(labels[i], 54, 35);
+                g.fillText(label, 54, 35);
                 g.restore();
             }
         }

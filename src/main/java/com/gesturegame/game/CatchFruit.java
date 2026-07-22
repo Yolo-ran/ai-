@@ -4,6 +4,7 @@ import com.gesturegame.common.Difficulty;
 import com.gesturegame.common.GameInterface;
 import com.gesturegame.common.GestureData;
 import javafx.scene.canvas.GraphicsContext;
+import javafx.scene.image.Image;
 import javafx.scene.paint.Color;
 import javafx.scene.paint.CycleMethod;
 import javafx.scene.paint.LinearGradient;
@@ -18,20 +19,25 @@ import java.util.List;
 import java.util.Random;
 
 /**
- * 体感接水果：移动手掌控制篮子，完成目标分并避开炸弹。
+ * 暗星采矿：移动手掌控制引力回收舱，收集星核并避开反物质地雷。
  *
- * <p>背景复刻 AnimatedDots 的核心观感：固定横向点阵、随机速度、循环下落，
- * 同时根据纵向位置改变选定颜色通道。游戏逻辑完全留在 Java 端，不改变手势协议。</p>
+ * <p>宇宙主题只替换渲染资源，得分、碰撞、难度和手势逻辑仍完全留在 Java 端，
+ * 不改变既有协议。</p>
  */
 public class CatchFruit implements GameInterface {
 
     private static final Random RANDOM = new Random();
     private static final int INK_LANE_COUNT = 60;
     private static final int MAX_PARTICLES = 220;
+    private static final int MAX_COLLECTION_EFFECTS = 24;
     private static final double READY_SECONDS = 2.35;
     private static final double COMBO_WINDOW = 1.25;
     private static final double FEVER_SECONDS = 5.5;
     private static final double BASKET_HEIGHT = 30.0;
+    private static final String SPACE_ASSET_ROOT = "/assets/catchfruit/space/";
+    private static final Image SPACE_BACKGROUND = loadImage(SPACE_ASSET_ROOT + "background.png");
+    private static final Image COLLECTOR_IMAGE = loadImage(SPACE_ASSET_ROOT + "collector.png");
+    private static final Image COLLECTOR_FEVER_IMAGE = loadImage(SPACE_ASSET_ROOT + "collector-fever.png");
 
     private static final LinearGradient BASKET_FILL = new LinearGradient(0, 0, 0, 1, true,
             CycleMethod.NO_CYCLE,
@@ -55,22 +61,24 @@ public class CatchFruit implements GameInterface {
     private enum Phase { READY, PLAYING, FINISHED }
 
     private enum FruitKind {
-        APPLE(Color.web("#ff453a"), Color.web("#a91d2d"), 10),
-        ORANGE(Color.web("#ff9f0a"), Color.web("#c55a11"), 10),
-        LEMON(Color.web("#ffd60a"), Color.web("#d19a00"), 10),
-        LIME(Color.web("#a4ff2e"), Color.web("#3f9d4a"), 10),
-        BERRY(Color.web("#af52de"), Color.web("#6731a8"), 15),
-        GOLD(Color.web("#ffd700"), Color.web("#fff0a3"), 30),
-        BOMB(Color.web("#20232d"), Color.web("#050609"), 0);
+        APPLE(Color.web("#ff453a"), Color.web("#a91d2d"), 10, "red-dwarf-core.png"),
+        ORANGE(Color.web("#ff9f0a"), Color.web("#c55a11"), 10, "stellar-ember.png"),
+        LEMON(Color.web("#ffd60a"), Color.web("#d19a00"), 10, "solar-crystal.png"),
+        LIME(Color.web("#53e6c2"), Color.web("#238f78"), 10, "nebula-crystal.png"),
+        BERRY(Color.web("#af52de"), Color.web("#6731a8"), 15, "dark-matter-orb.png"),
+        GOLD(Color.web("#ffd700"), Color.web("#fff0a3"), 30, "golden-singularity.png"),
+        BOMB(Color.web("#ff453a"), Color.web("#050609"), 0, "antimatter-mine.png");
 
         final Color main;
         final Color shade;
         final int points;
+        final Image sprite;
 
-        FruitKind(Color main, Color shade, int points) {
+        FruitKind(Color main, Color shade, int points, String assetName) {
             this.main = main;
             this.shade = shade;
             this.points = points;
+            this.sprite = loadImage(SPACE_ASSET_ROOT + assetName);
         }
     }
 
@@ -105,12 +113,16 @@ public class CatchFruit implements GameInterface {
     private double feverTime;
     private double flashTime;
     private double shakeTime;
+    private double collectorPulseTime;
+    private double collectorPulseDuration;
     private double handLostTime;
     private long lastUpdateNanos;
+    private Color collectorPulseColor = Color.web("#5eead4");
 
     private final List<FallingItem> items = new ArrayList<>();
     private final List<Particle> particles = new ArrayList<>();
     private final List<FloatingText> floatingTexts = new ArrayList<>();
+    private final List<CollectionEffect> collectionEffects = new ArrayList<>();
     private final List<InkLane> inkLanes = new ArrayList<>();
 
     @Override
@@ -120,12 +132,12 @@ public class CatchFruit implements GameInterface {
 
     @Override
     public String getDescription() {
-        return "移动手掌控制篮子，连击接取水果并避开炸弹";
+        return "移动手掌控制引力回收舱，连击收集星核并避开反物质地雷";
     }
 
     @Override
     public String getIcon() {
-        return "🍎";
+        return "🪐";
     }
 
     @Override
@@ -149,16 +161,24 @@ public class CatchFruit implements GameInterface {
         feverTime = 0.0;
         flashTime = 0.0;
         shakeTime = 0.0;
+        collectorPulseTime = 0.0;
+        collectorPulseDuration = 0.0;
+        collectorPulseColor = Color.web("#5eead4");
         handLostTime = 0.0;
         lastUpdateNanos = 0L;
         items.clear();
         particles.clear();
         floatingTexts.clear();
+        collectionEffects.clear();
         applyDifficulty();
         basketX = canvasWidth * 0.5 - basketBaseWidth * 0.5;
         basketTargetX = basketX;
         basketY = canvasHeight - Math.max(76.0, canvasHeight * 0.105);
-        createInkLanes();
+        if (SPACE_BACKGROUND == null) {
+            createInkLanes();
+        } else {
+            inkLanes.clear();
+        }
     }
 
     private void applyDifficulty() {
@@ -218,9 +238,13 @@ public class CatchFruit implements GameInterface {
         phaseTime += dt;
         flashTime = Math.max(0.0, flashTime - dt);
         shakeTime = Math.max(0.0, shakeTime - dt);
-        updateInkLanes(dt);
+        collectorPulseTime = Math.max(0.0, collectorPulseTime - dt);
+        if (SPACE_BACKGROUND == null) {
+            updateInkLanes(dt);
+        }
         updateParticles(dt);
         updateFloatingTexts(dt);
+        updateCollectionEffects(dt);
         updateBasket(gesture, dt);
 
         if (phase == Phase.READY) {
@@ -229,7 +253,7 @@ public class CatchFruit implements GameInterface {
                 phaseTime = 0.0;
                 spawnTimer = 0.15;
                 floatingTexts.add(new FloatingText(canvasWidth * 0.5, canvasHeight * 0.39,
-                        "开始接取!", Color.web("#ffffff"), 1.0, 30));
+                        "开始回收!", Color.web("#ffffff"), 1.0, 30));
             }
             return;
         }
@@ -408,8 +432,9 @@ public class CatchFruit implements GameInterface {
             feverTime = FEVER_SECONDS;
             flashTime = 0.22;
             floatingTexts.add(new FloatingText(canvasWidth * 0.5, canvasHeight * 0.30,
-                    "彩虹狂热!  得分 ×2", Color.web("#fff5b8"), 1.15, 28));
+                    "引力超载!  得分 ×2", Color.web("#fff5b8"), 1.15, 28));
         }
+        spawnCollectionEffect(item, item.kind == FruitKind.GOLD);
         spawnBurst(item.x, basketY, item.kind.main, item.kind == FruitKind.GOLD ? 20 : 12);
         floatingTexts.add(new FloatingText(item.x, basketY - 18,
                 "+" + gained, item.kind.main, 0.72, item.kind == FruitKind.GOLD ? 24 : 18));
@@ -428,9 +453,12 @@ public class CatchFruit implements GameInterface {
         score = Math.max(0, score - 20);
         flashTime = 0.30;
         shakeTime = 0.32;
+        collectorPulseTime = 0.34;
+        collectorPulseDuration = collectorPulseTime;
+        collectorPulseColor = Color.web("#ff2338");
         spawnBurst(item.x, basketY, Color.web("#ff453a"), 26);
         floatingTexts.add(new FloatingText(item.x, basketY - 28,
-                "炸弹!  -1 生命", Color.web("#ff6b61"), 0.95, 21));
+                "反物质地雷!  -1 生命", Color.web("#ff6b61"), 0.95, 21));
     }
 
     private void removeMissedItems() {
@@ -449,7 +477,7 @@ public class CatchFruit implements GameInterface {
                 feverCharge = Math.max(0.0, feverCharge - 0.12);
                 floatingTexts.add(new FloatingText(
                         clamp(item.x, 70, canvasWidth - 70), canvasHeight - 62,
-                        "漏接  -1 生命", Color.web("#ff9f8f"), 0.85, 17));
+                        "能量逸失  -1 生命", Color.web("#ff9f8f"), 0.85, 17));
             }
         }
     }
@@ -537,6 +565,7 @@ public class CatchFruit implements GameInterface {
         drawBackground(gc);
         drawPlayfield(gc);
         drawItems(gc);
+        drawCollectionEffects(gc);
         drawParticles(gc);
         drawBasket(gc);
         drawFloatingTexts(gc);
@@ -551,6 +580,11 @@ public class CatchFruit implements GameInterface {
     }
 
     private void drawBackground(GraphicsContext gc) {
+        if (SPACE_BACKGROUND != null && SPACE_BACKGROUND.getWidth() > 0.0
+                && SPACE_BACKGROUND.getHeight() > 0.0) {
+            drawCoverImage(gc, SPACE_BACKGROUND, 0.0, 0.0, canvasWidth, canvasHeight);
+            return;
+        }
         for (InkLane lane : inkLanes) {
             gc.setFill(lane.baseColor);
             gc.fillRect(lane.x, 0, lane.width + 0.5, canvasHeight);
@@ -575,10 +609,10 @@ public class CatchFruit implements GameInterface {
         Color accent = feverTime > 0.0 ? Color.web("#ffd60a")
                 : (combo >= 5 ? Color.web("#5eead4") : Color.web("#eef2ff"));
 
-        // 赛道把高饱和背景压成可读的深色玻璃，而非覆盖整张油墨背景。
-        gc.setFill(Color.color(0.012, 0.018, 0.040, 0.50));
+        // 中央舷窗天然构成操作区，只覆盖一层很轻的玻璃以保证 HUD 和物体可读。
+        gc.setFill(Color.color(0.006, 0.014, 0.032, 0.16));
         gc.fillRoundRect(left, top, panelWidth, bottom - top, 30, 30);
-        gc.setFill(Color.color(0.10, 0.14, 0.24, 0.14));
+        gc.setFill(Color.color(0.10, 0.18, 0.30, 0.08));
         gc.fillRoundRect(left + 2, top + 2, panelWidth - 4, 58, 28, 28);
         gc.setStroke(Color.color(accent.getRed(), accent.getGreen(), accent.getBlue(), 0.56));
         gc.setLineWidth(feverTime > 0.0 ? 2.2 : 1.4);
@@ -598,10 +632,129 @@ public class CatchFruit implements GameInterface {
             gc.save();
             gc.translate(item.x, item.y);
             gc.rotate(item.rotation);
+            drawCosmicItem(gc, item);
+            gc.restore();
+        }
+    }
+
+    private void spawnCollectionEffect(FallingItem item, boolean rare) {
+        if (collectionEffects.size() >= MAX_COLLECTION_EFFECTS) {
+            collectionEffects.remove(0);
+        }
+        double targetX = basketX + currentBasketWidth() * 0.5;
+        collectionEffects.add(new CollectionEffect(
+                item.x, item.y, targetX, basketY + 2.0,
+                item.kind.main, rare ? 0.52 : 0.38, rare));
+        collectorPulseTime = rare ? 0.46 : 0.30;
+        collectorPulseDuration = collectorPulseTime;
+        collectorPulseColor = item.kind.main;
+    }
+
+    private void updateCollectionEffects(double dt) {
+        Iterator<CollectionEffect> iterator = collectionEffects.iterator();
+        while (iterator.hasNext()) {
+            CollectionEffect effect = iterator.next();
+            effect.life -= dt;
+            if (effect.life <= 0.0) {
+                iterator.remove();
+            }
+        }
+    }
+
+    private void drawCosmicItem(GraphicsContext gc, FallingItem item) {
+        double r = item.radius;
+        Image sprite = item.kind.sprite;
+        if (sprite == null || sprite.getWidth() <= 0.0) {
             if (item.kind == FruitKind.BOMB) {
-                drawBomb(gc, item.radius);
+                drawBomb(gc, r);
             } else {
                 drawFruit(gc, item);
+            }
+            return;
+        }
+
+        double pulse = item.kind == FruitKind.GOLD
+                ? 1.0 + Math.sin(elapsedTime * 8.0 + item.x) * 0.08 : 1.0;
+        double sizeScale = item.kind == FruitKind.BOMB ? 3.0
+                : (item.kind == FruitKind.GOLD ? 3.12 : 2.82);
+        double ambientPulse = 1.0 + Math.sin(elapsedTime * 4.2 + item.x * 0.025) * 0.018;
+        double size = r * sizeScale * pulse * ambientPulse;
+        Color glow = item.kind == FruitKind.BOMB ? Color.web("#ff2338") : item.kind.main;
+        double glowSize = size * (item.kind == FruitKind.GOLD ? 1.24 : 1.12);
+        double glowAlpha = item.kind == FruitKind.BOMB ? 0.18
+                : (item.kind == FruitKind.GOLD ? 0.22 : 0.10);
+
+        // 下落能量尾迹与光环让静态贴图融入动态场景；只绘制轻量矢量层。
+        gc.setFill(Color.color(glow.getRed(), glow.getGreen(), glow.getBlue(),
+                item.kind == FruitKind.BOMB ? 0.06 : 0.085));
+        gc.fillOval(-size * 0.28, -size * 0.88, size * 0.56, size * 1.10);
+        gc.setFill(Color.color(glow.getRed(), glow.getGreen(), glow.getBlue(), glowAlpha));
+        gc.fillOval(-glowSize * 0.5, -glowSize * 0.5, glowSize, glowSize);
+
+        gc.save();
+        gc.rotate(-item.rotation * 0.56 + elapsedTime * (item.kind == FruitKind.BOMB ? 18.0 : 34.0));
+        gc.setStroke(Color.color(glow.getRed(), glow.getGreen(), glow.getBlue(),
+                item.kind == FruitKind.BOMB ? 0.58 : 0.38));
+        gc.setLineWidth(item.kind == FruitKind.GOLD ? 1.8 : 1.05);
+        gc.setLineDashes(size * 0.16, size * 0.10);
+        double orbitW = size * (item.kind == FruitKind.BOMB ? 1.02 : 1.14);
+        double orbitH = size * (item.kind == FruitKind.BOMB ? 1.02 : 0.48);
+        gc.strokeOval(-orbitW * 0.5, -orbitH * 0.5, orbitW, orbitH);
+        gc.restore();
+
+        gc.drawImage(sprite, -size * 0.5, -size * 0.5, size, size);
+
+        if (item.kind != FruitKind.BOMB) {
+            double glintAngle = elapsedTime * 3.6 + item.x * 0.01;
+            double glintX = Math.cos(glintAngle) * size * 0.24;
+            double glintY = Math.sin(glintAngle) * size * 0.18;
+            gc.setFill(Color.color(1.0, 1.0, 1.0, item.kind == FruitKind.GOLD ? 0.72 : 0.42));
+            gc.fillOval(glintX - 1.8, glintY - 1.8, 3.6, 3.6);
+        }
+    }
+
+    private void drawCollectionEffects(GraphicsContext gc) {
+        for (CollectionEffect effect : collectionEffects) {
+            double progress = clamp(1.0 - effect.life / effect.maxLife, 0.0, 1.0);
+            double eased = 1.0 - Math.pow(1.0 - progress, 3.0);
+            double fade = Math.sin(progress * Math.PI);
+            double controlY1 = effect.sourceY + Math.max(18.0, (effect.targetY - effect.sourceY) * 0.45);
+            double controlY2 = effect.targetY - 46.0;
+            double headX = cubicBezier(effect.sourceX, effect.sourceX,
+                    effect.targetX, effect.targetX, eased);
+            double headY = cubicBezier(effect.sourceY, controlY1,
+                    controlY2, effect.targetY, eased);
+
+            gc.save();
+            gc.setGlobalAlpha(fade);
+            gc.setStroke(Color.color(effect.color.getRed(), effect.color.getGreen(),
+                    effect.color.getBlue(), effect.rare ? 0.54 : 0.36));
+            gc.setLineWidth(effect.rare ? 8.0 : 5.0);
+            gc.beginPath();
+            gc.moveTo(effect.sourceX, effect.sourceY);
+            gc.bezierCurveTo(effect.sourceX, controlY1,
+                    effect.targetX, controlY2, effect.targetX, effect.targetY);
+            gc.stroke();
+
+            gc.setStroke(Color.color(0.88, 0.97, 1.0, effect.rare ? 0.92 : 0.66));
+            gc.setLineWidth(effect.rare ? 2.2 : 1.4);
+            gc.stroke();
+
+            double coreRadius = (effect.rare ? 10.0 : 7.0) * (1.0 - eased * 0.72);
+            gc.setFill(Color.color(1.0, 1.0, 1.0, 0.82));
+            gc.fillOval(headX - coreRadius, headY - coreRadius,
+                    coreRadius * 2.0, coreRadius * 2.0);
+
+            for (int ring = 0; ring < 3; ring++) {
+                double ringProgress = clamp(progress * 1.38 - ring * 0.16, 0.0, 1.0);
+                double ringWidth = 18.0 + ringProgress * (effect.rare ? 92.0 : 66.0);
+                double ringHeight = ringWidth * 0.24;
+                gc.setStroke(Color.color(effect.color.getRed(), effect.color.getGreen(),
+                        effect.color.getBlue(), (1.0 - ringProgress) * 0.72));
+                gc.setLineWidth(effect.rare ? 2.4 : 1.5);
+                gc.strokeOval(effect.targetX - ringWidth * 0.5,
+                        effect.targetY - ringHeight * 0.5,
+                        ringWidth, ringHeight);
             }
             gc.restore();
         }
@@ -687,28 +840,106 @@ public class CatchFruit implements GameInterface {
                 trackingColor.getBlue(), trackingPulse * 0.18));
         gc.fillRoundRect(basketX - 12, basketY - 16, width + 24, BASKET_HEIGHT + 34, 28, 28);
 
-        gc.setFill(Color.color(0, 0, 0, 0.34));
-        gc.fillRoundRect(basketX + 5, basketY + 8, width, BASKET_HEIGHT, 12, 12);
-        gc.setFill(BASKET_FILL);
-        gc.fillRoundRect(basketX, basketY, width, BASKET_HEIGHT, 12, 12);
-        gc.setStroke(handDetected ? trackingColor : Color.web("#777b86"));
-        gc.setLineWidth(2.4);
-        gc.strokeRoundRect(basketX, basketY, width, BASKET_HEIGHT, 12, 12);
-
-        gc.setStroke(Color.color(0.30, 0.16, 0.06, 0.45));
-        gc.setLineWidth(1.1);
-        for (double x = basketX + 13; x < basketX + width - 7; x += 16) {
-            gc.strokeLine(x, basketY + 3, x + 6, basketY + BASKET_HEIGHT - 3);
+        double pulseProgress = collectorPulseTime <= 0.0 ? 0.0
+                : clamp(collectorPulseTime / Math.max(0.001, collectorPulseDuration), 0.0, 1.0);
+        if (pulseProgress > 0.0) {
+            double pulseWidth = width + 56.0 + (1.0 - pulseProgress) * 36.0;
+            double pulseHeight = 32.0 + (1.0 - pulseProgress) * 18.0;
+            double centerX = basketX + width * 0.5;
+            gc.setFill(Color.color(collectorPulseColor.getRed(), collectorPulseColor.getGreen(),
+                    collectorPulseColor.getBlue(), pulseProgress * 0.24));
+            gc.fillOval(centerX - pulseWidth * 0.5, basketY - pulseHeight * 0.62,
+                    pulseWidth, pulseHeight);
+            gc.setStroke(Color.color(collectorPulseColor.getRed(), collectorPulseColor.getGreen(),
+                    collectorPulseColor.getBlue(), pulseProgress * 0.78));
+            gc.setLineWidth(1.4 + pulseProgress * 1.8);
+            gc.strokeOval(centerX - pulseWidth * 0.5, basketY - pulseHeight * 0.62,
+                    pulseWidth, pulseHeight);
         }
-        gc.strokeLine(basketX + 6, basketY + BASKET_HEIGHT * 0.52,
-                basketX + width - 6, basketY + BASKET_HEIGHT * 0.52);
+
+        Image collector = feverTime > 0.0 ? COLLECTOR_FEVER_IMAGE : COLLECTOR_IMAGE;
+        if (collector != null && collector.getWidth() > 0.0) {
+            double visualWidth = width + 48.0;
+            double visualHeight = visualWidth / 3.0;
+            double visualX = basketX - (visualWidth - width) * 0.5;
+            double visualY = basketY - visualHeight * 0.46;
+            gc.drawImage(collector, visualX, visualY, visualWidth, visualHeight);
+            drawCollectorParticles(gc, basketX + width * 0.5, basketY,
+                    width, visualWidth, trackingColor, pulseProgress);
+            if (pulseProgress > 0.0) {
+                double apertureX = basketX + width * 0.5;
+                gc.setFill(Color.color(1.0, 1.0, 1.0, pulseProgress * 0.58));
+                gc.fillOval(apertureX - width * 0.18, basketY - 12.0,
+                        width * 0.36, 8.0 + pulseProgress * 5.0);
+            }
+        } else {
+            gc.setFill(Color.color(0, 0, 0, 0.34));
+            gc.fillRoundRect(basketX + 5, basketY + 8, width, BASKET_HEIGHT, 12, 12);
+            gc.setFill(BASKET_FILL);
+            gc.fillRoundRect(basketX, basketY, width, BASKET_HEIGHT, 12, 12);
+            gc.setStroke(handDetected ? trackingColor : Color.web("#777b86"));
+            gc.setLineWidth(2.4);
+            gc.strokeRoundRect(basketX, basketY, width, BASKET_HEIGHT, 12, 12);
+        }
 
         gc.setTextAlign(TextAlignment.CENTER);
         gc.setFont(HUD_LABEL_FONT);
         gc.setFill(handDetected ? Color.web("#d5fff7") : Color.web("#9497a0"));
         String controlText = handDetected ? "手掌追踪中" : (handLostTime > 0.8 ? "请将单手放入画面" : "等待手势");
-        gc.fillText(controlText, basketX + width * 0.5, basketY + BASKET_HEIGHT + 23);
+        gc.fillText(controlText, basketX + width * 0.5, basketY + BASKET_HEIGHT + 27);
         gc.setTextAlign(TextAlignment.LEFT);
+    }
+
+    private void drawCollectorParticles(GraphicsContext gc, double centerX, double apertureY,
+                                        double collectorWidth, double visualWidth,
+                                        Color trackingColor, double pulseProgress) {
+        int particleCount = feverTime > 0.0 ? 22 : 14;
+        double activity = handDetected ? 1.0 : 0.42;
+        double speed = feverTime > 0.0 ? 1.72 : 1.08;
+        Color particleColor = pulseProgress > 0.0 ? collectorPulseColor : trackingColor;
+
+        gc.save();
+        for (int i = 0; i < particleCount; i++) {
+            double cycle = fractional(elapsedTime * speed + i / (double) particleCount);
+            double inverse = 1.0 - cycle;
+            double angle = i * 2.3999632297 + cycle * Math.PI * 4.6;
+            double radiusX = 5.0 + inverse * collectorWidth * 0.48;
+            double radiusY = 2.0 + inverse * 24.0;
+            double px = centerX + Math.cos(angle) * radiusX;
+            double py = apertureY - 8.0 - inverse * 22.0 + Math.sin(angle) * radiusY * 0.32;
+            double alpha = Math.sin(cycle * Math.PI) * activity;
+            double size = (feverTime > 0.0 ? 2.5 : 1.8) + cycle * 1.4;
+
+            gc.setFill(Color.color(particleColor.getRed(), particleColor.getGreen(),
+                    particleColor.getBlue(), alpha * 0.56));
+            gc.fillOval(px - size * 1.8, py - size * 1.8, size * 3.6, size * 3.6);
+            gc.setFill(Color.color(0.90, 0.98, 1.0, alpha * 0.82));
+            gc.fillOval(px - size * 0.5, py - size * 0.5, size, size);
+        }
+
+        // 两侧推进器的短粒子尾焰与回收舱保持相同运动节奏。
+        for (int side = -1; side <= 1; side += 2) {
+            double thrusterX = centerX + side * visualWidth * 0.43;
+            for (int i = 0; i < 4; i++) {
+                double cycle = fractional(elapsedTime * (feverTime > 0.0 ? 2.8 : 1.9)
+                        + i * 0.23 + (side > 0 ? 0.11 : 0.0));
+                double px = thrusterX + Math.sin(i * 2.1 + elapsedTime * 5.0) * 2.4;
+                double py = apertureY + 5.0 + cycle * 18.0;
+                double alpha = (1.0 - cycle) * activity;
+                double size = 2.8 - cycle * 1.5;
+                gc.setFill(Color.color(trackingColor.getRed(), trackingColor.getGreen(),
+                        trackingColor.getBlue(), alpha * 0.62));
+                gc.fillOval(px - size, py - size, size * 2.0, size * 2.0);
+            }
+        }
+
+        double scan = 0.5 + Math.sin(elapsedTime * (feverTime > 0.0 ? 9.0 : 5.5)) * 0.5;
+        gc.setStroke(Color.color(particleColor.getRed(), particleColor.getGreen(),
+                particleColor.getBlue(), (0.18 + scan * 0.34) * activity));
+        gc.setLineWidth(1.0 + scan * 1.2);
+        gc.strokeLine(centerX - collectorWidth * 0.20, apertureY - 7.0,
+                centerX + collectorWidth * 0.20, apertureY - 7.0);
+        gc.restore();
     }
 
     private void drawFloatingTexts(GraphicsContext gc) {
@@ -799,10 +1030,10 @@ public class CatchFruit implements GameInterface {
         gc.fillText(text, canvasWidth * 0.5, canvasHeight * 0.45);
         gc.setFont(TITLE_FONT);
         gc.setFill(Color.web("#d0d2dc"));
-        gc.fillText("移动手掌，让篮子接住水果", canvasWidth * 0.5, canvasHeight * 0.45 + 60);
+        gc.fillText("移动手掌，让引力舱回收星核", canvasWidth * 0.5, canvasHeight * 0.45 + 60);
         gc.setFont(HUD_LABEL_FONT);
         gc.setFill(Color.web("#ff9892"));
-        gc.fillText("避开炸弹  ·  漏接水果会损失生命", canvasWidth * 0.5, canvasHeight * 0.45 + 88);
+        gc.fillText("避开反物质地雷  ·  能量逸失会损失生命", canvasWidth * 0.5, canvasHeight * 0.45 + 88);
         gc.setTextAlign(TextAlignment.LEFT);
     }
 
@@ -823,7 +1054,7 @@ public class CatchFruit implements GameInterface {
         gc.fillText(String.valueOf(score), canvasWidth * 0.5, y + 120);
         gc.setFont(HUD_LABEL_FONT);
         gc.setFill(Color.web("#b5b7c2"));
-        gc.fillText("接取 " + caughtCount + "   ·   漏接 " + missedCount
+        gc.fillText("回收 " + caughtCount + "   ·   逸失 " + missedCount
                 + "   ·   最高连击 " + bestCombo, canvasWidth * 0.5, y + 158);
         gc.setFill(Color.web("#d8dae2"));
         gc.setFont(Font.font("Microsoft YaHei UI", 14));
@@ -846,6 +1077,40 @@ public class CatchFruit implements GameInterface {
         init(canvasWidth, canvasHeight);
     }
 
+    private static Image loadImage(String resourcePath) {
+        var resource = CatchFruit.class.getResource(resourcePath);
+        if (resource == null) {
+            return null;
+        }
+        try {
+            Image image = new Image(resource.toExternalForm(), false);
+            return image.isError() ? null : image;
+        } catch (RuntimeException ignored) {
+            return null;
+        }
+    }
+
+    private static void drawCoverImage(GraphicsContext gc, Image image,
+                                       double x, double y, double width, double height) {
+        double imageWidth = image.getWidth();
+        double imageHeight = image.getHeight();
+        double targetRatio = width / Math.max(1.0, height);
+        double imageRatio = imageWidth / Math.max(1.0, imageHeight);
+        double sourceX = 0.0;
+        double sourceY = 0.0;
+        double sourceWidth = imageWidth;
+        double sourceHeight = imageHeight;
+        if (imageRatio > targetRatio) {
+            sourceWidth = imageHeight * targetRatio;
+            sourceX = (imageWidth - sourceWidth) * 0.5;
+        } else if (imageRatio < targetRatio) {
+            sourceHeight = imageWidth / targetRatio;
+            sourceY = (imageHeight - sourceHeight) * 0.5;
+        }
+        gc.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight,
+                x, y, width, height);
+    }
+
     private static double random(double min, double max) {
         return min + RANDOM.nextDouble() * (max - min);
     }
@@ -860,6 +1125,42 @@ public class CatchFruit implements GameInterface {
 
     private static double clamp(double value, double min, double max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    private static double fractional(double value) {
+        return value - Math.floor(value);
+    }
+
+    private static double cubicBezier(double start, double controlOne,
+                                      double controlTwo, double end, double progress) {
+        double inverse = 1.0 - progress;
+        return inverse * inverse * inverse * start
+                + 3.0 * inverse * inverse * progress * controlOne
+                + 3.0 * inverse * progress * progress * controlTwo
+                + progress * progress * progress * end;
+    }
+
+    private static final class CollectionEffect {
+        final double sourceX;
+        final double sourceY;
+        final double targetX;
+        final double targetY;
+        final Color color;
+        final double maxLife;
+        final boolean rare;
+        double life;
+
+        CollectionEffect(double sourceX, double sourceY, double targetX, double targetY,
+                         Color color, double life, boolean rare) {
+            this.sourceX = sourceX;
+            this.sourceY = sourceY;
+            this.targetX = targetX;
+            this.targetY = targetY;
+            this.color = color;
+            this.life = life;
+            this.maxLife = life;
+            this.rare = rare;
+        }
     }
 
     private static final class FallingItem {
