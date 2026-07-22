@@ -394,21 +394,26 @@ public class RhythmMaster implements GameInterface {
 
         // === 选歌阶段 ===
         if (state == State.SONG_SELECT) {
-            if (handDetected && songs != null) {
-                double relY = gesture.getHandY();
-                int maxIdx = songs.size(); // 多一个位置给 "+"
-                selectedSongIdx = Math.max(0, Math.min(maxIdx, (int)(relY * (maxIdx + 1))));
-            }
-            // 握拳1.2秒确认选歌（或添加歌曲）
-            if (gesture.getGesture() == GestureType.FIST && handDetected) {
+            // 握拳1.2秒确认选歌（握拳后锁定，松拳才可换歌）
+            boolean isFist = (gesture.getGesture() == GestureType.FIST && handDetected);
+            if (isFist) {
                 songHoldFrames++;
             } else {
                 songHoldFrames = 0;
             }
+
+            if (songHoldFrames > 0) {
+                // 握拳中：锁定选中项，手移动不变
+            } else if (handDetected && songs != null) {
+                double relY = gesture.getHandY();
+                int maxIdx = songs.size();
+                selectedSongIdx = Math.max(0, Math.min(maxIdx, (int)(relY * (maxIdx + 1))));
+            }
+
             if (songHoldFrames >= SONG_HOLD_REQUIRED) {
                 songHoldFrames = 0;
                 if (selectedSongIdx == songs.size()) {
-                    openFileChooser();  // "+" 按钮：添加本地歌曲
+                    openFileChooser();
                 } else {
                     confirmSong();
                 }

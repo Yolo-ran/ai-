@@ -43,7 +43,7 @@ import java.util.logging.Logger;
  *   <li>管理全屏 {@link Canvas} 与 {@link GraphicsContext}</li>
  *   <li>{@link #tick(GestureData, GameInterface)} 每帧由 {@code AnimationTimer} 驱动：
  *       GAME 态调用 {@code game.update/render}；GAME_OVER 态冻结最后一帧并显示结算</li>
- *   <li>游戏结束后等待握拳重玩，或双手入镜保持返回</li>
+ *   <li>游戏结束后等待握拳重玩，或双手握拳保持返回</li>
  *   <li>窗口缩放时重开当前局，保证画面与画布尺寸一致</li>
  * </ul>
  */
@@ -200,7 +200,7 @@ public class GameRenderer {
             settlementStartedNanos = 0;
             initGame(game);
             if (statusLabel != null) {
-                statusLabel.setText("命运演算".equals(game.getName()) ? "" : "双手入镜保持返回");
+                statusLabel.setText("命运演算".equals(game.getName()) ? "" : "双手握拳保持返回");
             }
         }
 
@@ -387,8 +387,10 @@ public class GameRenderer {
             GameInterface game = AppStateManager.getInstance().getActiveGame();
             if (game == null) return;
 
-            // 双手入镜返回难度选择
-            if (dualHands.captured()) {
+            // 双手握拳返回难度选择
+            updateExitHold(dualHands);
+            if (exitHoldFrames >= HOLD_FRAMES) {
+                exitHoldFrames = 0;
                 songSelectPhase = false;
                 mouseY = -1;
                 exitToDifficulty();
@@ -655,7 +657,7 @@ public class GameRenderer {
         g.setFont(javafx.scene.text.Font.font(16));
         drawExitTarget(g, w, h);
         drawExitProgress(gesture, dualHands);
-        g.fillText("手移选难度 | ✊握拳确认 | 双手入镜保持返回", w / 2 - 150, cardY + cardH + 50);
+        g.fillText("手移选难度 | ✊握拳确认 | 双手握拳保持返回", w / 2 - 150, cardY + cardH + 50);
     }
 
     /** 参考 DisplayCards 的倾斜玻璃叠卡难度界面。 */
@@ -721,16 +723,12 @@ public class GameRenderer {
         updateExitHold(dualHands);
         updateDifficultyCursor(gesture, dualHands, w, h);
 
-        // 排行榜查看模式：只响应双手入镜返回，不处理选卡手势
+        // 排行榜查看模式：只响应双手握拳返回，不处理选卡手势
         if (endlessSubLeaderIdx == 2) {
-            if (dualHands.captured()) {
-                exitHoldFrames++;
-                if (exitHoldFrames >= HOLD_FRAMES) {
-                    endlessSubLeaderIdx = -1;
-                    exitHoldFrames = 0;
-                }
-            } else {
+            updateExitHold(dualHands);
+            if (exitHoldFrames >= HOLD_FRAMES) {
                 exitHoldFrames = 0;
+                endlessSubLeaderIdx = -1;
             }
             // 直接渲染排行榜，跳过卡片手势
             drawDifficultyGlassBackground(g, w, h, activeGame);
@@ -902,7 +900,7 @@ public class GameRenderer {
         }
         g.setFill(Color.rgb(255, 255, 255, 0.4));
         g.setFont(Font.font("Microsoft YaHei UI", 14));
-        g.fillText("🤲 双手入镜返回菜单", w * 0.5, h * 0.85);
+        g.fillText("🤲 双手握拳返回菜单", w * 0.5, h * 0.85);
         g.setTextAlign(TextAlignment.LEFT);
     }
 
@@ -1508,7 +1506,8 @@ public class GameRenderer {
     }
 
     private void updateExitHold(DualHandState dualHands) {
-        if (dualHands.active()) {
+        // 双手都在且都握拳（不是张开）才算退出
+        if (dualHands.active() && !dualHands.bothOpen()) {
             exitHoldFrames = Math.min(HOLD_FRAMES, exitHoldFrames + 1);
             exitDropoutFrames = 0;
         } else if (dualHands.captured() && exitHoldFrames > 0 && exitDropoutFrames < 6) {
@@ -1524,7 +1523,7 @@ public class GameRenderer {
         graphics.fillRoundRect(16, 14, 190, 34, 16, 16);
         graphics.setFill(Color.web("#deff9a"));
         graphics.setFont(javafx.scene.text.Font.font(14));
-        graphics.fillText("双手入镜保持返回", 30, 36);
+        graphics.fillText("双手握拳保持返回", 30, 36);
     }
 
     private void drawExitProgress(GestureData gesture, DualHandState dualHands) {
