@@ -1078,21 +1078,20 @@ public class RhythmMaster implements GameInterface {
         }
 
         // 底部核对区域（Hit / Check Zone）-> 升级为量子棱镜镜面 (Quantum Prism Mirror)
-        double pulse = Math.sin(frameCount * 0.1) * 0.5 + 0.5;
+        // 根据要求：固定渲染，不再使用 pulse 和随机粒子避免一闪一闪
         double checkZoneY = judgeLineY - targetZoneH;
         double checkZoneH = targetZoneH * 2;
         
         // Vortex background & Plasma Glowing Halo (始终渲染，不依赖手势状态)
-        // 棱镜折射渐变底色
+        // 棱镜折射渐变底色，固定透明度不闪烁
         gc.setFill(new RadialGradient(0, 0, trackX + trackW/2, judgeLineY, trackW * 0.8, false, CycleMethod.NO_CYCLE,
-                new Stop(0, Color.rgb(0, 255, 255, 0.4 + 0.2 * pulse)), // Cyan center
+                new Stop(0, Color.rgb(0, 255, 255, 0.5)),              // 固定 Cyan center
                 new Stop(0.3, Color.rgb(180, 0, 255, 0.5)),            // Magenta/Purple
                 new Stop(0.8, Color.rgb(0, 0, 100, 0.3)),
                 new Stop(1, Color.TRANSPARENT)));
         gc.fillRect(trackX - 50, checkZoneY - 50, trackW + 100, checkZoneH + 100);
         
-        // 玻璃折射网格 (Refractive Glass Lattice)
-        gc.setStroke(Color.rgb(0, 255, 255, 0.6 + 0.4 * pulse));
+        // 玻璃折射网格 (Refractive Glass Lattice) - 固定渲染
         gc.setLineWidth(2);
         for (double y = checkZoneY; y < checkZoneY + checkZoneH; y += 20) {
             for (double x = trackX; x < trackX + trackW; x += 30) {
@@ -1104,17 +1103,11 @@ public class RhythmMaster implements GameInterface {
             }
         }
         
-        // Crackling quantum sparkles (Quantum Sparkles)
-        for (int i = 0; i < 10; i++) {
-            double qx = trackX + RAND.nextDouble() * trackW;
-            double qy = checkZoneY + RAND.nextDouble() * checkZoneH;
-            gc.setFill(Color.WHITE.deriveColor(0, 1, 1, RAND.nextDouble() * 0.8 + 0.2));
-            gc.fillOval(qx, qy, 2, 2);
-        }
+        // 移除了随机生成的 Quantum Sparkles，避免雪花屏般的闪烁感
         
-        // Reactive neon boundary
+        // Reactive neon boundary - 固定线宽
         gc.setStroke(Color.MAGENTA);
-        gc.setLineWidth(4 + 2 * pulse);
+        gc.setLineWidth(4);
         gc.strokeRect(trackX, checkZoneY, trackW, checkZoneH);
         
         // 绘制特效在音符下方
