@@ -381,6 +381,7 @@ public class GameRenderer {
         GraphicsContext g = gameCanvas.getGraphicsContext2D();
         double w = gameCanvas.getWidth();
         double h = gameCanvas.getHeight();
+        resetCanvasState(g);
 
         // === 选歌阶段 ===
         if (songSelectPhase) {
@@ -1160,6 +1161,9 @@ public class GameRenderer {
 
     private void drawTarotEntryScreen(GraphicsContext g, GestureData gesture, DualHandState dualHands,
                                       double w, double h, GameInterface activeGame) {
+        // TarotGame uses a TOP text baseline internally. The GraphicsContext is shared, so
+        // explicitly restore screen-space text state when returning to this entry panel.
+        resetCanvasState(g);
         boolean questionOpen = tarotQuestionOverlay != null && tarotQuestionOverlay.isVisible();
         if (!questionOpen) {
             updateExitHold(dualHands);
@@ -1508,9 +1512,19 @@ public class GameRenderer {
 
     private void clearCanvas() {
         if (gc != null && gameCanvas != null) {
+            resetCanvasState(gc);
             gc.setFill(Color.web("#120718"));
             gc.fillRect(0, 0, gameCanvas.getWidth(), gameCanvas.getHeight());
         }
+    }
+
+    private void resetCanvasState(GraphicsContext context) {
+        context.setTransform(1, 0, 0, 1, 0, 0);
+        context.setGlobalAlpha(1.0);
+        context.setGlobalBlendMode(javafx.scene.effect.BlendMode.SRC_OVER);
+        context.setEffect(null);
+        context.setTextAlign(TextAlignment.LEFT);
+        context.setTextBaseline(javafx.geometry.VPos.BASELINE);
     }
 
     private void updateExitHold(DualHandState dualHands) {
