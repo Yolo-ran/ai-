@@ -51,9 +51,10 @@ public class GestureStreamServer extends WebSocketServer {
     private final GameRenderer gameRenderer;
     private volatile GestureData latestGestureData = new GestureData();
     public record DualHandState(boolean captured, boolean active, double spread, boolean bothOpen,
+                                boolean bothFists,
                                 double secondHandX, double secondHandY) {}
     private volatile DualHandState latestDualHandState =
-            new DualHandState(false, false, 0.0, false, 0.0, 0.0);
+            new DualHandState(false, false, 0.0, false, false, 0.0, 0.0);
     private boolean dualHandMode;
     private boolean seesTwoHandsNow;
     private long dualHandCandidateSince;
@@ -134,7 +135,7 @@ public class GestureStreamServer extends WebSocketServer {
             seesTwoHandsNow = false;
             dualHandCandidateSince = 0L;
             navigationPalmNow = false;
-            this.latestDualHandState = new DualHandState(false, false, 0.0, false, 0.0, 0.0);
+            this.latestDualHandState = new DualHandState(false, false, 0.0, false, false, 0.0, 0.0);
             double confidence = json.optDouble("confidence", 0.0);
             GestureCommand command = GestureCommandResolver.resolve(rawGesture);
             dispatchGesture(state, rawGesture, command, confidence);
@@ -274,6 +275,7 @@ public class GestureStreamServer extends WebSocketServer {
                 dualHandMode && validDualCandidate,
                 retainedSpread,
                 dualHandMode && validDualCandidate && json.optBoolean("bothHandsOpen", false),
+                dualHandMode && validDualCandidate && json.optBoolean("bothHandsFists", false),
                 secondX,
                 secondY);
     }
@@ -300,7 +302,10 @@ public class GestureStreamServer extends WebSocketServer {
             return GestureCommand.NONE;
         }
 
-        if (latestDualHandState.active()) {
+        // Two hands alone are normal gameplay. Only an explicit pair of fists
+        // reserves input for the global exit countdown; otherwise the Python
+        // stream has already selected the right hand as the primary control.
+        if (latestDualHandState.bothFists()) {
             resetHoldState();
             resetSwipeState();
             return GestureCommand.NONE;

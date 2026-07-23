@@ -96,13 +96,15 @@ public class LobbyController {
     }
 
     public void tick(GestureData gesture) {
-        tick(gesture, new DualHandState(false, false, 0.0, false, 0.0, 0.0));
+        tick(gesture, new DualHandState(false, false, 0.0, false, false, 0.0, 0.0));
     }
 
     public void tick(GestureData gesture, DualHandState dualHands) {
         boolean handVisible = gesture != null && gesture.isHandDetected();
         GestureType type = handVisible ? gesture.getGesture() : GestureType.NONE;
-        if (dualHands != null && dualHands.captured()) {
+        // A second hand is allowed to coexist with normal lobby navigation.
+        // Input is reserved only while both hands explicitly form fists.
+        if (dualHands != null && dualHands.bothFists()) {
             type = GestureType.NONE;
         }
 
