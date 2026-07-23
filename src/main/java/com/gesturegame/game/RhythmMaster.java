@@ -406,9 +406,6 @@ public class RhythmMaster implements GameInterface {
         }
     }
 
-    // 记录上一次 update 的异常，供 render 显示
-    private String lastUpdateError;
-
     /** 将 alpha 钳制在 [0, 1]，防止浮点精度产生负值导致 Color 抛异常 */
     private static double ca(double a) {
         if (a < 0.0) return 0.0;
@@ -420,9 +417,7 @@ public class RhythmMaster implements GameInterface {
     public void update(GestureData gesture) {
         try {
             _update(gesture);
-            lastUpdateError = null;
         } catch (Exception e) {
-            lastUpdateError = e.getClass().getSimpleName() + ":" + (e.getMessage() != null ? e.getMessage().substring(0, Math.min(40, e.getMessage().length())) : "?");
             System.err.println("[RhythmMaster] update error: " + e.getMessage());
         }
     }
@@ -554,30 +549,39 @@ public class RhythmMaster implements GameInterface {
             boolean match = gesture.getGesture() == note.gestureType && gesture.getGesture() != GestureType.NONE;
 
             if (note.holdLength > 0) {
-                // 长条：头部到判定线时开始，必须持续保持手势直到尾部过线
+                // 长条判定（简化版）
                 double tailDist = (note.y + note.holdLength) - judgeLineY;
                 double headDist = dist;
 
-                // 头部进判定区：开始追踪
-                if (!note.holdStarted && Math.abs(headDist) <= greatWindow && match) {
+                // 头部错过：headDist > greatWindow 且还不是 holdStarted
+                if (!note.holdStarted && headDist > greatWindow) {
+                    note.holdBroken = true; // 标记为失败
+                    note.holdStarted = true; // 避免每帧都判定miss
+                }
+                // 头部进判定区
+                if (!note.holdStarted && headDist > -greatWindow && match) {
                     note.holdStarted = true;
                     note.holdBroken = false;
+                    note.lastBlastY = note.y;
                 }
-                // 头部错过
-                if (!note.holdStarted && headDist > greatWindow) {
-                    note.judged = true; combo = 0; missCount++;
-                    createMissGlitch(laneX[note.lane], judgeLineY);
-                    floatTexts.add(new FloatText("MISS", laneX[note.lane], judgeLineY - 30, 30, Color.RED));
-                    laneHits.add(new LaneHit(note.lane, Color.RED));
-                }
-                // 保持中但手势松开了
+                // 保持中手势错误 — 连续 4 帧错误才判定为失败，允许短暂闪断恢复
                 if (note.holdStarted && !note.judged && headDist > 0 && !match) {
-                    note.holdBroken = true;
+                    note.holdBreakCount++;
+                    if (note.holdBreakCount >= 4) {
+                        note.holdBroken = true;
+                    }
+                } else if (note.holdStarted && match) {
+                    note.holdBreakCount = 0; // 手势恢复，重置计数
                 }
-                // 尾部过线：判定结果
-                if (note.holdStarted && tailDist > greatWindow) {
+                // 判定线在长条体内时，持续触发爆散特效（每移动15像素炸一次）
+                if (note.holdStarted && !note.judged && headDist > 0 && match && note.y - note.lastBlastY >= 15) {
+                    createPerfectBlast(laneX[note.lane], judgeLineY);
+                    note.lastBlastY = note.y;
+                }
+                // 尾部过线：最终判定
+                if (tailDist > greatWindow) {
                     note.judged = true;
-                    if (!note.holdBroken) {
+                    if (note.holdStarted && !note.holdBroken) {
                         score += (int)(200 * getComboMultiplier()); combo++; perfectCount++;
                         createPerfectBlast(laneX[note.lane], judgeLineY);
                         floatTexts.add(new FloatText("PERFECT +200", laneX[note.lane], judgeLineY - 50, 40, Color.CYAN));
@@ -802,81 +806,15 @@ public class RhythmMaster implements GameInterface {
             gc.strokeLine(wx2, canvasHeight - h, wx2, canvasHeight);
         }
 
-        // === 调试指示器1：右下方块（renderGame 调用前） ===
-        drawDebugIndicator(gc, 0);
-
         try {
-            if (state == State.SONG_SELECT) { renderSongSelect(gc); drawDebugIndicator(gc, 1); return; }
-            if (state == State.BPM_READY) { renderBpmReady(gc); drawDebugIndicator(gc, 1); return; }
-            if (state == State.BPM_CALIBRATE) { renderBpmCalibrate(gc); drawDebugIndicator(gc, 1); return; }
-            if (state == State.GAME_OVER) { renderGame(gc); renderGameOver(gc); drawDebugIndicator(gc, 1); return; }
+            if (state == State.SONG_SELECT) { renderSongSelect(gc); return; }
+            if (state == State.BPM_READY) { renderBpmReady(gc); return; }
+            if (state == State.BPM_CALIBRATE) { renderBpmCalibrate(gc); return; }
+            if (state == State.GAME_OVER) { renderGame(gc); renderGameOver(gc); return; }
             renderGame(gc);
-            drawDebugIndicator(gc, 1); // renderGame 成功完成的标志
         } catch (Exception e) {
             System.err.println("[RhythmMaster] render error: " + e.getMessage());
-            e.printStackTrace();
-            drawDebugIndicator(gc, 2); // 异常标志（红色）
-            // 把异常信息画在屏幕上
-            gc.setFill(Color.RED);
-            gc.setFont(Font.font("Courier New", 13));
-            String errMsg = e.getMessage() != null ? e.getMessage() : e.toString();
-            if (errMsg.length() > 60) errMsg = errMsg.substring(0, 60);
-            gc.fillText("ERR:" + errMsg, 20, canvasHeight - 50);
-            // 也打印异常类名
-            gc.setFill(Color.ORANGE);
-            gc.setFont(Font.font("Courier New", 10));
-            gc.fillText(e.getClass().getSimpleName(), 20, canvasHeight - 34);
             try { renderGame(gc); } catch (Exception ignored) {}
-        }
-    }
-
-    /**
-     * 调试色块（右下角）
-     * slot 0 = renderGame调用前（下半部分）
-     * slot 1 = renderGame成功后（上半部分，覆盖slot0）
-     * slot 2 = 异常（红色块）
-     */
-    private void drawDebugIndicator(GraphicsContext gc, int slot) {
-        double dx = canvasWidth - 55;
-        double dy = canvasHeight - 28;
-        if (slot == 1) {
-            // renderGame 成功 → 绿色填满整个方块
-            gc.setFill(Color.LIME);
-            gc.fillRect(dx, dy, 20, 20);
-            gc.setStroke(Color.WHITE);
-            gc.setLineWidth(1);
-            gc.strokeRect(dx, dy, 20, 20);
-        } else if (slot == 2) {
-            // 异常 → 红色
-            gc.setFill(Color.RED);
-            gc.fillRect(dx, dy, 20, 20);
-        } else {
-            // 调用前 → 半绿（如果 state=PLAYING）
-            Color dbg;
-            switch (state) {
-                case PLAYING:    dbg = Color.GREEN; break;
-                case SONG_SELECT: dbg = Color.YELLOW; break;
-                case BPM_READY:
-                case BPM_CALIBRATE: dbg = Color.WHITE; break;
-                case GAME_OVER:  dbg = Color.CYAN; break;
-                default:         dbg = Color.MAGENTA; break;
-            }
-            gc.setFill(dbg);
-            gc.fillRect(dx, dy + 10, 20, 10); // 只画下半部分
-            gc.setStroke(Color.WHITE);
-            gc.setLineWidth(1);
-            gc.strokeRect(dx, dy, 20, 20);
-        }
-        // 帧计数
-        gc.setFill(Color.WHITE);
-        gc.setFont(Font.font("Courier New", 9));
-        gc.fillText(String.valueOf(frameCount % 1000), dx + 22, dy + 16);
-
-        // 显示 update 异常（如果有）
-        if (lastUpdateError != null) {
-            gc.setFill(Color.ORANGE);
-            gc.setFont(Font.font("Courier New", 10));
-            gc.fillText("UPD:" + lastUpdateError, 20, canvasHeight - 50);
         }
     }
 
@@ -1435,10 +1373,6 @@ public class RhythmMaster implements GameInterface {
             gc.setTextAlign(TextAlignment.LEFT);
         }
 
-        // HUD 深色实体背景条，防止下方动态元素透过来造成闪烁
-        gc.setFill(Color.rgb(2, 4, 20));  // 完全不透明深色底
-        gc.fillRect(10, 40, canvasWidth - 20, 78);  // 横贯全屏的 HUD 背景条
-
         // Modular high-tech HUD boxes
         // Top-left with '节奏大师' and track info
         gc.setFill(Color.rgb(0, 20, 40, 0.95));
@@ -1688,8 +1622,10 @@ public class RhythmMaster implements GameInterface {
         double holdLength;
         boolean holdStarted;
         boolean holdBroken;  // 中途松手
+        int holdBreakCount;  // 连续错误帧计数（容忍闪断）
+        double lastBlastY;   // 长条上次触发爆散时的 y 坐标
         Note(GestureType g, int l, double y) { this(g, l, y, 0); }
-        Note(GestureType g, int l, double y, double hl) { gestureType = g; lane = l; this.y = y; holdLength = hl; }
+        Note(GestureType g, int l, double y, double hl) { gestureType = g; lane = l; this.y = y; holdLength = hl; lastBlastY = y; }
     }
 
     private static class FloatText {

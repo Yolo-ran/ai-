@@ -237,9 +237,11 @@ public class RPSGame implements GameInterface {
                 state = RPSState.JUDGE;
             }
         } else if (state == RPSState.JUDGE) {
-            // 已判定过 → 只做展示倒计时，不再重复判定
+            // 已判定过 → 只做展示倒计时，等语音播完再进入下一轮
             if (roundJudged) {
-                resultFrames--;
+                if (!SystemSpeech.isSpeaking()) {
+                    resultFrames--;
+                }
                 if (resultFrames <= 0) {
                     state = RPSState.RESULT;
                     resultFrames = 60;
@@ -259,11 +261,13 @@ public class RPSGame implements GameInterface {
                 }
             }
         } else if (state == RPSState.RESULT) {
-            resultFrames--;
+            if (!SystemSpeech.isSpeaking()) {
+                resultFrames--;
+            }
             if (resultFrames <= 0) {
                 int winThreshold = (totalRounds / 2) + 1;
-                if (playerScore >= winThreshold || computerScore >= winThreshold
-                        || roundCount >= totalRounds) {
+                // 必须有一方达到指定胜场才结束，不设总局数上限
+                if (playerScore >= winThreshold || computerScore >= winThreshold) {
                     over = true;
                     persistCompletedMatch();
                     announceFinalResult();
@@ -742,7 +746,7 @@ public class RPSGame implements GameInterface {
 
     private void drawTopHud(GraphicsContext gc) {
         double scale = uiScale();
-        int shownRound = over ? roundCount : Math.min(totalRounds, roundCount + 1);
+        int shownRound = roundCount + (over ? 0 : 1);
         double centerX = canvasWidth * 0.50;
         double y = 44 * scale;
 
