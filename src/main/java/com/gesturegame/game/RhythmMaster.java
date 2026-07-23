@@ -406,6 +406,9 @@ public class RhythmMaster implements GameInterface {
         }
     }
 
+    // 记录上一次 update 的异常，供 render 显示
+    private String lastUpdateError;
+
     /** 将 alpha 钳制在 [0, 1]，防止浮点精度产生负值导致 Color 抛异常 */
     private static double ca(double a) {
         if (a < 0.0) return 0.0;
@@ -417,7 +420,9 @@ public class RhythmMaster implements GameInterface {
     public void update(GestureData gesture) {
         try {
             _update(gesture);
+            lastUpdateError = null;
         } catch (Exception e) {
+            lastUpdateError = e.getClass().getSimpleName() + ":" + (e.getMessage() != null ? e.getMessage().substring(0, Math.min(40, e.getMessage().length())) : "?");
             System.err.println("[RhythmMaster] update error: " + e.getMessage());
         }
     }
@@ -549,39 +554,30 @@ public class RhythmMaster implements GameInterface {
             boolean match = gesture.getGesture() == note.gestureType && gesture.getGesture() != GestureType.NONE;
 
             if (note.holdLength > 0) {
-                // 长条判定（简化版）
+                // 长条：头部到判定线时开始，必须持续保持手势直到尾部过线
                 double tailDist = (note.y + note.holdLength) - judgeLineY;
                 double headDist = dist;
 
-                // 头部错过：headDist > greatWindow 且还不是 holdStarted
-                if (!note.holdStarted && headDist > greatWindow) {
-                    note.holdBroken = true; // 标记为失败
-                    note.holdStarted = true; // 避免每帧都判定miss
-                }
-                // 头部进判定区
-                if (!note.holdStarted && headDist > -greatWindow && match) {
+                // 头部进判定区：开始追踪
+                if (!note.holdStarted && Math.abs(headDist) <= greatWindow && match) {
                     note.holdStarted = true;
                     note.holdBroken = false;
-                    note.lastBlastY = note.y;
                 }
-                // 保持中手势错误 — 连续 4 帧错误才判定为失败，允许短暂闪断恢复
+                // 头部错过
+                if (!note.holdStarted && headDist > greatWindow) {
+                    note.judged = true; combo = 0; missCount++;
+                    createMissGlitch(laneX[note.lane], judgeLineY);
+                    floatTexts.add(new FloatText("MISS", laneX[note.lane], judgeLineY - 30, 30, Color.RED));
+                    laneHits.add(new LaneHit(note.lane, Color.RED));
+                }
+                // 保持中但手势松开了
                 if (note.holdStarted && !note.judged && headDist > 0 && !match) {
-                    note.holdBreakCount++;
-                    if (note.holdBreakCount >= 4) {
-                        note.holdBroken = true;
-                    }
-                } else if (note.holdStarted && match) {
-                    note.holdBreakCount = 0; // 手势恢复，重置计数
+                    note.holdBroken = true;
                 }
-                // 判定线在长条体内时，持续触发爆散特效（每移动15像素炸一次）
-                if (note.holdStarted && !note.judged && headDist > 0 && match && note.y - note.lastBlastY >= 15) {
-                    createPerfectBlast(laneX[note.lane], judgeLineY);
-                    note.lastBlastY = note.y;
-                }
-                // 尾部过线：最终判定
-                if (tailDist > greatWindow) {
+                // 尾部过线：判定结果
+                if (note.holdStarted && tailDist > greatWindow) {
                     note.judged = true;
-                    if (note.holdStarted && !note.holdBroken) {
+                    if (!note.holdBroken) {
                         score += (int)(200 * getComboMultiplier()); combo++; perfectCount++;
                         createPerfectBlast(laneX[note.lane], judgeLineY);
                         floatTexts.add(new FloatText("PERFECT +200", laneX[note.lane], judgeLineY - 50, 40, Color.CYAN));
@@ -814,6 +810,7 @@ public class RhythmMaster implements GameInterface {
             renderGame(gc);
         } catch (Exception e) {
             System.err.println("[RhythmMaster] render error: " + e.getMessage());
+            e.printStackTrace();
             try { renderGame(gc); } catch (Exception ignored) {}
         }
     }
@@ -1622,10 +1619,8 @@ public class RhythmMaster implements GameInterface {
         double holdLength;
         boolean holdStarted;
         boolean holdBroken;  // 中途松手
-        int holdBreakCount;  // 连续错误帧计数（容忍闪断）
-        double lastBlastY;   // 长条上次触发爆散时的 y 坐标
         Note(GestureType g, int l, double y) { this(g, l, y, 0); }
-        Note(GestureType g, int l, double y, double hl) { gestureType = g; lane = l; this.y = y; holdLength = hl; lastBlastY = y; }
+        Note(GestureType g, int l, double y, double hl) { gestureType = g; lane = l; this.y = y; holdLength = hl; }
     }
 
     private static class FloatText {
