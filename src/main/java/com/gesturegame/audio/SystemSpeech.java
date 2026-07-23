@@ -26,9 +26,15 @@ public final class SystemSpeech {
         return thread;
     });
 
+    /** 当前正在播放语音的进程，新的语音请求会先终止旧的 */
+    private static volatile Process currentSpeechProcess;
+
     private SystemSpeech() {
     }
 
+    /**
+     * 播放语音。每次调用会先终止上一次未播完的语音，保证语音与界面同步。
+     */
     public static void speak(String text) {
         if (!ENABLED || !WINDOWS || text == null || text.isBlank()) {
             return;
@@ -37,8 +43,22 @@ public final class SystemSpeech {
         EXECUTOR.submit(() -> speakOnWindows(message));
     }
 
+    /** 当前是否有语音正在播放 */
+    public static boolean isSpeaking() {
+        Process p = currentSpeechProcess;
+        return p != null && p.isAlive();
+    }
+
+    /** 强行终止当前正在播放的语音 */
+    private static void stopCurrent() {
+        Process p = currentSpeechProcess;
+        if (p != null && p.isAlive()) {
+            try { p.destroyForcibly(); } catch (Exception ignored) {}
+        }
+        currentSpeechProcess = null;
+    }
+
     private static void speakOnWindows(String text) {
-        ExecutorService executor = EXECUTOR; // 复用类级 executor
         // 方案1: Python edge-tts（免费、音色统一、跨电脑一致）
         // 方案2: PowerShell .NET Speech（Win10/11 自然语音）
         // 方案3: SAPI VBS（所有 Windows 兜底）
@@ -54,21 +74,26 @@ public final class SystemSpeech {
             java.nio.file.Path mp3 = java.nio.file.Files.createTempFile("speech_", ".mp3");
             String cmd = "import edge_tts,asyncio;"
                     + "async def f():"
-                    + " tts=edge_tts.Communicate('" + safe + "','zh-CN-XiaoxiaoNeural');"
+                    + " tts=edge_tts.Communicate('" + safe + "','zh-CN-XiaoxiaoNeural',rate='+30%');"
                     + " await tts.save('" + mp3.toString().replace("\\", "\\\\") + "');"
                     + "asyncio.run(f())";
             Process p = new ProcessBuilder("python", "-c", cmd)
                     .redirectErrorStream(true).start();
+            currentSpeechProcess = p;
             if (p.waitFor(12, TimeUnit.SECONDS) && p.exitValue() == 0) {
-                // 播放 mp3（用 PowerShell 系统播放器）
-                new ProcessBuilder("powershell", "-c",
+                // 播放 mp3
+                Process playProc = new ProcessBuilder("powershell", "-c",
                         "(New-Object Media.SoundPlayer '" + mp3 + "').PlaySync()")
-                        .redirectErrorStream(true).start().waitFor(8, TimeUnit.SECONDS);
+                        .redirectErrorStream(true).start();
+                currentSpeechProcess = playProc;
+                playProc.waitFor(8, TimeUnit.SECONDS);
                 try { java.nio.file.Files.deleteIfExists(mp3); } catch (IOException ignored) {}
+                currentSpeechProcess = null;
                 return true;
             }
             try { java.nio.file.Files.deleteIfExists(mp3); } catch (IOException ignored) {}
-        } catch (Exception ignored) {}
+            currentSpeechProcess = null;
+        } catch (Exception ignored) { currentSpeechProcess = null; }
         return false;
     }
 
@@ -79,10 +104,13 @@ public final class SystemSpeech {
                     "Add-Type -AssemblyName System.Speech;"
                     + "$s=New-Object System.Speech.Synthesis.SpeechSynthesizer;"
                     + "try{$s.SelectVoice('Microsoft Xiaoxiao')}catch{};"
-                    + "$s.Rate=-1;$s.Volume=100;$s.Speak('" + safe + "')")
+                    + "$s.Rate=4;$s.Volume=100;$s.Speak('" + safe + "')")
                     .redirectErrorStream(true).start();
-            return p.waitFor(10, TimeUnit.SECONDS) && p.exitValue() == 0;
-        } catch (Exception ignored) { return false; }
+            currentSpeechProcess = p;
+            boolean ok = p.waitFor(10, TimeUnit.SECONDS) && p.exitValue() == 0;
+            currentSpeechProcess = null;
+            return ok;
+        } catch (Exception ignored) { currentSpeechProcess = null; return false; }
     }
 
     private static void trySapiFallback(String text) {
@@ -92,12 +120,15 @@ public final class SystemSpeech {
                     + "Dim token: For Each token In voice.GetVoices\r\n"
                     + "  If InStr(token.GetDescription,\"Chinese\")>0 Then Set voice.Voice=token:Exit For\r\n"
                     + "  End If\r\nNext\r\n"
-                    + "voice.Rate=-2:voice.Volume=100\r\n"
+                    + "voice.Rate=3:voice.Volume=100\r\n"
                     + "voice.Speak \"" + text.replace("\"", "'") + "\"\r\n";
             java.nio.file.Files.write(vbs, script.getBytes("GBK"));
-            new ProcessBuilder("cscript", "//Nologo", vbs.toString())
-                    .redirectErrorStream(true).start().waitFor(8, TimeUnit.SECONDS);
+            Process p = new ProcessBuilder("cscript", "//Nologo", vbs.toString())
+                    .redirectErrorStream(true).start();
+            currentSpeechProcess = p;
+            p.waitFor(8, TimeUnit.SECONDS);
+            currentSpeechProcess = null;
             try { java.nio.file.Files.deleteIfExists(vbs); } catch (IOException ignored) {}
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) { currentSpeechProcess = null; }
     }
 }

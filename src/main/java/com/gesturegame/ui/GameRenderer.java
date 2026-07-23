@@ -179,9 +179,9 @@ public class GameRenderer {
                 exitToDifficulty();
                 return;
             }
-            // 握拳1.2s重玩
-            System.out.println("[GAME_OVER] settling=" + settling + " over=" + (game != null && game.isOver()) + " gesture=" + (gesture != null ? gesture.getGesture() : "null"));
-            if (gesture != null && gesture.getGesture() == GestureType.FIST && gesture.isHandDetected()) {
+            // 握拳1.2s重玩（双手握拳退出优先，不触发重玩）
+            if (!dualHands.bothFists() && gesture != null
+                    && gesture.getGesture() == GestureType.FIST && gesture.isHandDetected()) {
                 compactHoldFrames++;
                 if (compactHoldFrames >= HOLD_FRAMES) {
                     compactHoldFrames = 0;
