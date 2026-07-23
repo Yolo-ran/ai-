@@ -443,20 +443,15 @@
             gameOverDisplay.innerHTML += '<br><span style="font-size: 18px; color: #f0ca79;">✊ 握拳重玩    🤲 双手握拳退出</span>';
             gameOverDisplay.style.display = 'block';
             window.addEventListener('mousedown', exitGame);
-            if (reason === 'bomb') {
-                exitGame();
-            } else {
-                finalExitTimeout = setTimeout(exitGame, 2400);
-            }
+            // 延迟通知Java，让炸弹特效播完
+            setTimeout(exitGame, 800);
         }
 
         function exitGame() {
             if (finalScoreSent) return;
             finalScoreSent = true;
             window.removeEventListener('mousedown', exitGame);
-            if (window.javaBackend) {
-                window.javaBackend.saveScore(score);
-            }
+            try { window.javaBackend.saveScore(score); } catch(e) { console.log("saveScore error: " + e); }
         }
 
         // --- Render Loop ---

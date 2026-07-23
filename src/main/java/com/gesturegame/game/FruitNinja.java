@@ -33,6 +33,7 @@ public class FruitNinja implements GameInterface {
     private JSObject jsWindow;
     private boolean isWebViewAdded = false;
     private Pane parentPane;
+    private JavaBridge javaBridge; // 强引用防GC
 
     private int score = 0;
     private boolean over = false;
@@ -83,7 +84,8 @@ public class FruitNinja implements GameInterface {
                 webEngine.getLoadWorker().stateProperty().addListener((obs, oldState, newState) -> {
                     if (newState == Worker.State.SUCCEEDED) {
                         jsWindow = (JSObject) webEngine.executeScript("window");
-                        jsWindow.setMember("javaBackend", new JavaBridge());
+                        javaBridge = new JavaBridge();
+                        jsWindow.setMember("javaBackend", javaBridge);
                         LOGGER.info("Fruit Ninja WebView 加载成功，JSBridge 注入完毕");
 
                         // 传递难度设置给前端
@@ -193,6 +195,8 @@ public class FruitNinja implements GameInterface {
         removeWebView();
         webView = null;
         webEngine = null;
+        jsWindow = null;
+        javaBridge = null;
         score = 0;
         over = false;
     }

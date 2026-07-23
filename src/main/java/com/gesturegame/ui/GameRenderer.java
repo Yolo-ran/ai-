@@ -109,6 +109,7 @@ public class GameRenderer {
 
     private double mouseY = -1;
     private boolean mouseClicked;
+    private GestureData lastGesture; // 结算画面握拳进度用
     private double settlementParticleWidth = -1;
     private double settlementParticleHeight = -1;
     private WritableImage cssRainImage;
@@ -178,6 +179,23 @@ public class GameRenderer {
                 exitToDifficulty();
                 return;
             }
+            // 握拳1.2s重玩
+            System.out.println("[GAME_OVER] settling=" + settling + " over=" + (game != null && game.isOver()) + " gesture=" + (gesture != null ? gesture.getGesture() : "null"));
+            if (gesture != null && gesture.getGesture() == GestureType.FIST && gesture.isHandDetected()) {
+                compactHoldFrames++;
+                if (compactHoldFrames >= HOLD_FRAMES) {
+                    compactHoldFrames = 0;
+                    if (game != null) game.reset();
+                    currentGame = null;
+                    gameOverHandled = false;
+                    settling = false;
+                    appStateManager.switchState(AppStateManager.STATE_GAME);
+                    return;
+                }
+            } else {
+                compactHoldFrames = 0;
+            }
+            lastGesture = gesture;
             drawSettlementScreen(gc, game, gameCanvas.getWidth(), gameCanvas.getHeight());
             drawExitProgress(gesture, dualHands);
             return;
@@ -201,7 +219,7 @@ public class GameRenderer {
             settlementStartedNanos = 0;
             initGame(game);
             if (statusLabel != null) {
-                statusLabel.setText("命运演算".equals(game.getName()) ? "" : "双手入镜保持返回");
+                statusLabel.setText("命运演算".equals(game.getName()) ? "" : "双手握拳退出");
             }
         }
 
@@ -449,6 +467,9 @@ public class GameRenderer {
             g.fillRect(0, 0, w, h);
             game.render(g);
 
+            // 双手退出光环 — 选歌阶段也要显示
+            drawExitProgress(gesture, dualHands);
+
             // 确认后切换到 GAME
             if (game instanceof com.gesturegame.game.RhythmMaster) {
                 com.gesturegame.game.RhythmMaster rm = (com.gesturegame.game.RhythmMaster) game;
@@ -656,7 +677,7 @@ public class GameRenderer {
         g.setFont(javafx.scene.text.Font.font(16));
         drawExitTarget(g, w, h);
         drawExitProgress(gesture, dualHands);
-        g.fillText("手移选难度 | ✊握拳确认 | 双手入镜保持返回", w / 2 - 150, cardY + cardH + 50);
+        g.fillText("手移选难度 | ✊握拳确认 | 双手握拳退出", w / 2 - 150, cardY + cardH + 50);
     }
 
     /** 参考 DisplayCards 的倾斜玻璃叠卡难度界面。 */
@@ -741,9 +762,11 @@ public class GameRenderer {
             renderLeaderboardOverlay(g, w, h);
             if (difficultyCursorOpacity > 0.015 && !Double.isNaN(difficultyCursorX)) {
                 g.save(); g.setGlobalAlpha(difficultyCursorOpacity);
-                drawDifficultyCursor(g, difficultyCursorX, difficultyCursorY, 0, 0);
+                double exitPct = exitHoldFrames / (double) HOLD_FRAMES;
+                drawDifficultyCursor(g, difficultyCursorX, difficultyCursorY, 0, exitPct);
                 g.restore();
             }
+            drawDifficultyExitCountdown(g, gesture, dualHands, w, h);
             return true;
         }
 
@@ -901,14 +924,15 @@ public class GameRenderer {
                 var e = endlessLeaderboard.get(i);
                 g.setFill(i == 0 ? Color.GOLD : i == 1 ? Color.SILVER : i == 2
                         ? Color.web("#cd7f32") : Color.rgb(200, 200, 200));
-                g.fillText(String.format("%d.  %-10s  %6d  %d combo",
-                        i + 1, e.username(), e.score(), e.maxCombo()),
+                String comboStr = e.maxCombo() > 0 ? "  " + e.maxCombo() + " combo" : "";
+                g.fillText(String.format("%d.  %-10s  %6d%s",
+                        i + 1, e.username(), e.score(), comboStr),
                         w * 0.5, h * 0.30 + i * 28);
             }
         }
         g.setFill(Color.rgb(255, 255, 255, 0.4));
         g.setFont(Font.font("Microsoft YaHei UI", 14));
-        g.fillText("🤲 双手入镜返回菜单", w * 0.5, h * 0.85);
+        g.fillText("🤲 双手握拳退出", w * 0.5, h * 0.85);
         g.setTextAlign(TextAlignment.LEFT);
     }
 
@@ -1128,7 +1152,7 @@ public class GameRenderer {
         g.fillText(String.format("%.1f", secondsLeft), centerX, centerY + 5);
         g.setFill(Color.rgb(196, 181, 253, 0.86));
         g.setFont(Font.font("Microsoft YaHei UI", 11));
-        g.fillText("返回大厅", centerX, centerY + 54);
+        g.fillText("退出", centerX, centerY + 54);
         g.restore();
     }
 
@@ -1309,6 +1333,22 @@ public class GameRenderer {
                 g.fillText(String.format("%d. %-8s  %6d",
                         i + 1, e.username(), e.score()), w * 0.5, lbY + 18 + i * 16);
             }
+        }
+
+        // 握拳重玩进度环
+        if (settling && compactHoldFrames > 0) {
+            double progress = Math.min(1.0, compactHoldFrames / (double) HOLD_FRAMES);
+            double ringX = w * 0.5, ringY = titleY + titleSize * 0.6 + 70;
+            g.setGlobalAlpha(0.85);
+            g.setStroke(Color.rgb(255,255,255,0.2));
+            g.setLineWidth(4);
+            g.strokeOval(ringX - 32, ringY - 32, 64, 64);
+            g.setStroke(Color.GOLD);
+            g.setLineWidth(4);
+            g.strokeArc(ringX - 32, ringY - 32, 64, 64, -90, -360 * progress, javafx.scene.shape.ArcType.OPEN);
+            g.setFill(Color.GOLD);
+            g.setFont(Font.font("Microsoft YaHei UI", 13));
+            g.fillText("✊ 握拳重玩", ringX, ringY + 50);
         }
 
         g.setGlobalAlpha(1.0);
@@ -1528,15 +1568,19 @@ public class GameRenderer {
         graphics.fillRoundRect(16, 14, 190, 34, 16, 16);
         graphics.setFill(Color.web("#deff9a"));
         graphics.setFont(javafx.scene.text.Font.font(14));
-        graphics.fillText("双手入镜保持返回", 30, 36);
+        graphics.fillText("双手握拳退出", 30, 36);
     }
 
     private void drawExitProgress(GestureData gesture, DualHandState dualHands) {
-        if (exitHoldFrames <= 0 || gesture == null || !gesture.isHandDetected()) {
-            return;
+        if (exitHoldFrames <= 0) return;
+        boolean handOk = (gesture != null && gesture.isHandDetected()) || dualHands.active();
+        if (!handOk) return;
+        double cx = (gesture != null ? gesture.getHandX() : 0.5) * gameCanvas.getWidth();
+        double cy = (gesture != null ? gesture.getHandY() : 0.5) * gameCanvas.getHeight();
+        if (dualHands.active()) {
+            cx = (cx + dualHands.secondHandX() * gameCanvas.getWidth()) * 0.5;
+            cy = (cy + dualHands.secondHandY() * gameCanvas.getHeight()) * 0.5;
         }
-        double cx = (gesture.getHandX() + dualHands.secondHandX()) * 0.5 * gameCanvas.getWidth();
-        double cy = (gesture.getHandY() + dualHands.secondHandY()) * 0.5 * gameCanvas.getHeight();
         double progress = clampDifficulty(exitHoldFrames / (double) HOLD_FRAMES, 0.0, 1.0);
 
         // Use the exact same cursor and ring language as difficulty
