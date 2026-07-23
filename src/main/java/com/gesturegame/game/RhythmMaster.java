@@ -102,6 +102,8 @@ public class RhythmMaster implements GameInterface {
 
     // ===== 无音乐兜底 =====
     private boolean noMusicFallback;
+    // 手部追踪容错（仿 FruitNinja handLostFrames 修复闪烁）
+    private int handLostFrames;
     private java.util.List<Integer> scheduledFrames;
     private int scheduleIdx;
     private int gameDurationFrames;
@@ -116,28 +118,47 @@ public class RhythmMaster implements GameInterface {
 
     @Override
     public void init(int width, int height) {
+        boolean wasPlaying = (this.state == State.PLAYING || this.state == State.GAME_OVER);
         this.canvasWidth = width;
         this.canvasHeight = height;
-        this.score = 0; this.combo = 0; this.maxCombo = 0;
-        this.frameCount = 0;
-        this.perfectCount = 0; this.greatCount = 0; this.missCount = 0;
-        this.notes = new ArrayList<>();
-        this.floatTexts = new ArrayList<>();
-        this.laneHits = new ArrayList<>();
-        this.particles = new ArrayList<>();
-        this.ambientParticles = new ArrayList<>();
-        this.shockwaves = new ArrayList<>();
-        this.misses = new ArrayList<>();
-        this.bgRipples = new ArrayList<>();
-        this.glassShards = new ArrayList<>();
-        this.currentGesture = GestureType.NONE;
-        this.handDetected = false;
-        this.state = State.SONG_SELECT;
-        this.musicStarted = false;
 
-        applyDifficulty();
+        if (!wasPlaying) {
+            // 全新初始化
+            this.score = 0; this.combo = 0; this.maxCombo = 0;
+            this.frameCount = 0;
+            this.perfectCount = 0; this.greatCount = 0; this.missCount = 0;
+            this.notes = new ArrayList<>();
+            this.floatTexts = new ArrayList<>();
+            this.laneHits = new ArrayList<>();
+            this.particles = new ArrayList<>();
+            this.ambientParticles = new ArrayList<>();
+            this.shockwaves = new ArrayList<>();
+            this.misses = new ArrayList<>();
+            this.bgRipples = new ArrayList<>();
+            this.glassShards = new ArrayList<>();
+            this.currentGesture = GestureType.NONE;
+            this.handDetected = false;
+            this.handLostFrames = 0;
+            this.state = State.SONG_SELECT;
+            this.musicStarted = false;
+
+            applyDifficulty();
+            scanForMusic();
+        } else {
+            // 窗口缩放：仅更新布局，保留游戏状态
+        }
+
         initStars();
-        scanForMusic();
+        initGameLayout();
+    }
+
+    /** 窗口缩放时调用，仅更新画布尺寸和布局，不重置游戏状态 */
+    public void handleResize(int width, int height) {
+        if (this.canvasWidth == width && this.canvasHeight == height) return;
+        this.canvasWidth = width;
+        this.canvasHeight = height;
+        initStars();
+        initGameLayout();
     }
 
     private void initStars() {
@@ -385,8 +406,28 @@ public class RhythmMaster implements GameInterface {
         }
     }
 
+    // 记录上一次 update 的异常，供 render 显示
+    private String lastUpdateError;
+
+    /** 将 alpha 钳制在 [0, 1]，防止浮点精度产生负值导致 Color 抛异常 */
+    private static double ca(double a) {
+        if (a < 0.0) return 0.0;
+        if (a > 1.0) return 1.0;
+        return a;
+    }
+
     @Override
     public void update(GestureData gesture) {
+        try {
+            _update(gesture);
+            lastUpdateError = null;
+        } catch (Exception e) {
+            lastUpdateError = e.getClass().getSimpleName() + ":" + (e.getMessage() != null ? e.getMessage().substring(0, Math.min(40, e.getMessage().length())) : "?");
+            System.err.println("[RhythmMaster] update error: " + e.getMessage());
+        }
+    }
+
+    private void _update(GestureData gesture) {
         if (state == State.GAME_OVER) return;
 
         currentGesture = gesture.getGesture();
@@ -394,21 +435,26 @@ public class RhythmMaster implements GameInterface {
 
         // === 选歌阶段 ===
         if (state == State.SONG_SELECT) {
-            if (handDetected && songs != null) {
-                double relY = gesture.getHandY();
-                int maxIdx = songs.size(); // 多一个位置给 "+"
-                selectedSongIdx = Math.max(0, Math.min(maxIdx, (int)(relY * (maxIdx + 1))));
-            }
-            // 握拳1.2秒确认选歌（或添加歌曲）
-            if (gesture.getGesture() == GestureType.FIST && handDetected) {
+            // 握拳1.2秒确认选歌（握拳后锁定，松拳才可换歌）
+            boolean isFist = (gesture.getGesture() == GestureType.FIST && handDetected);
+            if (isFist) {
                 songHoldFrames++;
             } else {
                 songHoldFrames = 0;
             }
+
+            if (songHoldFrames > 0) {
+                // 握拳中：锁定选中项，手移动不变
+            } else if (handDetected && songs != null) {
+                double relY = gesture.getHandY();
+                int maxIdx = songs.size();
+                selectedSongIdx = Math.max(0, Math.min(maxIdx, (int)(relY * (maxIdx + 1))));
+            }
+
             if (songHoldFrames >= SONG_HOLD_REQUIRED) {
                 songHoldFrames = 0;
                 if (selectedSongIdx == songs.size()) {
-                    openFileChooser();  // "+" 按钮：添加本地歌曲
+                    openFileChooser();
                 } else {
                     confirmSong();
                 }
@@ -453,8 +499,9 @@ public class RhythmMaster implements GameInterface {
             musicTime = frameCount / 60.0;
         }
 
-        // 光标
+        // 光标 — 添加手部追踪容错（仿 FruitNinja handLostFrames 修复）
         if (handDetected) {
+            handLostFrames = 0;
             handX = gesture.getHandX();
             double minDist = Double.MAX_VALUE;
             for (int i = 0; i < laneCount; i++) {
@@ -463,7 +510,11 @@ public class RhythmMaster implements GameInterface {
             }
             cursorAlpha = Math.min(1.0, cursorAlpha + 0.12);
         } else {
-            cursorAlpha = Math.max(0.0, cursorAlpha - 0.06);
+            handLostFrames++;
+            // 短暂丢手不立即隐藏光标（容忍5帧），防止手势追踪抖动导致UI闪烁
+            if (handLostFrames > 5) {
+                cursorAlpha = Math.max(0.0, cursorAlpha - 0.06);
+            }
         }
         cursorX += (laneX[activeLane] - cursorX) * 0.2;
 
@@ -648,14 +699,19 @@ public class RhythmMaster implements GameInterface {
 
     @Override
     public void render(GraphicsContext gc) {
-        if (renderCallCount < 3) {
-            System.out.println("[RhythmMaster] render() called, state=" + state + " songs=" + (songs != null ? songs.size() : 0));
-            renderCallCount++;
+        // 每帧以实际 Canvas 尺寸为准，防止因 Canvas 缓冲区重建导致的尺寸不一致
+        double actualW = gc.getCanvas().getWidth();
+        double actualH = gc.getCanvas().getHeight();
+        if (actualW > 0 && actualH > 0 && ((int) actualW != canvasWidth || (int) actualH != canvasHeight)) {
+            handleResize((int) actualW, (int) actualH);
         }
-        
-        // Deep space nebula background (DEEP BLUE AND CYBER PURPLE PARTICLE FIELD)
+
+        // 显式设置混合模式为 SRC_OVER，仿 FruitNinja 的 'source-over' 修复，防止透明闪烁
+        gc.setGlobalBlendMode(javafx.scene.effect.BlendMode.SRC_OVER);
+
+        // 深色不透明背景（仿 FruitNinja 用 fillStyle + fillRect 替代 clearRect 的修复方案）
         gc.setFill(Color.web("#030310"));
-        gc.fillRect(0, 0, canvasWidth, canvasHeight);
+        gc.fillRect(0, 0, actualW, actualH);
         
         // Nebula gradients
         gc.setFill(new RadialGradient(0, 0, canvasWidth * 0.3, canvasHeight * 0.2, canvasWidth * 0.8, false, CycleMethod.NO_CYCLE,
@@ -675,7 +731,7 @@ public class RhythmMaster implements GameInterface {
             else if (prog < 0.8) rc = Color.CYAN; // Cyan (外圈)
             else rc = Color.rgb(173, 255, 47); // Green-Yellow/Gold-green (外缘)
             
-            gc.setStroke(rc.deriveColor(0, 1, 1, Math.sin(prog * Math.PI) * 0.4));
+            gc.setStroke(rc.deriveColor(0, 1, 1, ca(Math.sin(prog * Math.PI) * 0.4)));
             gc.setLineWidth(3 + prog * 6);
             gc.strokeOval(r.x - r.radius, r.y - r.radius, r.radius * 2, r.radius * 2);
         }
@@ -691,7 +747,7 @@ public class RhythmMaster implements GameInterface {
         
         // Draw ambient particles (stardust & light streaks)
         for (Particle p : ambientParticles) {
-            double alpha = p.life / p.maxLife;
+            double alpha = ca(p.life / p.maxLife);
             gc.setFill(p.color.deriveColor(0, 1, 1, alpha));
             if (p.vy > 10) {
                 // Light streak
@@ -712,8 +768,8 @@ public class RhythmMaster implements GameInterface {
             gc.strokeLine(0, i, canvasWidth, i);
         }
         
-        // Dynamic scan lines
-        double scanY = (frameCount * 3) % canvasHeight;
+        // Dynamic scan lines — 避开顶部 HUD 区域，仅在游戏区滚动
+        double scanY = 130 + (frameCount * 3) % (canvasHeight - 160);
         gc.setFill(new LinearGradient(0, scanY - 50, 0, scanY + 50, false, CycleMethod.NO_CYCLE,
                 new Stop(0, Color.TRANSPARENT), new Stop(0.5, Color.rgb(0, 255, 255, 0.1)), new Stop(1, Color.TRANSPARENT)));
         gc.fillRect(0, scanY - 50, canvasWidth, 100);
@@ -725,27 +781,103 @@ public class RhythmMaster implements GameInterface {
         gc.setLineWidth(2);
         for (int i = 0; i < 40; i++) {
             double wx = centerX - 400 + i * 20;
-            // 模拟音乐频谱跳动，如果音乐播放中则跳动更剧烈
-            double amp = musicStarted && mediaPlayer != null ? 
-                    (Math.sin(waveTime * (1.2 + i * 0.1)) * Math.cos(waveTime * 0.8 + i) * 0.5 + 0.5) :
-                    (Math.sin(waveTime + i * 0.2) * 0.3 + 0.3);
-            
+            // 模拟音乐频谱跳动，平滑插值避免闪烁
+            double amp;
+            if (musicStarted && mediaPlayer != null) {
+                amp = (Math.sin(waveTime * (1.2 + i * 0.1)) * Math.cos(waveTime * 0.8 + i) * 0.5 + 0.5);
+            } else {
+                amp = (Math.sin(waveTime + i * 0.2) * 0.3 + 0.3);
+            }
+            // 限制 amp 范围，避免极端值造成闪烁
+            amp = Math.max(0.05, Math.min(0.95, amp));
+
             double h = 20 + amp * waveH;
-            
+
             gc.setStroke(new LinearGradient(0, canvasHeight - h, 0, canvasHeight, false, CycleMethod.NO_CYCLE,
                     new Stop(0, Color.rgb(0, 255, 255, 0.6)), new Stop(1, Color.TRANSPARENT)));
             gc.strokeLine(wx, canvasHeight - h, wx, canvasHeight);
-            
+
             // 对称的另一侧
             double wx2 = centerX + 400 - i * 20;
             gc.strokeLine(wx2, canvasHeight - h, wx2, canvasHeight);
         }
 
-        if (state == State.SONG_SELECT) { renderSongSelect(gc); return; }
-        if (state == State.BPM_READY) { renderBpmReady(gc); return; }
-        if (state == State.BPM_CALIBRATE) { renderBpmCalibrate(gc); return; }
-        if (state == State.GAME_OVER) { renderGame(gc); renderGameOver(gc); return; }
-        renderGame(gc);
+        // === 调试指示器1：右下方块（renderGame 调用前） ===
+        drawDebugIndicator(gc, 0);
+
+        try {
+            if (state == State.SONG_SELECT) { renderSongSelect(gc); drawDebugIndicator(gc, 1); return; }
+            if (state == State.BPM_READY) { renderBpmReady(gc); drawDebugIndicator(gc, 1); return; }
+            if (state == State.BPM_CALIBRATE) { renderBpmCalibrate(gc); drawDebugIndicator(gc, 1); return; }
+            if (state == State.GAME_OVER) { renderGame(gc); renderGameOver(gc); drawDebugIndicator(gc, 1); return; }
+            renderGame(gc);
+            drawDebugIndicator(gc, 1); // renderGame 成功完成的标志
+        } catch (Exception e) {
+            System.err.println("[RhythmMaster] render error: " + e.getMessage());
+            e.printStackTrace();
+            drawDebugIndicator(gc, 2); // 异常标志（红色）
+            // 把异常信息画在屏幕上
+            gc.setFill(Color.RED);
+            gc.setFont(Font.font("Courier New", 13));
+            String errMsg = e.getMessage() != null ? e.getMessage() : e.toString();
+            if (errMsg.length() > 60) errMsg = errMsg.substring(0, 60);
+            gc.fillText("ERR:" + errMsg, 20, canvasHeight - 50);
+            // 也打印异常类名
+            gc.setFill(Color.ORANGE);
+            gc.setFont(Font.font("Courier New", 10));
+            gc.fillText(e.getClass().getSimpleName(), 20, canvasHeight - 34);
+            try { renderGame(gc); } catch (Exception ignored) {}
+        }
+    }
+
+    /**
+     * 调试色块（右下角）
+     * slot 0 = renderGame调用前（下半部分）
+     * slot 1 = renderGame成功后（上半部分，覆盖slot0）
+     * slot 2 = 异常（红色块）
+     */
+    private void drawDebugIndicator(GraphicsContext gc, int slot) {
+        double dx = canvasWidth - 55;
+        double dy = canvasHeight - 28;
+        if (slot == 1) {
+            // renderGame 成功 → 绿色填满整个方块
+            gc.setFill(Color.LIME);
+            gc.fillRect(dx, dy, 20, 20);
+            gc.setStroke(Color.WHITE);
+            gc.setLineWidth(1);
+            gc.strokeRect(dx, dy, 20, 20);
+        } else if (slot == 2) {
+            // 异常 → 红色
+            gc.setFill(Color.RED);
+            gc.fillRect(dx, dy, 20, 20);
+        } else {
+            // 调用前 → 半绿（如果 state=PLAYING）
+            Color dbg;
+            switch (state) {
+                case PLAYING:    dbg = Color.GREEN; break;
+                case SONG_SELECT: dbg = Color.YELLOW; break;
+                case BPM_READY:
+                case BPM_CALIBRATE: dbg = Color.WHITE; break;
+                case GAME_OVER:  dbg = Color.CYAN; break;
+                default:         dbg = Color.MAGENTA; break;
+            }
+            gc.setFill(dbg);
+            gc.fillRect(dx, dy + 10, 20, 10); // 只画下半部分
+            gc.setStroke(Color.WHITE);
+            gc.setLineWidth(1);
+            gc.strokeRect(dx, dy, 20, 20);
+        }
+        // 帧计数
+        gc.setFill(Color.WHITE);
+        gc.setFont(Font.font("Courier New", 9));
+        gc.fillText(String.valueOf(frameCount % 1000), dx + 22, dy + 16);
+
+        // 显示 update 异常（如果有）
+        if (lastUpdateError != null) {
+            gc.setFill(Color.ORANGE);
+            gc.setFont(Font.font("Courier New", 10));
+            gc.fillText("UPD:" + lastUpdateError, 20, canvasHeight - 50);
+        }
     }
 
     // ========== 选歌界面 ==========
@@ -989,15 +1121,10 @@ public class RhythmMaster implements GameInterface {
 
     // ========== 游戏画面 ==========
     private void renderGame(GraphicsContext gc) {
-        // Window frame with a sci-fi border titled 'AI 手势交互游戏大厅 2026_7_22 18_57_44.png'
-        gc.setStroke(Color.rgb(0, 255, 255, 0.6));
-        gc.setLineWidth(2);
+        // Sci-fi window frame border
+        gc.setStroke(Color.rgb(0, 255, 255, 0.35));
+        gc.setLineWidth(1.5);
         gc.strokeRect(10, 10, canvasWidth - 20, canvasHeight - 20);
-        gc.setFill(Color.rgb(0, 255, 255, 0.2));
-        gc.fillRect(10, 10, canvasWidth - 20, 30);
-        gc.setFill(Color.CYAN);
-        gc.setFont(Font.font("Courier New", 16));
-        gc.fillText("AI 手势交互游戏大厅 2026_7_22 18_57_44.png", 20, 30);
 
         // 轨道：pulsing cyan laser track
         double trackW = laneWidth * laneCount;
@@ -1065,7 +1192,7 @@ public class RhythmMaster implements GameInterface {
                 String[] labels = laneCount == 1 ? new String[]{"中"} : (laneCount == 2 ? new String[]{"左", "右"} : new String[]{"左", "中", "右"});
                 String label = i < labels.length ? labels[i] : "";
                 
-                gc.setStroke(Color.rgb(0, 255, 255, Math.sin(frameCount * 0.1) * 0.4 + 0.2));
+                gc.setStroke(Color.rgb(0, 255, 255, ca(Math.sin(frameCount * 0.1) * 0.4 + 0.2)));
                 gc.setLineWidth(1);
                 gc.strokeOval(textX - 15, textY - 15, 30, 30); // Ripple echo
                 
@@ -1112,40 +1239,41 @@ public class RhythmMaster implements GameInterface {
         
         // 绘制特效在音符下方
         for (Shockwave s : shockwaves) {
-            gc.setStroke(s.color.deriveColor(0, 1, 1, s.life / s.maxLife));
+            gc.setStroke(s.color.deriveColor(0, 1, 1, ca(s.life / s.maxLife)));
             gc.setLineWidth(4);
             gc.strokeOval(s.x - s.radius, s.y - s.radius, s.radius * 2, s.radius * 2);
         }
         for (Particle p : particles) {
-            gc.setFill(p.color.deriveColor(0, 1, 1, p.life / p.maxLife));
+            gc.setFill(p.color.deriveColor(0, 1, 1, ca(p.life / p.maxLife)));
             gc.fillOval(p.x - p.size, p.y - p.size, p.size * 2, p.size * 2);
         }
         for (MissGlitch m : misses) {
             gc.setStroke(Color.RED);
             gc.setLineWidth(2);
-            double a = m.life / m.maxLife;
+            double a = ca(m.life / m.maxLife);
+            double seed = m.x * 31.7 + m.y * 17.3 + m.life * 13.1;
             for (int i = 0; i < 5; i++) {
-                double gx = m.x + (RAND.nextDouble() - 0.5) * 60;
-                double gy = m.y + (RAND.nextDouble() - 0.5) * 60;
-                gc.strokeLine(m.x, m.y, gx, gy);
+                double ox = ((Math.sin(seed + i * 2.1) * 30));
+                double oy = ((Math.cos(seed + i * 3.7) * 30));
+                gc.strokeLine(m.x, m.y, m.x + ox, m.y + oy);
             }
-            gc.setFill(Color.rgb(0, 0, 0, 0.5 * a));
+            gc.setFill(Color.rgb(0, 0, 0, ca(0.5 * a)));
             gc.fillRect(m.x - 40, m.y - 40, 80, 80);
         }
 
         // 渲染玻璃碎块 (Quantum Glass Shards)
         for (GlassShard gs : glassShards) {
-            double a = gs.life / gs.maxLife;
+            double a = ca(gs.life / gs.maxLife);
             gc.save();
             gc.translate(gs.x, gs.y);
             gc.rotate(gs.angle);
             // 色散边缘 (Chromatic Aberration)
-            gc.setFill(Color.rgb(255, 0, 100, 0.6 * a));
+            gc.setFill(Color.rgb(255, 0, 100, ca(0.6 * a)));
             double[] xPoints = {-gs.size, gs.size, 0};
             double[] yPoints = {-gs.size, -gs.size, gs.size};
             gc.fillPolygon(xPoints, yPoints, 3);
-            
-            gc.setFill(Color.rgb(0, 255, 255, 0.8 * a));
+
+            gc.setFill(Color.rgb(0, 255, 255, ca(0.8 * a)));
             double[] xPoints2 = {-gs.size + 1, gs.size - 1, 0};
             double[] yPoints2 = {-gs.size + 1, -gs.size + 1, gs.size - 1};
             gc.fillPolygon(xPoints2, yPoints2, 3);
@@ -1155,14 +1283,14 @@ public class RhythmMaster implements GameInterface {
         // 光标与悬停指示 (不再覆盖或清除之前的渲染内容)
         if (cursorAlpha > 0.01) {
             double cx = cursorX, cy = judgeLineY + targetZoneH + 35, cr = 14;
-            gc.setFill(Color.rgb(255, 255, 255, 0.18 * cursorAlpha));
+            gc.setFill(Color.rgb(255, 255, 255, ca(0.18 * cursorAlpha)));
             gc.fillOval(cx - cr - 12, cy - cr - 12, (cr + 12) * 2, (cr + 12) * 2);
-            gc.setFill(Color.rgb(255, 255, 255, 0.7 * cursorAlpha));
+            gc.setFill(Color.rgb(255, 255, 255, ca(0.7 * cursorAlpha)));
             gc.fillOval(cx - cr, cy - cr, cr * 2, cr * 2);
-            gc.setFill(Color.rgb(0, 255, 255, 0.8 * cursorAlpha));
+            gc.setFill(Color.rgb(0, 255, 255, ca(0.8 * cursorAlpha)));
             gc.fillOval(cx - cr * 0.5, cy - cr * 0.5, cr, cr);
             if (handDetected) {
-                gc.setFill(Color.WHITE.deriveColor(0, 1, 1, cursorAlpha));
+                gc.setFill(Color.WHITE.deriveColor(0, 1, 1, ca(cursorAlpha)));
                 gc.setFont(Font.font(16));
                 gc.setTextAlign(TextAlignment.CENTER);
                 gc.fillText(gEmoji(currentGesture), cx, cy - 26);
@@ -1187,30 +1315,77 @@ public class RhythmMaster implements GameInterface {
                 double vw = r * 0.55;
                 if (note.holdStarted && !note.holdBroken) {
                     double p = 1.0 + 0.22 * Math.sin(frameCount * 0.22);
-                    // 色散边缘光晕
-                    gc.setFill(Color.rgb(255, 0, 150, 0.2 * p));
+                    // === 长条正确保持时的强化特效 ===
+
+                    // 1. 外发光脉冲 — 大幅度色散光晕
+                    double pulseW = 0.7 + 0.3 * Math.sin(frameCount * 0.15);
+                    gc.setFill(Color.rgb(0, 255, 255, ca(0.18 * p * pulseW)));
+                    gc.fillRoundRect(x - vw - 40, y - 12, vw * 2 + 80, hl + 24, vw + 36, vw + 36);
+                    gc.setFill(Color.rgb(255, 0, 150, ca(0.2 * p)));
                     gc.fillRoundRect(x - vw - 25, y - 6, vw * 2 + 50, hl + 12, vw + 22, vw + 22);
-                    gc.setFill(nc.deriveColor(0, 1, 1, 0.3 * p));
+                    gc.setFill(nc.deriveColor(0, 1, 1, ca(0.3 * p)));
                     gc.fillRoundRect(x - vw - 20, y - 6, vw * 2 + 40, hl + 12, vw + 22, vw + 22);
-                    floatTexts.add(new FloatText("✦", x + vw + 2 + RAND.nextDouble() * 14,
-                            note.y + RAND.nextDouble() * hl, 10, nc.deriveColor(0, 1, 1, 0.95)));
-                    floatTexts.add(new FloatText("✦", x - vw - 2 - RAND.nextDouble() * 14,
-                            note.y + RAND.nextDouble() * hl, 10, nc.deriveColor(0, 1, 1, 0.95)));
+
+                    // 2. 能量电弧 — 沿长条两侧跳动的闪电粒子
+                    double arcPhase = frameCount * 0.12;
+                    for (int arc = 0; arc < 3; arc++) {
+                        double arcX = x + (arc - 1) * vw * 0.8;
+                        double arcY = y + Math.abs(Math.sin(arcPhase + arc)) * hl;
+                        double arcLen = 6 + Math.abs(Math.cos(arcPhase * 1.7 + arc)) * 14;
+                        gc.setStroke(nc.deriveColor(0, 1, 0.8, ca(0.6 + 0.4 * Math.sin(arcPhase + arc))));
+                        gc.setLineWidth(1.5);
+                        gc.strokeLine(arcX - 3, arcY - arcLen, arcX + 3, arcY + arcLen);
+                        gc.setStroke(Color.WHITE);
+                        gc.setLineWidth(0.8);
+                        gc.strokeLine(arcX - 1, arcY - arcLen * 0.5, arcX + 1, arcY + arcLen * 0.3);
+                    }
+
+                    // 3. 顶部/底部能量光环 — 长条首尾的脉冲环
+                    double ringR = vw + 4 + 2 * Math.sin(frameCount * 0.2);
+                    gc.setStroke(nc.deriveColor(0, 1, 1, ca(0.7 * pulseW)));
+                    gc.setLineWidth(2.5);
+                    gc.strokeOval(x - ringR, y - ringR * 0.5, ringR * 2, ringR);
+                    gc.strokeOval(x - ringR, y + hl - ringR * 0.5, ringR * 2, ringR);
+                    gc.setStroke(Color.WHITE.deriveColor(0, 1, 1, ca(0.5 * pulseW)));
+                    gc.setLineWidth(1);
+                    gc.strokeOval(x - ringR + 2, y - ringR * 0.5 + 1, (ringR - 2) * 2, ringR - 2);
+                    gc.strokeOval(x - ringR + 2, y + hl - ringR * 0.5 + 1, (ringR - 2) * 2, ringR - 2);
+
+                    // 4. 确定性光点
+                    double sparkSeed = x + y * 13.7 + frameCount * 0.7;
+                    double sparkOff1 = 2 + Math.abs(Math.sin(sparkSeed)) * 12;
+                    double sparkOffY1 = Math.abs(Math.cos(sparkSeed * 1.3)) * hl;
+                    double sparkOff2 = 2 + Math.abs(Math.sin(sparkSeed + 2.5)) * 12;
+                    double sparkOffY2 = Math.abs(Math.cos(sparkSeed * 1.3 + 2.5)) * hl;
+                    floatTexts.add(new FloatText("✦", x + vw + sparkOff1,
+                            note.y + sparkOffY1, 10, nc.deriveColor(0, 1, 1, 0.95)));
+                    floatTexts.add(new FloatText("✦", x - vw - sparkOff2,
+                            note.y + sparkOffY2, 10, nc.deriveColor(0, 1, 1, 0.95)));
+
+                    // 5. 判定线位置的能量粒子上涌
+                    if (frameCount % 3 == 0) {
+                        double px = x + (Math.sin(frameCount * 0.3) * vw * 0.6);
+                        ambientParticles.add(new Particle(px, judgeLineY,
+                                (RAND.nextDouble() - 0.5) * 1.5, -2 - RAND.nextDouble() * 4,
+                                15 + RAND.nextInt(10), 2 + RAND.nextDouble() * 3, nc));
+                    }
                 }
                 
-                // 晶体化高光层 (Crystalline Highlight Layer)
+                // 晶体化高光层 — 保持时更强
+                double barAlpha = note.holdStarted && !note.holdBroken ? 1.0 : 0.7;
+                double barPulse = note.holdStarted && !note.holdBroken ? 1.0 + 0.15 * Math.sin(frameCount * 0.25) : 1.0;
                 gc.setFill(new LinearGradient(x - vw, 0, x + vw, 0, false, CycleMethod.NO_CYCLE,
-                        new Stop(0, nc.deriveColor(0, 1, 1, 0.8)),
-                        new Stop(0.5, Color.WHITE.deriveColor(0, 1, 1, 0.9)),
-                        new Stop(1, nc.deriveColor(0, 1, 1, 0.8))));
+                        new Stop(0, nc.deriveColor(0, 1, 1, ca(0.8 * barPulse))),
+                        new Stop(0.5, Color.WHITE.deriveColor(0, 1, 1, ca(0.9 * barPulse))),
+                        new Stop(1, nc.deriveColor(0, 1, 1, ca(0.8 * barPulse)))));
                 gc.fillRoundRect(x - vw, y, vw * 2, hl, vw, vw);
-                
+
                 // 内部折射阴影
-                gc.setFill(Color.rgb(0, 0, 0, 0.3));
+                gc.setFill(Color.rgb(0, 0, 0, ca(0.3 * barAlpha)));
                 gc.fillRoundRect(x - vw + 4, y + 4, vw * 2 - 8, hl - 8, vw - 4, vw - 4);
-                
-                gc.setStroke(nc.deriveColor(0, 1, 1, note.holdStarted ? 1.0 : 0.8));
-                gc.setLineWidth(3.0);
+
+                gc.setStroke(nc.deriveColor(0, 1, 1, ca(barAlpha)));
+                gc.setLineWidth(note.holdStarted && !note.holdBroken ? 3.5 : 2.5);
                 gc.strokeRoundRect(x - vw, y, vw * 2, hl, vw, vw);
                 
                 gc.setFill(Color.WHITE);
@@ -1260,9 +1435,13 @@ public class RhythmMaster implements GameInterface {
             gc.setTextAlign(TextAlignment.LEFT);
         }
 
+        // HUD 深色实体背景条，防止下方动态元素透过来造成闪烁
+        gc.setFill(Color.rgb(2, 4, 20));  // 完全不透明深色底
+        gc.fillRect(10, 40, canvasWidth - 20, 78);  // 横贯全屏的 HUD 背景条
+
         // Modular high-tech HUD boxes
         // Top-left with '节奏大师' and track info
-        gc.setFill(Color.rgb(0, 20, 40, 0.8));
+        gc.setFill(Color.rgb(0, 20, 40, 0.95));
         gc.setStroke(Color.CYAN);
         gc.setLineWidth(1.5);
         gc.fillRect(20, 50, 200, 60);
@@ -1274,12 +1453,15 @@ public class RhythmMaster implements GameInterface {
         gc.setFont(Font.font("Courier New", 12));
         gc.fillText((selectedSong != null ? selectedSong.title : "") + " | L:" + laneCount, 30, 95);
 
-        // Top-center with timer '305s' and large score '0'
+        // Top-center with timer and large score
+        gc.setFill(Color.rgb(0, 20, 40, 0.95));
         gc.fillRect(canvasWidth / 2.0 - 100, 50, 200, 60);
         gc.strokeRect(canvasWidth / 2.0 - 100, 50, 200, 60);
         int remSecs = 0;
-        if (musicStarted && mediaPlayer != null) {
-            remSecs = Math.max(0, (int)(selectedSong.duration - mediaPlayer.getCurrentTime().toSeconds()));
+        if (musicStarted && mediaPlayer != null && selectedSong != null) {
+            try {
+                remSecs = Math.max(0, (int)(selectedSong.duration - mediaPlayer.getCurrentTime().toSeconds()));
+            } catch (Exception e) { /* mediaPlayer 状态异常，忽略 */ }
         }
         gc.setFill(Color.CYAN);
         gc.setFont(Font.font("Courier New", 14));
@@ -1291,6 +1473,7 @@ public class RhythmMaster implements GameInterface {
         gc.setTextAlign(TextAlignment.LEFT);
 
         // Top-right with score breakdown
+        gc.setFill(Color.rgb(0, 20, 40, 0.95));
         gc.fillRect(canvasWidth - 220, 50, 200, 60);
         gc.strokeRect(canvasWidth - 220, 50, 200, 60);
         gc.setFill(Color.CYAN);
@@ -1307,8 +1490,10 @@ public class RhythmMaster implements GameInterface {
 
         // Progress bar at very bottom
         double prog = 0;
-        if (musicStarted && mediaPlayer != null) {
-            prog = Math.min(1.0, mediaPlayer.getCurrentTime().toSeconds() / selectedSong.duration);
+        if (musicStarted && mediaPlayer != null && selectedSong != null) {
+            try {
+                prog = Math.min(1.0, mediaPlayer.getCurrentTime().toSeconds() / selectedSong.duration);
+            } catch (Exception e) { /* mediaPlayer 状态异常，忽略 */ }
         } else if (noMusicFallback) {
             prog = (double) frameCount / gameDurationFrames;
         }

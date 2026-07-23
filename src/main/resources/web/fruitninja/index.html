@@ -4,10 +4,8 @@
     <meta charset="UTF-8">
     <title>Fruit Ninja Local</title>
     <style>
-        body, html { position: relative; margin: 0; padding: 0; overflow: hidden; background: #111 url('assets/background.png') no-repeat center center; background-size: 100% 100%; width: 100%; height: 100%; }
+        body, html { margin: 0; padding: 0; overflow: hidden; background: #111 url('assets/background.png') no-repeat center center; background-size: 100% 100%; width: 100%; height: 100%; }
         canvas { display: block; width: 100vw; height: 100vh; }
-        #gameCanvas { position: absolute; inset: 0; z-index: 0; }
-        #hitCanvas { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
         
         #ui-layer {
             position: absolute;
@@ -19,7 +17,6 @@
             color: #fff;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
-            z-index: 2;
         }
         
         .score-container {
@@ -39,11 +36,17 @@
             width: 50px;
         }
 
-        .lives-icon {
+        .mode-container {
             position: absolute;
-            top: 20px;
+            top: 26px;
             right: 30px;
-            height: 40px;
+            padding: 8px 14px;
+            border: 1px solid rgba(255,255,255,0.28);
+            border-radius: 999px;
+            background: rgba(0,0,0,0.42);
+            color: rgba(255,255,255,0.9);
+            font-size: 16px;
+            letter-spacing: 0.08em;
         }
 
         #game-over {
@@ -61,11 +64,10 @@
 </head>
 <body>
     <canvas id="gameCanvas"></canvas>
-    <canvas id="hitCanvas"></canvas>
     <div id="ui-layer">
         <img src="assets/score.png" class="score-icon">
         <div class="score-container"><span id="scoreDisplay">0</span></div>
-        <img src="assets/xxxf.png" class="lives-icon" id="livesDisplay">
+        <div class="mode-container" id="modeDisplay">目标 0 / 500</div>
         <div id="game-over">GAME OVER<br><span style="font-size: 24px; color: white;">等待重新开始...</span></div>
     </div>
     
@@ -81,34 +83,28 @@
 
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
-        const hitCanvas = document.getElementById('hitCanvas');
-        const hitContext = hitCanvas.getContext('2d');
         
         let w = canvas.width = window.innerWidth;
         let h = canvas.height = window.innerHeight;
-        hitCanvas.width = w;
-        hitCanvas.height = h;
-        const scanlineCanvas = document.createElement('canvas');
-        const scanlineContext = scanlineCanvas.getContext('2d');
-        function rebuildScanlines() {
-            scanlineCanvas.width = w;
-            scanlineCanvas.height = h;
-            scanlineContext.clearRect(0, 0, w, h);
-            scanlineContext.fillStyle = 'rgba(0, 0, 0, 0.03)';
-            for (let y = 0; y < h; y += 4) scanlineContext.fillRect(0, y, w, 2);
-        }
-        rebuildScanlines();
 
         const scoreDisplay = document.getElementById('scoreDisplay');
-        const livesDisplay = document.getElementById('livesDisplay');
+        const modeDisplay = document.getElementById('modeDisplay');
         const gameOverDisplay = document.getElementById('game-over');
 
         let score = 0;
-        let lives = 1;
         let isGameOver = false;
-        let isLevelComplete = false;
-        let scoreTarget = 0;   // 0 = endless mode
-        let gameMode = 'normal'; // easy/normal/hard/endless
+        let finalScoreSent = false;
+        let finalExitTimeout = 0;
+        let difficultyName = 'NORMAL';
+        let gameConfig = null;
+
+        const GAME_CONFIGS = {
+            EASY: { targetScore: 300, minWave: 2, maxWave: 3, bombChance: 0.05, minDelay: 1700, maxDelay: 2400 },
+            NORMAL: { targetScore: 500, minWave: 2, maxWave: 4, bombChance: 0.10, minDelay: 1400, maxDelay: 2100 },
+            HARD: { targetScore: 800, minWave: 3, maxWave: 5, bombChance: 0.16, minDelay: 1000, maxDelay: 1600 },
+            ENDLESS: { targetScore: 0, minWave: 3, maxWave: 5, bombChance: 0.12, minDelay: 1100, maxDelay: 1800 }
+        };
+        gameConfig = GAME_CONFIGS.NORMAL;
 
         // --- Background ---
         const bgImg = new Image();
@@ -122,40 +118,27 @@
         };
 
         // --- Audio ---
-        const soundCache = Object.create(null);
-        function playSound(name) {
+        let soundEnabled = true;
+        let lastSoundTime = {};
+        let activeSounds = [];
+        function playSound(name, minGap = 0) {
+            if (!soundEnabled) return;
             try {
-                let snd = soundCache[name];
-                if (!snd) {
-                    snd = new Audio(`assets/${name}.mp3`);
-                    snd.preload = 'auto';
-                    soundCache[name] = snd;
-                }
-                snd.currentTime = 0;
-                const playback = snd.play();
-                if (playback) playback.catch(() => {});
-            } catch(e) {
-                console.log("Audio play error: " + e);
-            }
+                const now = Date.now();
+                if (minGap > 0 && lastSoundTime[name] && now - lastSoundTime[name] < minGap) return;
+                lastSoundTime[name] = now;
+                const snd = new Audio(`assets/${name}.mp3`);
+                activeSounds.push(snd);
+                snd.play().catch(() => {});
+                snd.onended = () => { activeSounds = activeSounds.filter(s => s !== snd); };
+            } catch(e) {}
         }
-        function queueSound(name) {
-            setTimeout(() => playSound(name), 0);
-        }
-        ['throw', 'splatter', 'boom', 'over'].forEach(name => {
-            const snd = new Audio(`assets/${name}.mp3`);
-            snd.preload = 'auto';
-            snd.load();
-            soundCache[name] = snd;
-        });
 
         // --- Game Entities ---
         const FRUIT_TYPES = ['apple', 'banana', 'basaha', 'peach', 'sandia'];
         const FRUIT_COLORS = {
-            'apple': '#00ff66',  // 青苹果/猕猴桃：赛博荧光绿
-            'banana': '#ffe600', // 香蕉/菠萝：亮霓虹黄
-            'basaha': '#ff2a5f', // 草莓：霓虹红
-            'peach': '#ff7700',  // 橙子/桃子：亮橙
-            'sandia': '#ff2a5f'  // 西瓜：霓虹红
+            'apple': '#00ff66', 'banana': '#ffe600', 'basaha': '#ff2a5f',
+            'peach': '#ff7700', 'sandia': '#ff2a5f'
         };
         const IMAGES = {};
         
@@ -169,194 +152,84 @@
         IMAGES['flash'] = new Image(); IMAGES['flash'].src = 'assets/flash.png';
         IMAGES['smoke'] = new Image(); IMAGES['smoke'].src = 'assets/smoke.png';
 
-        const SPRITES = Object.create(null);
-        function cacheSprite(key, image) {
-            if (!image || !image.complete || image.naturalWidth <= 0 || image.naturalHeight <= 0) return null;
-            const sprite = document.createElement('canvas');
-            sprite.width = image.naturalWidth;
-            sprite.height = image.naturalHeight;
-            sprite.getContext('2d').drawImage(image, 0, 0);
-            SPRITES[key] = sprite;
-            return sprite;
-        }
-        function getSprite(key) {
-            if (SPRITES[key]) return SPRITES[key];
-            return cacheSprite(key, IMAGES[key]);
-        }
-        Object.keys(IMAGES).forEach(key => {
-            const image = IMAGES[key];
-            const cache = () => cacheSprite(key, image);
-            if (image.complete && image.naturalWidth > 0) cache();
-            else image.addEventListener('load', cache, { once: true });
-        });
-
         // --- Screen Flash for Bomb ---
         let screenFlashAlpha = 0;
 
         const fruits = [];
-        const slicedPieces = [];
-        const cutBursts = [];
         const particles = [];
         const trailHistory = [];
-        const juiceStains = []; // 沾染在背景上的果汁
-        const shockwaves = [];  // 环境扩散冲击波
-        const gridParticles = []; // 底部透视网格升腾微粒
+        const juiceStains = [];
+        const shockwaves = [];
+        const gridParticles = [];
         const maxHistoryLength = 15;
-        const MAX_PARTICLES = 120;
-        const MAX_JUICE_STAINS = 8;
-        const MAX_SLICED_PIECES = 16;
-        const MAX_CUT_BURSTS = 6;
-        const TRAIL_EFFECT_INTERVAL_MS = 50;
-        const SLICE_COOLDOWN_MS = 95;
-        const SLICE_RELEASE_DISTANCE = 70;
-        let lastTrailEffectTime = 0;
-        let sliceCooldownUntil = 0;
-        let sliceLockX = -1;
-        let sliceLockY = -1;
-        let hitOverlayAnimation = 0;
+        const MAX_PARTICLES = 240;
+        const MAX_JUICE_STAINS = 22;
+        let loopRunning = true;
+        let animationFrameId = 0;
 
-        function drawHitOverlay(now) {
-            hitContext.setTransform(1, 0, 0, 1, 0, 0);
-            hitContext.globalAlpha = 1;
-            hitContext.globalCompositeOperation = 'source-over';
-            hitContext.clearRect(0, 0, w, h);
-
-            for (let i = juiceStains.length - 1; i >= 0; i--) {
-                const stain = juiceStains[i];
-                const age = now - stain.createdAt;
-                if (age >= stain.duration) {
-                    juiceStains.splice(i, 1);
-                    continue;
-                }
-                const fade = age < 1750 ? 1 : 1 - (age - 1750) / (stain.duration - 1750);
-                hitContext.save();
-                hitContext.translate(stain.x, stain.y);
-                hitContext.rotate(stain.angle || 0);
-                hitContext.globalAlpha = 0.86 * Math.max(0, fade);
-                hitContext.fillStyle = stain.color;
-                hitContext.beginPath();
-                hitContext.ellipse(0, 0, stain.radius * 2, stain.radius * 0.5, 0, 0, Math.PI * 2);
-                hitContext.fill();
-
-                let seed = Math.floor(stain.x + stain.y);
-                for (let j = 0; j < 6; j++) {
-                    seed = (seed * 9301 + 49297) % 233280;
-                    const rand1 = seed / 233280;
-                    seed = (seed * 9301 + 49297) % 233280;
-                    const rand2 = seed / 233280;
-                    hitContext.beginPath();
-                    hitContext.arc((rand1 - 0.5) * stain.radius * 6,
-                        (rand2 - 0.5) * stain.radius * 2,
-                        Math.max(2, rand1 * stain.radius * 0.4), 0, Math.PI * 2);
-                    hitContext.fill();
-                }
-                hitContext.restore();
+        function addParticle(particle) {
+            if (particles.length >= MAX_PARTICLES) {
+                particles.splice(0, particles.length - MAX_PARTICLES + 1);
             }
-
-            for (let i = cutBursts.length - 1; i >= 0; i--) {
-                const burst = cutBursts[i];
-                const progress = Math.min(1, (now - burst.createdAt) / burst.duration);
-                if (progress >= 1) {
-                    cutBursts.splice(i, 1);
-                    continue;
-                }
-                const alpha = 1 - progress;
-                hitContext.save();
-                hitContext.translate(burst.x, burst.y);
-                hitContext.rotate(burst.angle);
-                hitContext.globalCompositeOperation = 'lighter';
-                hitContext.globalAlpha = alpha;
-                hitContext.strokeStyle = burst.color;
-                hitContext.lineCap = 'round';
-                hitContext.lineWidth = 10 - progress * 7;
-                hitContext.beginPath();
-                hitContext.moveTo(-48 - progress * 24, 0);
-                hitContext.lineTo(48 + progress * 44, 0);
-                hitContext.stroke();
-                hitContext.strokeStyle = '#ffffff';
-                hitContext.lineWidth = Math.max(1, 4 - progress * 3);
-                hitContext.stroke();
-                hitContext.fillStyle = burst.color;
-                for (let j = 0; j < 8; j++) {
-                    const angle = Math.PI * 2 * j / 8;
-                    const distance = 25 + progress * (55 + j * 3);
-                    hitContext.beginPath();
-                    hitContext.arc(Math.cos(angle) * distance,
-                        Math.sin(angle) * distance * 0.55,
-                        Math.max(1, 6 * alpha), 0, Math.PI * 2);
-                    hitContext.fill();
-                }
-                hitContext.restore();
-            }
+            particles.push(particle);
         }
 
-        function animateHitOverlay(now) {
-            hitOverlayAnimation = 0;
-            drawHitOverlay(now);
-            if (juiceStains.length > 0 || cutBursts.length > 0) {
-                hitOverlayAnimation = requestAnimationFrame(animateHitOverlay);
-            }
-        }
-
-        function showHitOverlayImmediately() {
-            const now = performance.now ? performance.now() : Date.now();
-            drawHitOverlay(now);
-            if (!hitOverlayAnimation) hitOverlayAnimation = requestAnimationFrame(animateHitOverlay);
-        }
+        window.configureGame = function(name) {
+            const normalized = String(name || 'NORMAL').toUpperCase();
+            difficultyName = GAME_CONFIGS[normalized] ? normalized : 'NORMAL';
+            gameConfig = GAME_CONFIGS[difficultyName];
+            updateHUD();
+        };
 
         // JS 端暴露的 resetGame 方法，供 Java 端在重新进入游戏时调用
-        window.resetGame = function(mode, livesCount) {
+        window.resetGame = function(mode) {
             score = 0;
-            gameMode = mode || 'normal';
             isGameOver = false;
-            isLevelComplete = false;
+            finalScoreSent = false;
+            if (mode) configureGame(mode);
             fruits.length = 0;
-            slicedPieces.length = 0;
-            cutBursts.length = 0;
             particles.length = 0;
             trailHistory.length = 0;
             juiceStains.length = 0;
-            shockwaves.length = 0;
-            gridParticles.length = 0;
             screenFlashAlpha = 0;
-            lastTrailEffectTime = 0;
-            sliceCooldownUntil = 0;
-            sliceLockX = -1;
-            sliceLockY = -1;
-            if (hitOverlayAnimation) cancelAnimationFrame(hitOverlayAnimation);
-            hitOverlayAnimation = 0;
-            hitContext.clearRect(0, 0, w, h);
-
-            if (gameMode === 'endless') {
-                lives = livesCount || 3;
-                scoreTarget = 0;
-            } else if (gameMode === 'hard') {
-                lives = 1;
-                scoreTarget = 300;
-            } else if (gameMode === 'normal') {
-                lives = 1;
-                scoreTarget = 200;
-            } else {
-                lives = 1;
-                scoreTarget = 100;
-            }
-
+            isHandDetected = false;
+            targetHandX = -1;
+            targetHandY = -1;
+            currentHandX = -1;
+            currentHandY = -1;
+            lastTime = performance.now ? performance.now() : Date.now();
             updateHUD();
             gameOverDisplay.style.display = 'none';
             window.removeEventListener('mousedown', exitGame);
-
+            clearTimeout(finalExitTimeout);
+            
             // 重新开始产生水果
             clearTimeout(spawnTimeout);
             spawnTimeout = setTimeout(spawnWave, 1000);
+            if (!loopRunning) {
+                loopRunning = true;
+                requestAnimationFrame(loop);
+            }
+        };
+
+        window.stopGame = function() {
+            loopRunning = false;
+            cancelAnimationFrame(animationFrameId);
+            clearTimeout(spawnTimeout);
+            clearTimeout(finalExitTimeout);
+            soundEnabled = false;
+            activeSounds.forEach(a => { a.pause(); a.currentTime = 0; });
+            activeSounds = [];
         };
 
         let spawnTimeout;
         function spawnWave() {
             if (isGameOver) return;
             playSound('throw');
-            const count = Math.floor(Math.random() * 3) + 2;
+            const count = gameConfig.minWave
+                + Math.floor(Math.random() * (gameConfig.maxWave - gameConfig.minWave + 1));
             for(let i=0; i<count; i++) {
-                const isBomb = Math.random() < 0.15;
+                const isBomb = Math.random() < gameConfig.bombChance;
                 const type = isBomb ? 'boom' : FRUIT_TYPES[Math.floor(Math.random() * FRUIT_TYPES.length)];
                 
                 fruits.push({
@@ -372,7 +245,8 @@
                     rotSpeed: (Math.random() - 0.5) * 0.1
                 });
             }
-            spawnTimeout = setTimeout(spawnWave, 1500 + Math.random() * 2000);
+            spawnTimeout = setTimeout(spawnWave,
+                gameConfig.minDelay + Math.random() * (gameConfig.maxDelay - gameConfig.minDelay));
         }
         
         spawnTimeout = setTimeout(spawnWave, 1000);
@@ -424,87 +298,65 @@
             if (trailHistory.length < 2) return;
             const p1 = trailHistory[trailHistory.length - 2];
             const p2 = trailHistory[trailHistory.length - 1];
+            
             const speed = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-            if (speed < 1.2) return;
+            if (speed < 2) return; // 降低速度阈值，兼容高帧率下每帧移动距离小的情况
 
-            const now = performance.now ? performance.now() : Date.now();
-            if (now < sliceCooldownUntil) return;
-            if (sliceLockX >= 0) {
-                if (Math.hypot(p2.x - sliceLockX, p2.y - sliceLockY) < SLICE_RELEASE_DISTANCE) return;
-                sliceLockX = -1;
-                sliceLockY = -1;
-            }
-
+            // 计算刀光切入角度，用于决定水果切开后两半的旋转和分离方向
             const sliceAngle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
-            let hitIndex = -1;
-            let hitDistance = Infinity;
+
             for (let i = fruits.length - 1; i >= 0; i--) {
                 const f = fruits[i];
                 if (f.sliced) continue;
                 const d = distToSegment(f.x, f.y, p1.x, p1.y, p2.x, p2.y);
-                if (d < f.radius + 6 && d < hitDistance) {
-                    hitIndex = i;
-                    hitDistance = d;
+                if (d < f.radius) {
+                    f.sliced = true;
+                    sliceFruit(f, i, sliceAngle);
                 }
-            }
-
-            if (hitIndex >= 0) {
-                const hit = fruits[hitIndex];
-                hit.sliced = true;
-                sliceCooldownUntil = now + SLICE_COOLDOWN_MS;
-                sliceLockX = hit.x;
-                sliceLockY = hit.y;
-                sliceFruit(hit, hitIndex, sliceAngle);
             }
         }
 
-        function createJuice(x, y, color, sliceAngle) {
+        function createJuice(x, y, color) {
             if (!color) return;
-            const createdAt = performance.now ? performance.now() : Date.now();
-            cutBursts.push({ x: x, y: y, color: color, angle: sliceAngle, createdAt: createdAt, duration: 260 });
-            if (cutBursts.length > MAX_CUT_BURSTS) cutBursts.shift();
-            // 创建飞溅的果汁粒子，增强爆发感
-            for(let i=0; i<10; i++) {
-                const dir = sliceAngle + (Math.random() - 0.5) * Math.PI; // 沿切击方向散开
-                const speed = Math.random() * 18 + 8;
-                const life = 0.5 + Math.random() * 0.5;
-                particles.push({
+            // 创建飞溅的果汁粒子
+            for(let i=0; i<15; i++) {
+                const dir = Math.random() * Math.PI * 2;
+                const dist = Math.random() * 200 + 50;
+                const life = 1.0;
+                addParticle({
                     type: 'juice',
                     x: x, y: y,
-                    vx: Math.cos(dir) * speed,
-                    vy: Math.sin(dir) * speed,
-                    radius: Math.random() * 6 + 2,
+                    vx: Math.cos(dir) * 15 * Math.random(),
+                    vy: Math.sin(dir) * 15 * Math.random() - 5,
+                    radius: Math.random() * 8 + 3,
                     color: color,
                     life: life,
-                    maxLife: life,
-                    decay: 0.03
+                    maxLife: life
                 });
             }
             // 创建背景沾染（果汁滴）
             juiceStains.push({
                 x: x, y: y,
                 color: color,
-                radius: Math.random() * 15 + 30, // 增加果汁印记大小
-                angle: sliceAngle,
-                createdAt: createdAt,
-                duration: 2600
+                radius: Math.random() * 20 + 20,
+                alpha: 0.8,
+                time: Date.now()
             });
-            if (juiceStains.length > MAX_JUICE_STAINS) juiceStains.shift();
-            showHitOverlayImmediately();
+            if (juiceStains.length > MAX_JUICE_STAINS) {
+                juiceStains.splice(0, juiceStains.length - MAX_JUICE_STAINS);
+            }
         }
 
         function sliceFruit(f, index, sliceAngle) {
             fruits.splice(index, 1);
-
-            // 触发切中处青色环境冲击波
-            shockwaves.push({ x: f.x, y: f.y, radius: 0, life: 1.0, color: '#00ffff' });
-            if (shockwaves.length > 8) shockwaves.shift();
-
             if (f.isBomb) {
+                playSound('boom');
+
+                // 炸弹触发全屏白光
                 screenFlashAlpha = 1.0;
 
                 // 炸弹爆炸黑烟
-                particles.push({
+                addParticle({
                     type: 'smoke',
                     x: f.x, y: f.y,
                     vx: 0, vy: 0,
@@ -512,19 +364,15 @@
                     life: 1.0,
                     maxLife: 1.0,
                     scale: 2.5,
-                    isFlash: true
+                    isFlash: true // won't fall down
                 });
 
-                if (gameMode === 'endless') {
-                    lives--;
-                    updateHUD();
-                    if (lives <= 0) endGame();
-                } else {
-                    // 非无尽模式：碰炸弹直接结束
-                    endGame();
-                }
-                queueSound('boom');
+                endGame('bomb');
             } else {
+                playSound('splatter', 80);
+                score += 10;
+                updateHUD();
+                
                 // 根据刀光角度，计算垂直方向作为水果分离方向
                 const apartAngle = sliceAngle + Math.PI / 2;
                 const speedSpread = 5;
@@ -532,25 +380,24 @@
                 const spreadY = Math.sin(apartAngle) * speedSpread;
                 
                 // 左半边/上边
-                slicedPieces.push({
+                addParticle({
                     type: f.type + '-1',
                     x: f.x - spreadX * 3, y: f.y - spreadY * 3,
                     vx: f.vx - spreadX, vy: f.vy - spreadY,
                     rotation: f.rotation, rotSpeed: f.rotSpeed - 0.1,
-                    life: 1.25, maxLife: 1.25
+                    life: 2.0, maxLife: 2.0
                 });
                 // 右半边/下边
-                slicedPieces.push({
+                addParticle({
                     type: f.type + '-2',
                     x: f.x + spreadX * 3, y: f.y + spreadY * 3,
                     vx: f.vx + spreadX, vy: f.vy + spreadY,
                     rotation: f.rotation, rotSpeed: f.rotSpeed + 0.1,
-                    life: 1.25, maxLife: 1.25
+                    life: 2.0, maxLife: 2.0
                 });
-                while (slicedPieces.length > MAX_SLICED_PIECES) slicedPieces.shift();
                 
                 // 切击刀光特效 (flash.png)，旋转角度对齐刀光
-                particles.push({
+                addParticle({
                     type: 'flash',
                     x: f.x, y: f.y,
                     vx: 0, vy: 0,
@@ -560,152 +407,63 @@
                     isFlash: true
                 });
                 
-                // 生成果汁
-                createJuice(f.x, f.y, FRUIT_COLORS[f.type], sliceAngle);
-
-                // 青色星芒粒子 (Cyan Starburst)
-                for (let j = 0; j < 10; j++) {
-                    const dir = Math.random() * Math.PI * 2;
-                    const speed = Math.random() * 20 + 5;
-                    particles.push({
-                        type: 'cyan-starburst',
-                        x: f.x,
-                        y: f.y,
-                        vx: Math.cos(dir) * speed,
-                        vy: Math.sin(dir) * speed,
-                        radius: Math.random() * 4 + 2,
-                        color: '#00ffff',
-                        life: 0.5 + Math.random() * 0.5,
-                        maxLife: 1.0,
-                        decay: 0.05
-                    });
+                // 冲击波 + 果汁 + 星芒
+                shockwaves.push({ x: f.x, y: f.y, radius: 0, life: 1.0, color: '#00ffff' });
+                createJuice(f.x, f.y, FRUIT_COLORS[f.type]);
+                for (let j = 0; j < 30; j++) {
+                    const dir = Math.random() * Math.PI * 2, spd = Math.random() * 20 + 5;
+                    addParticle({type: 'cyan-starburst', x: f.x, y: f.y,
+                        vx: Math.cos(dir) * spd, vy: Math.sin(dir) * spd,
+                        radius: 2, color: '#00f0ff', life: 0.2, maxLife: 0.2, decay: 0.05});
                 }
-
-                // 生成赛博故障像素块 (Glitch Cubes)
-                for (let j = 0; j < 3; j++) {
-                    particles.push({
-                        type: 'glitch-cube',
-                        x: f.x + (Math.random() - 0.5) * 60,
-                        y: f.y + (Math.random() - 0.5) * 60,
-                        vx: (Math.random() - 0.5) * 15,
-                        vy: (Math.random() - 0.5) * 15,
-                        radius: Math.random() * 8 + 4,
-                        color: Math.random() > 0.5 ? '#00f0ff' : '#9d00ff',
-                        life: 0.5 + Math.random() * 0.5,
-                        maxLife: 1.0,
-                        rotation: Math.random() * Math.PI,
-                        rotSpeed: (Math.random() - 0.5) * 0.2
-                    });
-                }
-
-                // 生成闪电电弧 (Lightning Arcs)
-                for (let j = 0; j < 1; j++) {
-                    particles.push({
-                        type: 'lightning',
-                        x: f.x,
-                        y: f.y,
-                        angle: Math.random() * Math.PI * 2,
-                        length: 50 + Math.random() * 60,
-                        life: 0.2 + Math.random() * 0.2,
-                        maxLife: 0.4
-                    });
-                }
-                queueSound('splatter');
-
-                // Update score only after all first-frame visual feedback is ready.
-                score += 10;
-                updateHUD();
-                if (gameMode !== 'endless' && scoreTarget > 0 && score >= scoreTarget && !isGameOver) {
-                    isLevelComplete = true;
-                    isGameOver = true;
-                    gameOverDisplay.style.display = 'block';
-                    gameOverDisplay.innerHTML = '<span style="color:#f7b13f;font-size:48px">🎉 通关！</span><br><span style="font-size:24px;color:white">得分: ' + score + '</span>';
-                    window.addEventListener('mousedown', exitGame);
-                    setTimeout(exitGame, 3000);
+                if (gameConfig.targetScore > 0 && score >= gameConfig.targetScore) {
+                    score = gameConfig.targetScore;
+                    updateHUD();
+                    endGame('target');
                 }
             }
         }
 
         function updateHUD() {
-            if (gameMode === 'endless') {
-                scoreDisplay.innerText = score;
-            } else {
-                scoreDisplay.innerText = score + ' / ' + scoreTarget;
-            }
-            if (gameMode === 'endless') {
-                let livesImg = 'xxxf.png';
-                if (lives === 2) livesImg = 'xxf.png';
-                if (lives === 1) livesImg = 'xf.png';
-                if (lives <= 0) livesImg = 'x.png';
-                livesDisplay.src = `assets/${livesImg}`;
-            } else {
-                // 非无尽模式：不显示生命，显示炸弹警告
-                livesDisplay.style.display = 'none';
-            }
+            scoreDisplay.innerText = score;
+            modeDisplay.innerText = gameConfig.targetScore > 0
+                ? `目标 ${score} / ${gameConfig.targetScore}`
+                : `无尽模式  ${score}`;
             if (window.javaBackend) window.javaBackend.updateScore(score);
         }
 
-        function endGame() {
+        function endGame(reason) {
+            if (isGameOver) return;
             isGameOver = true;
-            playSound('over');
+            clearTimeout(spawnTimeout);
+            if (reason !== 'bomb') playSound('over');
+            gameOverDisplay.innerHTML = reason === 'bomb'
+                ? 'GAME OVER<br><span style="font-size: 22px; color: white;">切到炸弹</span>'
+                : 'TARGET CLEAR<br><span style="font-size: 22px; color: white;">目标分数达成</span>';
+            gameOverDisplay.innerHTML += '<br><span style="font-size: 18px; color: #f0ca79;">✊ 握拳重玩    🤲 双手握拳退出</span>';
             gameOverDisplay.style.display = 'block';
             window.addEventListener('mousedown', exitGame);
-            setTimeout(exitGame, 3000);
+            // 延迟通知Java，让炸弹特效播完
+            setTimeout(exitGame, 800);
         }
 
         function exitGame() {
-            if (window.javaBackend) {
-                window.javaBackend.saveScore(score);
-            }
-        }
-
-        function drawRasterSprites(targetContext) {
-            for (let i = 0; i < fruits.length; i++) {
-                const f = fruits[i];
-                const sprite = getSprite(f.type);
-                if (!sprite) continue;
-                targetContext.save();
-                targetContext.globalAlpha = 1;
-                targetContext.globalCompositeOperation = 'source-over';
-                targetContext.translate(f.x, f.y);
-                targetContext.rotate(f.rotation);
-                if (!f.isBomb) {
-                    targetContext.save();
-                    targetContext.strokeStyle = '#00f0ff';
-                    targetContext.lineWidth = 3;
-                    targetContext.setLineDash([20, 10, 5, 10]);
-                    targetContext.rotate(-Date.now() * 0.003);
-                    targetContext.beginPath();
-                    targetContext.arc(0, 0, f.radius + 10, 0, Math.PI * 2);
-                    targetContext.stroke();
-                    targetContext.restore();
-                    targetContext.shadowColor = '#00f0ff';
-                    targetContext.shadowBlur = 12;
-                }
-                targetContext.drawImage(sprite, -sprite.width / 2, -sprite.height / 2);
-                targetContext.restore();
-            }
-
-            for (let i = 0; i < slicedPieces.length; i++) {
-                const piece = slicedPieces[i];
-                const sprite = getSprite(piece.type);
-                if (!sprite) continue;
-                targetContext.save();
-                targetContext.globalCompositeOperation = 'source-over';
-                targetContext.globalAlpha = Math.min(1, piece.life / 0.2);
-                targetContext.translate(piece.x, piece.y);
-                targetContext.rotate(piece.rotation);
-                targetContext.drawImage(sprite, -sprite.width / 2, -sprite.height / 2);
-                targetContext.restore();
-            }
+            if (finalScoreSent) return;
+            finalScoreSent = true;
+            window.removeEventListener('mousedown', exitGame);
+            try { window.javaBackend.saveScore(score); } catch(e) { console.log("saveScore error: " + e); }
         }
 
         // --- Render Loop ---
         let lastTime = performance.now ? performance.now() : Date.now();
         function loop(time) {
+            if (!loopRunning) return;
             requestAnimationFrame(loop);
             const currentTime = time || (performance.now ? performance.now() : Date.now());
-            const delta = Math.min(2.1, Math.max(0.25, (currentTime - lastTime) / 16.66));
+            const rawDelta = (currentTime - lastTime) / 16.66;
+            // WebView may occasionally skip a frame. Capping the physics step
+            // prevents every fruit from teleporting below the screen at once.
+            const delta = Math.min(2.0, Math.max(0.25, rawDelta));
             lastTime = currentTime;
 
             // Clear old trail history naturally based on time
@@ -716,13 +474,13 @@
 
             // Lerp hand position for ultra-smooth 60fps trails regardless of camera FPS
             if (isHandDetected && currentHandX !== -1) {
-                currentHandX += (targetHandX - currentHandX) * 0.66;
-                currentHandY += (targetHandY - currentHandY) * 0.66;
+                currentHandX += (targetHandX - currentHandX) * 0.4;
+                currentHandY += (targetHandY - currentHandY) * 0.4;
 
                 if (trailHistory.length > 0) {
                     const lastPt = trailHistory[trailHistory.length - 1];
                     const dist = Math.hypot(currentHandX - lastPt.x, currentHandY - lastPt.y);
-                    if (dist >= 4) {
+                    if (dist >= 10) {
                         trailHistory.push({ x: currentHandX, y: currentHandY, time: now });
                         if (trailHistory.length > maxHistoryLength) trailHistory.shift();
                         checkSlices();
@@ -736,73 +494,40 @@
                 }
             }
 
-            // Draw directly to the visible canvas so hit feedback is shown on the next frame.
-            ctx.setTransform(1, 0, 0, 1, 0, 0);
-            ctx.globalAlpha = 1;
-            ctx.globalCompositeOperation = 'source-over';
+            // Clear screen
             ctx.clearRect(0, 0, w, h);
-
-            // --- Environmental VFX: Core Pulse, Shockwaves, Grid Particles ---
-            const coreX = w * 0.5;
-            const coreY = h * 0.4;
-
+            // VFX: pulse + shockwaves + grid
             ctx.save();
             ctx.globalCompositeOperation = 'lighter';
-            
-            // 呼吸能量脉冲 (Breathing Energy Pulse)
+            const coreX = w * 0.5, coreY = h * 0.4;
             const pulseRadius = 150 + Math.sin(Date.now() * 0.003) * 20;
             const coreGrad = ctx.createRadialGradient(coreX, coreY, 0, coreX, coreY, pulseRadius);
             coreGrad.addColorStop(0, 'rgba(157, 0, 255, 0.5)');
             coreGrad.addColorStop(0.5, 'rgba(157, 0, 255, 0.1)');
             coreGrad.addColorStop(1, 'rgba(157, 0, 255, 0)');
-            ctx.fillStyle = coreGrad;
-            ctx.beginPath();
-            ctx.arc(coreX, coreY, pulseRadius, 0, Math.PI * 2);
-            ctx.fill();
-
-            // 扩散冲击波 (Shockwaves)
+            ctx.fillStyle = coreGrad; ctx.beginPath();
+            ctx.arc(coreX, coreY, pulseRadius, 0, Math.PI * 2); ctx.fill();
             for (let i = shockwaves.length - 1; i >= 0; i--) {
                 let sw = shockwaves[i];
-                sw.radius += 25 * delta;
-                sw.life -= 0.03 * delta;
-                if (sw.life <= 0) {
-                    shockwaves.splice(i, 1);
-                    continue;
-                }
-                let cx = sw.x !== undefined ? sw.x : coreX;
-                let cy = sw.y !== undefined ? sw.y : coreY;
-                ctx.strokeStyle = sw.color ? sw.color : `rgba(157, 0, 255, ${sw.life})`;
+                sw.radius += 25 * delta; sw.life -= 0.03 * delta;
+                if (sw.life <= 0) { shockwaves.splice(i, 1); continue; }
+                let cx = sw.x !== undefined ? sw.x : coreX, cy = sw.y !== undefined ? sw.y : coreY;
+                ctx.strokeStyle = sw.color || `rgba(157, 0, 255, ${sw.life})`;
                 if (sw.color) ctx.globalAlpha = sw.life;
-                ctx.lineWidth = 6 * sw.life;
-                ctx.beginPath();
-                ctx.arc(cx, cy, sw.radius, 0, Math.PI * 2);
-                ctx.stroke();
+                ctx.lineWidth = 6 * sw.life; ctx.beginPath();
+                ctx.arc(cx, cy, sw.radius, 0, Math.PI * 2); ctx.stroke();
                 ctx.globalAlpha = 1.0;
             }
-
-            // 底部网格发光微粒 (Grid Particles)
             while (gridParticles.length < 20) {
-                gridParticles.push({
-                    x: Math.random() * w,
-                    y: h - Math.random() * 200,
-                    vx: (Math.random() - 0.5) * 0.5,
-                    vy: -1 - Math.random() * 2,
-                    size: Math.random() * 3 + 1.5,
-                    life: Math.random(),
-                    color: Math.random() > 0.5 ? '#00f0ff' : '#9d00ff'
-                });
+                gridParticles.push({x: Math.random() * w, y: h - Math.random() * 200,
+                    vx: (Math.random() - 0.5) * 0.5, vy: -1 - Math.random() * 2,
+                    size: Math.random() * 3 + 1.5, life: Math.random(),
+                    color: Math.random() > 0.5 ? '#00f0ff' : '#9d00ff'});
             }
             for (let p of gridParticles) {
-                p.x += p.vx * delta;
-                p.y += p.vy * delta;
-                p.life -= 0.005 * delta;
-                if (p.life <= 0 || p.y < h - 300) {
-                    p.y = h;
-                    p.x = Math.random() * w;
-                    p.life = 1.0;
-                }
-                ctx.fillStyle = p.color;
-                ctx.globalAlpha = p.life;
+                p.x += p.vx * delta; p.y += p.vy * delta; p.life -= 0.005 * delta;
+                if (p.life <= 0 || p.y < h - 300) { p.y = h; p.x = Math.random() * w; p.life = 1.0; }
+                ctx.fillStyle = p.color; ctx.globalAlpha = p.life;
                 ctx.fillRect(p.x, p.y, p.size, p.size);
             }
             ctx.restore();
@@ -816,6 +541,42 @@
                 screenFlashAlpha -= 0.02 * delta; // fade out slowly
             }
 
+            // Draw juice stains on background
+            for (let i = juiceStains.length - 1; i >= 0; i--) {
+                const s = juiceStains[i];
+                const age = Date.now() - s.time;
+                if (age > 5000) {
+                    s.alpha -= 0.02 * delta;
+                }
+                if (s.alpha <= 0) {
+                    juiceStains.splice(i, 1);
+                    continue;
+                }
+                ctx.save();
+                ctx.globalAlpha = s.alpha;
+                ctx.shadowColor = s.color;
+                ctx.shadowBlur = 8;
+                ctx.fillStyle = s.color;
+                ctx.translate(s.x, s.y);
+                if (s.angle) ctx.rotate(s.angle);
+                ctx.beginPath();
+                ctx.scale(2.0, 0.5);
+                ctx.arc(0, 0, s.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.scale(0.5, 2.0);
+                let seed = Math.floor(s.x + s.y);
+                for(let j=0; j<6; j++) {
+                    seed = (seed * 9301 + 49297) % 233280;
+                    let rand1 = seed / 233280;
+                    seed = (seed * 9301 + 49297) % 233280;
+                    let rand2 = seed / 233280;
+                    ctx.beginPath();
+                    ctx.arc((rand1 - 0.5) * s.radius * 6, (rand2 - 0.5) * s.radius * 2, rand1 * s.radius * 0.4, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.restore();
+            }
+
             // Spawn fruitsDraw and Update Fruits
             for (let i = fruits.length - 1; i >= 0; i--) {
                 const f = fruits[i];
@@ -825,37 +586,40 @@
                 f.rotation += f.rotSpeed * delta;
 
                 if (f.y > h + 200) {
-                    // 水果掉出屏幕不扣命，直接移除
+                    // Missing fruit only breaks the rhythm; it never ends a run.
                     fruits.splice(i, 1);
                     continue;
                 }
 
-            }
-
-            // Sliced fruit is rendered independently from lightweight VFX.
-            for (let i = slicedPieces.length - 1; i >= 0; i--) {
-                const piece = slicedPieces[i];
-                piece.x += piece.vx * delta;
-                piece.y += piece.vy * delta;
-                piece.vy += 0.38 * delta;
-                piece.rotation += piece.rotSpeed * delta;
-                piece.life -= 0.018 * delta;
-                if (piece.life <= 0 || piece.y > h + 180) {
-                    slicedPieces.splice(i, 1);
-                    continue;
+                ctx.save();
+                ctx.translate(f.x, f.y);
+                ctx.rotate(f.rotation);
+                if (!f.isBomb) {
+                    ctx.save();
+                    ctx.strokeStyle = '#00f0ff';
+                    ctx.lineWidth = 3;
+                    ctx.setLineDash([20, 10, 5, 10]);
+                    ctx.rotate(-Date.now() * 0.003);
+                    ctx.beginPath();
+                    ctx.arc(0, 0, f.radius + 10, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.restore();
+                    ctx.shadowColor = '#00f0ff';
+                    ctx.shadowBlur = 15 + Math.sin(Date.now() * 0.01) * 8;
                 }
-
+                let img = IMAGES[f.type];
+                if (img && img.complete && img.naturalWidth > 0) {
+                    ctx.drawImage(img, -img.width/2, -img.height/2);
+                }
+                ctx.restore();
             }
 
             // Draw and Update Particles
-            if (particles.length > MAX_PARTICLES) {
-                particles.splice(0, particles.length - MAX_PARTICLES);
-            }
             for (let i = particles.length - 1; i >= 0; i--) {
                 const p = particles[i];
                 p.x += p.vx * delta;
                 p.y += p.vy * delta;
-                if (!p.isFlash && p.type !== 'trail-lightning') {
+                if (!p.isFlash && p.type !== 'blade-spark') {
                     p.vy += 0.5 * delta;
                     if (p.rotSpeed) p.rotation += p.rotSpeed * delta;
                 }
@@ -877,57 +641,26 @@
                     ctx.beginPath();
                     ctx.arc(0, 0, p.radius * (p.life / p.maxLife), 0, Math.PI * 2);
                     ctx.fill();
-                } else if (p.type === 'glitch-cube') {
-                    ctx.fillStyle = p.color;
-                    ctx.globalAlpha = p.life / p.maxLife;
-                    ctx.globalCompositeOperation = 'lighter';
-                    ctx.fillRect(-p.radius, -p.radius, p.radius * 2, p.radius * 2);
-                } else if (p.type === 'lightning') {
-                    if (p.angle) ctx.rotate(p.angle);
-                    ctx.strokeStyle = '#00f0ff';
-                    ctx.globalCompositeOperation = 'lighter';
-                    ctx.lineWidth = 3 * (p.life / p.maxLife);
-                    ctx.beginPath();
-                    ctx.moveTo(0, 0);
-                    // 闪电折线
-                    let segments = 4;
-                    let len = p.length / segments;
-                    let currentX = 0;
-                    let currentY = 0;
-                    for (let s = 1; s <= segments; s++) {
-                        currentX += len;
-                        currentY += (Math.random() - 0.5) * 20;
-                        ctx.lineTo(currentX, currentY);
-                    }
-                    ctx.stroke();
-                } else if (p.type === 'plasma-spark' || p.type === 'cyan-starburst') {
-                    ctx.globalCompositeOperation = 'lighter';
+                } else if (p.type === 'blade-spark') {
+                    // Draw neon blade sparks
                     ctx.fillStyle = p.color;
                     ctx.globalAlpha = p.life / p.maxLife;
                     ctx.beginPath();
                     ctx.arc(0, 0, p.radius * (p.life / p.maxLife), 0, Math.PI * 2);
                     ctx.fill();
-                } else if (p.type === 'trail-lightning') {
-                    ctx.globalCompositeOperation = 'lighter';
-                    ctx.strokeStyle = '#80ffff';
-                    ctx.lineWidth = 1.5 * (p.life / p.maxLife);
-                    ctx.beginPath();
-                    ctx.moveTo(0, 0);
-                    ctx.lineTo((Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20);
-                    ctx.stroke();
                 } else if (p.type === 'flash') {
                     // Flash image stretches out and fades
-                    const img = getSprite('flash');
+                    const img = IMAGES['flash'];
                     const scaleX = (1 - (p.life / p.maxLife)) * 3; // stretch along cut
                     const scaleY = (p.life / p.maxLife); // thin out
                     ctx.globalAlpha = p.life / p.maxLife;
-                    if (img) {
+                    if (img && img.complete) {
                         ctx.scale(scaleX, scaleY);
                         ctx.drawImage(img, -img.width / 2, -img.height / 2);
                     }
                 } else {
-                    const img = getSprite(p.type);
-                    if (img) {
+                    const img = IMAGES[p.type];
+                    if (img && img.complete) {
                         ctx.globalAlpha = p.life / p.maxLife;
                         const scale = p.scale || 1.0;
                         ctx.scale(scale, scale);
@@ -937,76 +670,65 @@
                 ctx.restore();
             }
 
-            // Draw Neon Blade Trail (立体赛博青光刃)
-            if (trailHistory.length > 1) {
-                ctx.save();
-                ctx.globalCompositeOperation = 'lighter';
-                ctx.lineCap = 'round';
-                ctx.lineJoin = 'round';
-
-                // 计算速度用于生成尾焰和电弧
+            // Draw Blade (Neon Effect with Bezier Curves)
+            if (trailHistory.length >= 2) {
+                // Generate blade sparks based on head movement
                 const head = trailHistory[trailHistory.length - 1];
                 const neck = trailHistory[trailHistory.length - 2];
-                const dx = head.x - neck.x;
-                const dy = head.y - neck.y;
-                const speed = Math.sqrt(dx * dx + dy * dy) / delta;
-
-                // 生成尾部青焰与爆裂粒子 (Cyan Flame Trail)
-                if (speed > 300 && currentTime - lastTrailEffectTime >= TRAIL_EFFECT_INTERVAL_MS) {
-                    lastTrailEffectTime = currentTime;
-                    const dirX = dx / (speed * delta);
-                    const dirY = dy / (speed * delta);
-                    let sparkCount = Math.min(Math.max(2, Math.floor(speed / 180)), 4);
-                    for(let k = 0; k < sparkCount; k++) {
-                        particles.push({
-                            type: 'plasma-spark',
-                            x: head.x + (Math.random() - 0.5) * 20,
-                            y: head.y + (Math.random() - 0.5) * 20,
-                            vx: -dirX * (Math.random() * 300 + 100) + (Math.random() - 0.5) * 100,
-                            vy: -dirY * (Math.random() * 300 + 100) + (Math.random() - 0.5) * 100,
-                            radius: Math.random() * 4 + 2,
-                            color: Math.random() > 0.5 ? '#0088cc' : '#00ffff',
-                            life: 0.5 + Math.random() * 0.5,
-                            maxLife: 1.0,
-                            decay: 0.05
-                        });
-                    }
-                    
-                    // 生成刀痕两侧能量撕裂电弧 (Lightning Arcs along Trail)
-                    if (Math.random() > 0.65) {
-                        for(let k = 0; k < 1; k++) {
-                            const pIndex = Math.floor(Math.random() * (trailHistory.length - 1));
-                            const p1 = trailHistory[pIndex];
-                            particles.push({
-                                type: 'trail-lightning',
-                                x: p1.x, y: p1.y,
-                                life: 0.2, maxLife: 0.2
-                            });
-                        }
-                    }
+                const speed = Math.hypot(head.x - neck.x, head.y - neck.y);
+                if (speed > 15 && Math.random() > 0.5) {
+                    addParticle({
+                        type: 'blade-spark',
+                        x: head.x + (Math.random()-0.5)*10,
+                        y: head.y + (Math.random()-0.5)*10,
+                        vx: (Math.random() - 0.5) * 5,
+                        vy: (Math.random() - 0.5) * 5,
+                        radius: Math.random() * 3 + 1.5,
+                        color: '#00ffff', // cyan sparks
+                        life: 0.5,
+                        maxLife: 0.5,
+                        decay: 0.05
+                    });
                 }
 
-                // 3 层路径实现立体赛博青光刃
+                ctx.save();
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                
+                // 闪电电弧
+                if (Math.random() > 0.5) {
+                    for(let k = 0; k < 2; k++) {
+                        const pIndex = Math.floor(Math.random() * (trailHistory.length - 1));
+                        const p1 = trailHistory[pIndex];
+                        addParticle({type: 'trail-lightning', x: p1.x, y: p1.y, life: 0.2, maxLife: 0.2});
+                    }
+                }
                 const layers = [
-                    { width: 24, color: 'rgba(0, 220, 255, ', alphaMult: 0.2, blur: 20 }, // 第一层（空间能量气浪）
-                    { width: 10, color: 'rgba(0, 255, 255, ', alphaMult: 0.8, blur: 12 }, // 第二层（主光刃）
-                    { width: 3,  color: 'rgba(255, 255, 255, ', alphaMult: 1.0, blur: 0 }  // 第三层（高能量内芯）
+                    { width: 24, color: 'rgba(0, 220, 255, ', alphaMult: 0.2, blur: 20 },
+                    { width: 10, color: 'rgba(0, 255, 255, ', alphaMult: 0.8, blur: 12 },
+                    { width: 3,  color: 'rgba(255, 255, 255, ', alphaMult: 1.0, blur: 0 }
                 ];
 
                 layers.forEach(layer => {
                     ctx.beginPath();
+                    // Move to the first point
                     ctx.moveTo(trailHistory[0].x, trailHistory[0].y);
-                    
+
+                    // Use quadraticCurveTo for smooth spline interpolation
                     for (let i = 1; i < trailHistory.length - 1; i++) {
                         const p1 = trailHistory[i];
                         const p2 = trailHistory[i + 1];
+                        // Midpoint between p1 and p2
                         const midX = (p1.x + p2.x) / 2;
                         const midY = (p1.y + p2.y) / 2;
+                        
                         ctx.quadraticCurveTo(p1.x, p1.y, midX, midY);
                     }
+                    // Connect the last point
                     const lastPt = trailHistory[trailHistory.length - 1];
                     ctx.lineTo(lastPt.x, lastPt.y);
 
+                    // Gradient for fading tail
                     const grad = ctx.createLinearGradient(
                         trailHistory[0].x, trailHistory[0].y, 
                         lastPt.x, lastPt.y
@@ -1023,12 +745,6 @@
                 
                 ctx.restore();
             }
-
-            // Cached CRT overlay: same look, one draw call per frame.
-            ctx.drawImage(scanlineCanvas, 0, 0);
-
-            // Draw raster sprites last so no hit effect can cover or invalidate them.
-            drawRasterSprites(ctx);
         }
 
         requestAnimationFrame(loop);
@@ -1036,10 +752,6 @@
         window.addEventListener('resize', () => {
             w = canvas.width = window.innerWidth;
             h = canvas.height = window.innerHeight;
-            hitCanvas.width = w;
-            hitCanvas.height = h;
-            rebuildScanlines();
-            if (juiceStains.length > 0 || cutBursts.length > 0) showHitOverlayImmediately();
         });
         
         console.log("Fruit Ninja HTML5 Canvas initialized.");
