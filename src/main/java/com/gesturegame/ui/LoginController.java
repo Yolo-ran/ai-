@@ -334,25 +334,24 @@ public class LoginController {
             case 1:
                 gc.setFill(Color.rgb(200, 220, 255));
                 gc.fillText("系统支持以下手势操作：", cx, 180);
-                gc.setFont(Font.font("Microsoft YaHei UI", 24));
+                gc.setFont(Font.font("Microsoft YaHei UI", 28));
                 gc.setFill(Color.WHITE);
-                gc.fillText("✊  握拳  —  确认 / 选择", cx, 250);
-                gc.fillText("✋  张开  —  返回 / 散开", cx, 310);
-                gc.fillText("✌  剪刀手 —  切换 / 确认", cx, 370);
-                gc.fillText("👆  食指指向 —  返回上一步", cx, 430);
-                gc.fillText("🤲  双手入镜 —  返回大厅", cx, 490);
+                gc.fillText("✊  握拳  —  确认 / 选择", cx, 290);
+                gc.fillText("🤲  双手握拳  —  返回 / 退出", cx, 360);
+                gc.fillText("🖐️  手掌滑动  —  切换游戏 / 翻页", cx, 430);
                 break;
             case 2:
                 gc.setFill(Color.rgb(200, 220, 255));
                 gc.fillText("游戏大厅内有 7 款游戏等你挑战：", cx, 180);
                 gc.setFont(Font.font("Microsoft YaHei UI", 20));
                 gc.setFill(Color.WHITE);
-                gc.fillText("🍎 接水果    ✊ 猜拳    🫧 戳泡泡    🔮 塔罗牌", cx, 250);
-                gc.fillText("🔪 切水果    🥁 节奏大师    🚀 星际突击", cx, 295);
+                gc.fillText("⭐ 暗星采矿    🧠 矩阵博弈    🐸 星际祖玛", cx, 245);
+                gc.fillText("🔮 命运演算    🔪 水果忍者    🥁 节奏大师", cx, 285);
+                gc.fillText("🚀 星系战线", cx, 325);
                 gc.setFont(Font.font("Microsoft YaHei UI", 18));
                 gc.setFill(Color.rgb(180, 200, 240));
-                gc.fillText("左右移动手浏览游戏，握拳选择", cx, 370);
-                gc.fillText("选好后选择难度即可开始", cx, 400);
+                gc.fillText("左右移动手浏览游戏，握拳选择", cx, 390);
+                gc.fillText("选好后选择难度即可开始", cx, 420);
                 break;
             case 3:
                 gc.setFill(Color.rgb(200, 220, 255));

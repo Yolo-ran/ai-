@@ -36,11 +36,17 @@
             width: 50px;
         }
 
-        .lives-icon {
+        .mode-container {
             position: absolute;
-            top: 20px;
+            top: 26px;
             right: 30px;
-            height: 40px;
+            padding: 8px 14px;
+            border: 1px solid rgba(255,255,255,0.28);
+            border-radius: 999px;
+            background: rgba(0,0,0,0.42);
+            color: rgba(255,255,255,0.9);
+            font-size: 16px;
+            letter-spacing: 0.08em;
         }
 
         #game-over {
@@ -61,7 +67,7 @@
     <div id="ui-layer">
         <img src="assets/score.png" class="score-icon">
         <div class="score-container"><span id="scoreDisplay">0</span></div>
-        <img src="assets/xxxf.png" class="lives-icon" id="livesDisplay">
+        <div class="mode-container" id="modeDisplay">目标 0 / 500</div>
         <div id="game-over">GAME OVER<br><span style="font-size: 24px; color: white;">等待重新开始...</span></div>
     </div>
     
@@ -82,15 +88,23 @@
         let h = canvas.height = window.innerHeight;
 
         const scoreDisplay = document.getElementById('scoreDisplay');
-        const livesDisplay = document.getElementById('livesDisplay');
+        const modeDisplay = document.getElementById('modeDisplay');
         const gameOverDisplay = document.getElementById('game-over');
 
         let score = 0;
-        let lives = 1;
         let isGameOver = false;
-        let isLevelComplete = false;
-        let scoreTarget = 0;   // 0 = endless mode
-        let gameMode = 'normal'; // easy/normal/hard/endless
+        let finalScoreSent = false;
+        let finalExitTimeout = 0;
+        let difficultyName = 'NORMAL';
+        let gameConfig = null;
+
+        const GAME_CONFIGS = {
+            EASY: { targetScore: 300, minWave: 2, maxWave: 3, bombChance: 0.05, minDelay: 1700, maxDelay: 2400 },
+            NORMAL: { targetScore: 500, minWave: 2, maxWave: 4, bombChance: 0.10, minDelay: 1400, maxDelay: 2100 },
+            HARD: { targetScore: 800, minWave: 3, maxWave: 5, bombChance: 0.16, minDelay: 1000, maxDelay: 1600 },
+            ENDLESS: { targetScore: 0, minWave: 3, maxWave: 5, bombChance: 0.12, minDelay: 1100, maxDelay: 1800 }
+        };
+        gameConfig = GAME_CONFIGS.NORMAL;
 
         // --- Background ---
         const bgImg = new Image();
@@ -104,23 +118,27 @@
         };
 
         // --- Audio ---
-        function playSound(name) {
+        let soundEnabled = true;
+        let lastSoundTime = {};
+        let activeSounds = [];
+        function playSound(name, minGap = 0) {
+            if (!soundEnabled) return;
             try {
-                let snd = new Audio(`assets/${name}.mp3`);
-                snd.play();
-            } catch(e) {
-                console.log("Audio play error: " + e);
-            }
+                const now = Date.now();
+                if (minGap > 0 && lastSoundTime[name] && now - lastSoundTime[name] < minGap) return;
+                lastSoundTime[name] = now;
+                const snd = new Audio(`assets/${name}.mp3`);
+                activeSounds.push(snd);
+                snd.play().catch(() => {});
+                snd.onended = () => { activeSounds = activeSounds.filter(s => s !== snd); };
+            } catch(e) {}
         }
 
         // --- Game Entities ---
         const FRUIT_TYPES = ['apple', 'banana', 'basaha', 'peach', 'sandia'];
         const FRUIT_COLORS = {
-            'apple': '#00ff66',  // 青苹果/猕猴桃：赛博荧光绿
-            'banana': '#ffe600', // 香蕉/菠萝：亮霓虹黄
-            'basaha': '#ff2a5f', // 草莓：霓虹红
-            'peach': '#ff7700',  // 橙子/桃子：亮橙
-            'sandia': '#ff2a5f'  // 西瓜：霓虹红
+            'apple': '#00ff66', 'banana': '#ffe600', 'basaha': '#ff2a5f',
+            'peach': '#ff7700', 'sandia': '#ff2a5f'
         };
         const IMAGES = {};
         
@@ -140,55 +158,78 @@
         const fruits = [];
         const particles = [];
         const trailHistory = [];
-        const juiceStains = []; // 沾染在背景上的果汁
-        const shockwaves = [];  // 环境扩散冲击波
-        const gridParticles = []; // 底部透视网格升腾微粒
+        const juiceStains = [];
+        const shockwaves = [];
+        const gridParticles = [];
         const maxHistoryLength = 15;
+        const MAX_PARTICLES = 240;
+        const MAX_JUICE_STAINS = 22;
+        let loopRunning = true;
+        let animationFrameId = 0;
+
+        function addParticle(particle) {
+            if (particles.length >= MAX_PARTICLES) {
+                particles.splice(0, particles.length - MAX_PARTICLES + 1);
+            }
+            particles.push(particle);
+        }
+
+        window.configureGame = function(name) {
+            const normalized = String(name || 'NORMAL').toUpperCase();
+            difficultyName = GAME_CONFIGS[normalized] ? normalized : 'NORMAL';
+            gameConfig = GAME_CONFIGS[difficultyName];
+            updateHUD();
+        };
 
         // JS 端暴露的 resetGame 方法，供 Java 端在重新进入游戏时调用
-        window.resetGame = function(mode, livesCount) {
+        window.resetGame = function(mode) {
             score = 0;
-            gameMode = mode || 'normal';
             isGameOver = false;
-            isLevelComplete = false;
+            finalScoreSent = false;
+            if (mode) configureGame(mode);
             fruits.length = 0;
             particles.length = 0;
             trailHistory.length = 0;
             juiceStains.length = 0;
-            shockwaves.length = 0;
-            gridParticles.length = 0;
             screenFlashAlpha = 0;
-
-            if (gameMode === 'endless') {
-                lives = livesCount || 3;
-                scoreTarget = 0;
-            } else if (gameMode === 'hard') {
-                lives = 1;
-                scoreTarget = 300;
-            } else if (gameMode === 'normal') {
-                lives = 1;
-                scoreTarget = 200;
-            } else {
-                lives = 1;
-                scoreTarget = 100;
-            }
-
+            isHandDetected = false;
+            targetHandX = -1;
+            targetHandY = -1;
+            currentHandX = -1;
+            currentHandY = -1;
+            lastTime = performance.now ? performance.now() : Date.now();
             updateHUD();
             gameOverDisplay.style.display = 'none';
             window.removeEventListener('mousedown', exitGame);
-
+            clearTimeout(finalExitTimeout);
+            
             // 重新开始产生水果
             clearTimeout(spawnTimeout);
             spawnTimeout = setTimeout(spawnWave, 1000);
+            if (!loopRunning) {
+                loopRunning = true;
+                requestAnimationFrame(loop);
+            }
+        };
+
+        window.stopGame = function() {
+            loopRunning = false;
+            cancelAnimationFrame(animationFrameId);
+            clearTimeout(spawnTimeout);
+            clearTimeout(finalExitTimeout);
+            soundEnabled = false;
+            activeSounds.forEach(a => { a.pause(); a.currentTime = 0; });
+            activeSounds = [];
         };
 
         let spawnTimeout;
         function spawnWave() {
             if (isGameOver) return;
             playSound('throw');
-            const count = Math.floor(Math.random() * 3) + 2;
+            const count = gameConfig.minWave
+                + Math.floor(Math.random() * (gameConfig.maxWave - gameConfig.minWave + 1));
             for(let i=0; i<count; i++) {
-                const isBomb = Math.random() < 0.15;
+                const isBomb = Math.random() < gameConfig.bombChance;
                 const type = isBomb ? 'boom' : FRUIT_TYPES[Math.floor(Math.random() * FRUIT_TYPES.length)];
                 
                 fruits.push({
@@ -204,7 +245,8 @@
                     rotSpeed: (Math.random() - 0.5) * 0.1
                 });
             }
-            spawnTimeout = setTimeout(spawnWave, 1500 + Math.random() * 2000);
+            spawnTimeout = setTimeout(spawnWave,
+                gameConfig.minDelay + Math.random() * (gameConfig.maxDelay - gameConfig.minDelay));
         }
         
         spawnTimeout = setTimeout(spawnWave, 1000);
@@ -249,7 +291,7 @@
             if (l2 === 0) return Math.hypot(px - vx, py - vy);
             let t = ((px - vx) * (wx - vx) + (py - vy) * (wy - vy)) / l2;
             t = Math.max(0, Math.min(1, t));
-            return Math.hypot(px - (vx + t * (wx - vx)), py - (vy + t * (wy - wy)));
+            return Math.hypot(px - (vx + t * (wx - vx)), py - (vy + t * (wy - vy)));
         }
 
         function checkSlices() {
@@ -274,48 +316,47 @@
             }
         }
 
-        function createJuice(x, y, color, sliceAngle) {
+        function createJuice(x, y, color) {
             if (!color) return;
-            // 创建飞溅的果汁粒子，增强爆发感
+            // 创建飞溅的果汁粒子
             for(let i=0; i<15; i++) {
-                const dir = sliceAngle + (Math.random() - 0.5) * Math.PI; // 沿切击方向散开
-                const speed = Math.random() * 25 + 10;
-                const life = 0.5 + Math.random() * 0.5;
-                particles.push({
+                const dir = Math.random() * Math.PI * 2;
+                const dist = Math.random() * 200 + 50;
+                const life = 1.0;
+                addParticle({
                     type: 'juice',
                     x: x, y: y,
-                    vx: Math.cos(dir) * speed,
-                    vy: Math.sin(dir) * speed,
-                    radius: Math.random() * 6 + 2,
+                    vx: Math.cos(dir) * 15 * Math.random(),
+                    vy: Math.sin(dir) * 15 * Math.random() - 5,
+                    radius: Math.random() * 8 + 3,
                     color: color,
                     life: life,
-                    maxLife: life,
-                    decay: 0.03
+                    maxLife: life
                 });
             }
             // 创建背景沾染（果汁滴）
             juiceStains.push({
                 x: x, y: y,
                 color: color,
-                radius: Math.random() * 15 + 30, // 增加果汁印记大小
-                angle: sliceAngle, 
-                alpha: 0.85,
-                life: 180 // 存活帧数（60帧/秒，约 3 秒）
+                radius: Math.random() * 20 + 20,
+                alpha: 0.8,
+                time: Date.now()
             });
+            if (juiceStains.length > MAX_JUICE_STAINS) {
+                juiceStains.splice(0, juiceStains.length - MAX_JUICE_STAINS);
+            }
         }
 
         function sliceFruit(f, index, sliceAngle) {
             fruits.splice(index, 1);
-
-            // 触发切中处青色环境冲击波
-            shockwaves.push({ x: f.x, y: f.y, radius: 0, life: 1.0, color: '#00ffff' });
-
             if (f.isBomb) {
                 playSound('boom');
+
+                // 炸弹触发全屏白光
                 screenFlashAlpha = 1.0;
 
                 // 炸弹爆炸黑烟
-                particles.push({
+                addParticle({
                     type: 'smoke',
                     x: f.x, y: f.y,
                     vx: 0, vy: 0,
@@ -323,31 +364,14 @@
                     life: 1.0,
                     maxLife: 1.0,
                     scale: 2.5,
-                    isFlash: true
+                    isFlash: true // won't fall down
                 });
 
-                if (gameMode === 'endless') {
-                    lives--;
-                    updateHUD();
-                    if (lives <= 0) endGame();
-                } else {
-                    // 非无尽模式：碰炸弹直接结束
-                    endGame();
-                }
+                endGame('bomb');
             } else {
-                playSound('splatter');
+                playSound('splatter', 80);
                 score += 10;
                 updateHUD();
-
-                // 非无尽模式：检查是否通关
-                if (gameMode !== 'endless' && scoreTarget > 0 && score >= scoreTarget && !isGameOver) {
-                    isLevelComplete = true;
-                    isGameOver = true;
-                    gameOverDisplay.style.display = 'block';
-                    gameOverDisplay.innerHTML = '<span style="color:#f7b13f;font-size:48px">🎉 通关！</span><br><span style="font-size:24px;color:white">得分: ' + score + '</span>';
-                    window.addEventListener('mousedown', exitGame);
-                    setTimeout(exitGame, 3000);
-                }
                 
                 // 根据刀光角度，计算垂直方向作为水果分离方向
                 const apartAngle = sliceAngle + Math.PI / 2;
@@ -356,7 +380,7 @@
                 const spreadY = Math.sin(apartAngle) * speedSpread;
                 
                 // 左半边/上边
-                particles.push({
+                addParticle({
                     type: f.type + '-1',
                     x: f.x - spreadX * 3, y: f.y - spreadY * 3,
                     vx: f.vx - spreadX, vy: f.vy - spreadY,
@@ -364,7 +388,7 @@
                     life: 2.0, maxLife: 2.0
                 });
                 // 右半边/下边
-                particles.push({
+                addParticle({
                     type: f.type + '-2',
                     x: f.x + spreadX * 3, y: f.y + spreadY * 3,
                     vx: f.vx + spreadX, vy: f.vy + spreadY,
@@ -373,7 +397,7 @@
                 });
                 
                 // 切击刀光特效 (flash.png)，旋转角度对齐刀光
-                particles.push({
+                addParticle({
                     type: 'flash',
                     x: f.x, y: f.y,
                     vx: 0, vy: 0,
@@ -383,87 +407,53 @@
                     isFlash: true
                 });
                 
-                // 生成果汁
-                createJuice(f.x, f.y, FRUIT_COLORS[f.type], sliceAngle);
-
-                // 青色星芒粒子 (Cyan Starburst)
+                // 冲击波 + 果汁 + 星芒
+                shockwaves.push({ x: f.x, y: f.y, radius: 0, life: 1.0, color: '#00ffff' });
+                createJuice(f.x, f.y, FRUIT_COLORS[f.type]);
                 for (let j = 0; j < 30; j++) {
-                    const dir = Math.random() * Math.PI * 2;
-                    const speed = Math.random() * 20 + 5;
-                    particles.push({
-                        type: 'cyan-starburst',
-                        x: f.x,
-                        y: f.y,
-                        vx: Math.cos(dir) * speed,
-                        vy: Math.sin(dir) * speed,
-                        radius: Math.random() * 4 + 2,
-                        color: '#00ffff',
-                        life: 0.5 + Math.random() * 0.5,
-                        maxLife: 1.0,
-                        decay: 0.05
-                    });
+                    const dir = Math.random() * Math.PI * 2, spd = Math.random() * 20 + 5;
+                    addParticle({type: 'cyan-starburst', x: f.x, y: f.y,
+                        vx: Math.cos(dir) * spd, vy: Math.sin(dir) * spd,
+                        radius: 2, color: '#00f0ff', life: 0.2, maxLife: 0.2, decay: 0.05});
                 }
-
-                // 生成赛博故障像素块 (Glitch Cubes)
-                for (let j = 0; j < 10; j++) {
-                    particles.push({
-                        type: 'glitch-cube',
-                        x: f.x + (Math.random() - 0.5) * 60,
-                        y: f.y + (Math.random() - 0.5) * 60,
-                        vx: (Math.random() - 0.5) * 15,
-                        vy: (Math.random() - 0.5) * 15,
-                        radius: Math.random() * 8 + 4,
-                        color: Math.random() > 0.5 ? '#00f0ff' : '#9d00ff',
-                        life: 0.5 + Math.random() * 0.5,
-                        maxLife: 1.0,
-                        rotation: Math.random() * Math.PI,
-                        rotSpeed: (Math.random() - 0.5) * 0.2
-                    });
-                }
-
-                // 生成闪电电弧 (Lightning Arcs)
-                for (let j = 0; j < 5; j++) {
-                    particles.push({
-                        type: 'lightning',
-                        x: f.x,
-                        y: f.y,
-                        angle: Math.random() * Math.PI * 2,
-                        length: 50 + Math.random() * 60,
-                        life: 0.2 + Math.random() * 0.2,
-                        maxLife: 0.4
-                    });
+                if (gameConfig.targetScore > 0 && score >= gameConfig.targetScore) {
+                    score = gameConfig.targetScore;
+                    updateHUD();
+                    endGame('target');
                 }
             }
         }
 
         function updateHUD() {
-            if (gameMode === 'endless') {
-                scoreDisplay.innerText = score;
-            } else {
-                scoreDisplay.innerText = score + ' / ' + scoreTarget;
-            }
-            if (gameMode === 'endless') {
-                let livesImg = 'xxxf.png';
-                if (lives === 2) livesImg = 'xxf.png';
-                if (lives === 1) livesImg = 'xf.png';
-                if (lives <= 0) livesImg = 'x.png';
-                livesDisplay.src = `assets/${livesImg}`;
-            } else {
-                // 非无尽模式：不显示生命，显示炸弹警告
-                livesDisplay.style.display = 'none';
-            }
+            scoreDisplay.innerText = score;
+            modeDisplay.innerText = gameConfig.targetScore > 0
+                ? `目标 ${score} / ${gameConfig.targetScore}`
+                : `无尽模式  ${score}`;
             if (window.javaBackend) window.javaBackend.updateScore(score);
         }
 
-        function endGame() {
+        function endGame(reason) {
+            if (isGameOver) return;
             isGameOver = true;
-            playSound('over');
+            clearTimeout(spawnTimeout);
+            if (reason !== 'bomb') playSound('over');
+            gameOverDisplay.innerHTML = reason === 'bomb'
+                ? 'GAME OVER<br><span style="font-size: 22px; color: white;">切到炸弹</span>'
+                : 'TARGET CLEAR<br><span style="font-size: 22px; color: white;">目标分数达成</span>';
+            gameOverDisplay.innerHTML += '<br><span style="font-size: 18px; color: #f0ca79;">✊ 握拳重玩    🤲 双手握拳退出</span>';
             gameOverDisplay.style.display = 'block';
             window.addEventListener('mousedown', exitGame);
-            setTimeout(exitGame, 3000);
+            if (reason === 'bomb') {
+                exitGame();
+            } else {
+                finalExitTimeout = setTimeout(exitGame, 2400);
+            }
         }
 
         function exitGame() {
+            if (finalScoreSent) return;
+            finalScoreSent = true;
+            window.removeEventListener('mousedown', exitGame);
             if (window.javaBackend) {
                 window.javaBackend.saveScore(score);
             }
@@ -472,9 +462,13 @@
         // --- Render Loop ---
         let lastTime = performance.now ? performance.now() : Date.now();
         function loop(time) {
+            if (!loopRunning) return;
             requestAnimationFrame(loop);
             const currentTime = time || (performance.now ? performance.now() : Date.now());
-            const delta = (currentTime - lastTime) / 16.66; // approx 60fps multiplier
+            const rawDelta = (currentTime - lastTime) / 16.66;
+            // WebView may occasionally skip a frame. Capping the physics step
+            // prevents every fruit from teleporting below the screen at once.
+            const delta = Math.min(2.0, Math.max(0.25, rawDelta));
             lastTime = currentTime;
 
             // Clear old trail history naturally based on time
@@ -507,68 +501,38 @@
 
             // Clear screen
             ctx.clearRect(0, 0, w, h);
-
-            // --- Environmental VFX: Core Pulse, Shockwaves, Grid Particles ---
-            const coreX = w * 0.5;
-            const coreY = h * 0.4;
-
+            // VFX: pulse + shockwaves + grid
             ctx.save();
             ctx.globalCompositeOperation = 'lighter';
-            
-            // 呼吸能量脉冲 (Breathing Energy Pulse)
+            const coreX = w * 0.5, coreY = h * 0.4;
             const pulseRadius = 150 + Math.sin(Date.now() * 0.003) * 20;
             const coreGrad = ctx.createRadialGradient(coreX, coreY, 0, coreX, coreY, pulseRadius);
             coreGrad.addColorStop(0, 'rgba(157, 0, 255, 0.5)');
             coreGrad.addColorStop(0.5, 'rgba(157, 0, 255, 0.1)');
             coreGrad.addColorStop(1, 'rgba(157, 0, 255, 0)');
-            ctx.fillStyle = coreGrad;
-            ctx.beginPath();
-            ctx.arc(coreX, coreY, pulseRadius, 0, Math.PI * 2);
-            ctx.fill();
-
-            // 扩散冲击波 (Shockwaves)
+            ctx.fillStyle = coreGrad; ctx.beginPath();
+            ctx.arc(coreX, coreY, pulseRadius, 0, Math.PI * 2); ctx.fill();
             for (let i = shockwaves.length - 1; i >= 0; i--) {
                 let sw = shockwaves[i];
-                sw.radius += 25 * delta;
-                sw.life -= 0.03 * delta;
-                if (sw.life <= 0) {
-                    shockwaves.splice(i, 1);
-                    continue;
-                }
-                let cx = sw.x !== undefined ? sw.x : coreX;
-                let cy = sw.y !== undefined ? sw.y : coreY;
-                ctx.strokeStyle = sw.color ? sw.color : `rgba(157, 0, 255, ${sw.life})`;
+                sw.radius += 25 * delta; sw.life -= 0.03 * delta;
+                if (sw.life <= 0) { shockwaves.splice(i, 1); continue; }
+                let cx = sw.x !== undefined ? sw.x : coreX, cy = sw.y !== undefined ? sw.y : coreY;
+                ctx.strokeStyle = sw.color || `rgba(157, 0, 255, ${sw.life})`;
                 if (sw.color) ctx.globalAlpha = sw.life;
-                ctx.lineWidth = 6 * sw.life;
-                ctx.beginPath();
-                ctx.arc(cx, cy, sw.radius, 0, Math.PI * 2);
-                ctx.stroke();
+                ctx.lineWidth = 6 * sw.life; ctx.beginPath();
+                ctx.arc(cx, cy, sw.radius, 0, Math.PI * 2); ctx.stroke();
                 ctx.globalAlpha = 1.0;
             }
-
-            // 底部网格发光微粒 (Grid Particles)
             while (gridParticles.length < 20) {
-                gridParticles.push({
-                    x: Math.random() * w,
-                    y: h - Math.random() * 200,
-                    vx: (Math.random() - 0.5) * 0.5,
-                    vy: -1 - Math.random() * 2,
-                    size: Math.random() * 3 + 1.5,
-                    life: Math.random(),
-                    color: Math.random() > 0.5 ? '#00f0ff' : '#9d00ff'
-                });
+                gridParticles.push({x: Math.random() * w, y: h - Math.random() * 200,
+                    vx: (Math.random() - 0.5) * 0.5, vy: -1 - Math.random() * 2,
+                    size: Math.random() * 3 + 1.5, life: Math.random(),
+                    color: Math.random() > 0.5 ? '#00f0ff' : '#9d00ff'});
             }
             for (let p of gridParticles) {
-                p.x += p.vx * delta;
-                p.y += p.vy * delta;
-                p.life -= 0.005 * delta;
-                if (p.life <= 0 || p.y < h - 300) {
-                    p.y = h;
-                    p.x = Math.random() * w;
-                    p.life = 1.0;
-                }
-                ctx.fillStyle = p.color;
-                ctx.globalAlpha = p.life;
+                p.x += p.vx * delta; p.y += p.vy * delta; p.life -= 0.005 * delta;
+                if (p.life <= 0 || p.y < h - 300) { p.y = h; p.x = Math.random() * w; p.life = 1.0; }
+                ctx.fillStyle = p.color; ctx.globalAlpha = p.life;
                 ctx.fillRect(p.x, p.y, p.size, p.size);
             }
             ctx.restore();
@@ -582,51 +546,40 @@
                 screenFlashAlpha -= 0.02 * delta; // fade out slowly
             }
 
-            // Draw juice stains on background (零延迟精确绘制)
+            // Draw juice stains on background
             for (let i = juiceStains.length - 1; i >= 0; i--) {
-                let s = juiceStains[i];
-                
+                const s = juiceStains[i];
+                const age = Date.now() - s.time;
+                if (age > 5000) {
+                    s.alpha -= 0.02 * delta;
+                }
+                if (s.alpha <= 0) {
+                    juiceStains.splice(i, 1);
+                    continue;
+                }
                 ctx.save();
                 ctx.globalAlpha = s.alpha;
-                // 赛博边缘微发光
                 ctx.shadowColor = s.color;
                 ctx.shadowBlur = 8;
-                
                 ctx.fillStyle = s.color;
                 ctx.translate(s.x, s.y);
-                if (s.angle) ctx.rotate(s.angle); // 根据切击角度旋转
-                
-                // 绘制主液体块
+                if (s.angle) ctx.rotate(s.angle);
                 ctx.beginPath();
                 ctx.scale(2.0, 0.5);
                 ctx.arc(0, 0, s.radius, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.scale(0.5, 2.0);
-                
-                // 绘制四周爆溅出来的果汁小点
                 let seed = Math.floor(s.x + s.y);
                 for(let j=0; j<6; j++) {
                     seed = (seed * 9301 + 49297) % 233280;
                     let rand1 = seed / 233280;
                     seed = (seed * 9301 + 49297) % 233280;
                     let rand2 = seed / 233280;
-                    
                     ctx.beginPath();
-                    let offsetX = (rand1 - 0.5) * s.radius * 6;
-                    let offsetY = (rand2 - 0.5) * s.radius * 2;
-                    ctx.arc(offsetX, offsetY, rand1 * s.radius * 0.4, 0, Math.PI * 2);
+                    ctx.arc((rand1 - 0.5) * s.radius * 6, (rand2 - 0.5) * s.radius * 2, rand1 * s.radius * 0.4, 0, Math.PI * 2);
                     ctx.fill();
                 }
                 ctx.restore();
-
-                // 生命周期更新：前 2 秒保持，第 3 秒透明度渐隐
-                s.life -= delta;
-                if (s.life < 60) {
-                    s.alpha = Math.max(0, s.life / 60); // 1秒内淡出
-                }
-                if (s.life <= 0) {
-                    juiceStains.splice(i, 1); // 自动清理释放内存
-                }
             }
 
             // Spawn fruitsDraw and Update Fruits
@@ -638,7 +591,7 @@
                 f.rotation += f.rotSpeed * delta;
 
                 if (f.y > h + 200) {
-                    // 水果掉出屏幕不扣命，直接移除
+                    // Missing fruit only breaks the rhythm; it never ends a run.
                     fruits.splice(i, 1);
                     continue;
                 }
@@ -646,25 +599,19 @@
                 ctx.save();
                 ctx.translate(f.x, f.y);
                 ctx.rotate(f.rotation);
-
-                // --- 赛博能量护盾光环 (Cyber Aura) ---
                 if (!f.isBomb) {
                     ctx.save();
                     ctx.strokeStyle = '#00f0ff';
                     ctx.lineWidth = 3;
                     ctx.setLineDash([20, 10, 5, 10]);
-                    // 逆向旋转光环
                     ctx.rotate(-Date.now() * 0.003);
                     ctx.beginPath();
                     ctx.arc(0, 0, f.radius + 10, 0, Math.PI * 2);
                     ctx.stroke();
                     ctx.restore();
-
-                    // 水果外发光
                     ctx.shadowColor = '#00f0ff';
                     ctx.shadowBlur = 15 + Math.sin(Date.now() * 0.01) * 8;
                 }
-                
                 let img = IMAGES[f.type];
                 if (img && img.complete && img.naturalWidth > 0) {
                     ctx.drawImage(img, -img.width/2, -img.height/2);
@@ -677,7 +624,7 @@
                 const p = particles[i];
                 p.x += p.vx * delta;
                 p.y += p.vy * delta;
-                if (!p.isFlash && p.type !== 'trail-lightning') {
+                if (!p.isFlash && p.type !== 'blade-spark') {
                     p.vy += 0.5 * delta;
                     if (p.rotSpeed) p.rotation += p.rotSpeed * delta;
                 }
@@ -699,50 +646,13 @@
                     ctx.beginPath();
                     ctx.arc(0, 0, p.radius * (p.life / p.maxLife), 0, Math.PI * 2);
                     ctx.fill();
-                } else if (p.type === 'glitch-cube') {
-                    ctx.fillStyle = p.color;
-                    ctx.globalAlpha = p.life / p.maxLife;
-                    ctx.globalCompositeOperation = 'lighter';
-                    ctx.shadowColor = p.color;
-                    ctx.shadowBlur = 10;
-                    ctx.fillRect(-p.radius, -p.radius, p.radius * 2, p.radius * 2);
-                } else if (p.type === 'lightning') {
-                    if (p.angle) ctx.rotate(p.angle);
-                    ctx.strokeStyle = '#00f0ff';
-                    ctx.globalCompositeOperation = 'lighter';
-                    ctx.lineWidth = 3 * (p.life / p.maxLife);
-                    ctx.shadowColor = '#00f0ff';
-                    ctx.shadowBlur = 15;
-                    ctx.beginPath();
-                    ctx.moveTo(0, 0);
-                    // 闪电折线
-                    let segments = 4;
-                    let len = p.length / segments;
-                    let currentX = 0;
-                    let currentY = 0;
-                    for (let s = 1; s <= segments; s++) {
-                        currentX += len;
-                        currentY += (Math.random() - 0.5) * 20;
-                        ctx.lineTo(currentX, currentY);
-                    }
-                    ctx.stroke();
-                } else if (p.type === 'plasma-spark' || p.type === 'cyan-starburst') {
-                    ctx.globalCompositeOperation = 'lighter';
+                } else if (p.type === 'blade-spark') {
+                    // Draw neon blade sparks
                     ctx.fillStyle = p.color;
                     ctx.globalAlpha = p.life / p.maxLife;
                     ctx.beginPath();
                     ctx.arc(0, 0, p.radius * (p.life / p.maxLife), 0, Math.PI * 2);
                     ctx.fill();
-                } else if (p.type === 'trail-lightning') {
-                    ctx.globalCompositeOperation = 'lighter';
-                    ctx.strokeStyle = '#80ffff';
-                    ctx.lineWidth = 1.5 * (p.life / p.maxLife);
-                    ctx.shadowColor = '#00ffff';
-                    ctx.shadowBlur = 5;
-                    ctx.beginPath();
-                    ctx.moveTo(0, 0);
-                    ctx.lineTo((Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20);
-                    ctx.stroke();
                 } else if (p.type === 'flash') {
                     // Flash image stretches out and fades
                     const img = IMAGES['flash'];
@@ -765,75 +675,65 @@
                 ctx.restore();
             }
 
-            // Draw Neon Blade Trail (立体赛博青光刃)
-            if (trailHistory.length > 1) {
-                ctx.save();
-                ctx.globalCompositeOperation = 'lighter';
-                ctx.lineCap = 'round';
-                ctx.lineJoin = 'round';
-
-                // 计算速度用于生成尾焰和电弧
+            // Draw Blade (Neon Effect with Bezier Curves)
+            if (trailHistory.length >= 2) {
+                // Generate blade sparks based on head movement
                 const head = trailHistory[trailHistory.length - 1];
                 const neck = trailHistory[trailHistory.length - 2];
-                const dx = head.x - neck.x;
-                const dy = head.y - neck.y;
-                const speed = Math.sqrt(dx * dx + dy * dy) / delta;
-
-                // 生成尾部青焰与爆裂粒子 (Cyan Flame Trail)
-                if (speed > 300) {
-                    const dirX = dx / (speed * delta);
-                    const dirY = dy / (speed * delta);
-                    let sparkCount = Math.min(Math.floor(speed / 100), 25);
-                    for(let k = 0; k < sparkCount; k++) {
-                        particles.push({
-                            type: 'plasma-spark',
-                            x: head.x + (Math.random() - 0.5) * 20,
-                            y: head.y + (Math.random() - 0.5) * 20,
-                            vx: -dirX * (Math.random() * 300 + 100) + (Math.random() - 0.5) * 100,
-                            vy: -dirY * (Math.random() * 300 + 100) + (Math.random() - 0.5) * 100,
-                            radius: Math.random() * 4 + 2,
-                            color: Math.random() > 0.5 ? '#0088cc' : '#00ffff',
-                            life: 0.5 + Math.random() * 0.5,
-                            maxLife: 1.0,
-                            decay: 0.05
-                        });
-                    }
-                    
-                    // 生成刀痕两侧能量撕裂电弧 (Lightning Arcs along Trail)
-                    if (Math.random() > 0.5) {
-                        for(let k = 0; k < 2; k++) {
-                            const pIndex = Math.floor(Math.random() * (trailHistory.length - 1));
-                            const p1 = trailHistory[pIndex];
-                            particles.push({
-                                type: 'trail-lightning',
-                                x: p1.x, y: p1.y,
-                                life: 0.2, maxLife: 0.2
-                            });
-                        }
-                    }
+                const speed = Math.hypot(head.x - neck.x, head.y - neck.y);
+                if (speed > 15 && Math.random() > 0.5) {
+                    addParticle({
+                        type: 'blade-spark',
+                        x: head.x + (Math.random()-0.5)*10,
+                        y: head.y + (Math.random()-0.5)*10,
+                        vx: (Math.random() - 0.5) * 5,
+                        vy: (Math.random() - 0.5) * 5,
+                        radius: Math.random() * 3 + 1.5,
+                        color: '#00ffff', // cyan sparks
+                        life: 0.5,
+                        maxLife: 0.5,
+                        decay: 0.05
+                    });
                 }
 
-                // 3 层路径实现立体赛博青光刃
+                ctx.save();
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                
+                // 闪电电弧
+                if (Math.random() > 0.5) {
+                    for(let k = 0; k < 2; k++) {
+                        const pIndex = Math.floor(Math.random() * (trailHistory.length - 1));
+                        const p1 = trailHistory[pIndex];
+                        addParticle({type: 'trail-lightning', x: p1.x, y: p1.y, life: 0.2, maxLife: 0.2});
+                    }
+                }
                 const layers = [
-                    { width: 24, color: 'rgba(0, 220, 255, ', alphaMult: 0.2, blur: 20 }, // 第一层（空间能量气浪）
-                    { width: 10, color: 'rgba(0, 255, 255, ', alphaMult: 0.8, blur: 12 }, // 第二层（主光刃）
-                    { width: 3,  color: 'rgba(255, 255, 255, ', alphaMult: 1.0, blur: 0 }  // 第三层（高能量内芯）
+                    { width: 24, color: 'rgba(0, 220, 255, ', alphaMult: 0.2, blur: 20 },
+                    { width: 10, color: 'rgba(0, 255, 255, ', alphaMult: 0.8, blur: 12 },
+                    { width: 3,  color: 'rgba(255, 255, 255, ', alphaMult: 1.0, blur: 0 }
                 ];
 
                 layers.forEach(layer => {
                     ctx.beginPath();
+                    // Move to the first point
                     ctx.moveTo(trailHistory[0].x, trailHistory[0].y);
-                    
+
+                    // Use quadraticCurveTo for smooth spline interpolation
                     for (let i = 1; i < trailHistory.length - 1; i++) {
                         const p1 = trailHistory[i];
                         const p2 = trailHistory[i + 1];
+                        // Midpoint between p1 and p2
                         const midX = (p1.x + p2.x) / 2;
                         const midY = (p1.y + p2.y) / 2;
+                        
                         ctx.quadraticCurveTo(p1.x, p1.y, midX, midY);
                     }
+                    // Connect the last point
                     const lastPt = trailHistory[trailHistory.length - 1];
                     ctx.lineTo(lastPt.x, lastPt.y);
 
+                    // Gradient for fading tail
                     const grad = ctx.createLinearGradient(
                         trailHistory[0].x, trailHistory[0].y, 
                         lastPt.x, lastPt.y
@@ -849,12 +749,6 @@
                 });
                 
                 ctx.restore();
-            }
-
-            // --- CRT 扫描线 (CRT Scanlines) ---
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.03)';
-            for (let i = 0; i < h; i += 4) {
-                ctx.fillRect(0, i, w, 2);
             }
         }
 

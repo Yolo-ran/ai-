@@ -81,7 +81,7 @@ public final class UserAccountStore {
         String username = normalizeUsername(rawUsername);
         try (Connection connection = connect();
              PreparedStatement statement = connection.prepareStatement(
-                     "SELECT password_salt, password_hash FROM users WHERE username = ? COLLATE NOCASE")) {
+                     "SELECT password_salt, password_hash FROM users WHERE username = ?")) {
             statement.setString(1, username);
             try (ResultSet result = statement.executeQuery()) {
                 if (!result.next()) return false;
@@ -113,7 +113,7 @@ public final class UserAccountStore {
                 statement.execute("PRAGMA foreign_keys=ON");
                 statement.execute("CREATE TABLE IF NOT EXISTS users ("
                         + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-                        + "username TEXT NOT NULL COLLATE NOCASE UNIQUE,"
+                        + "username TEXT NOT NULL UNIQUE,"
                         + "password_salt BLOB NOT NULL,"
                         + "password_hash BLOB NOT NULL,"
                         + "created_at TEXT NOT NULL,"
@@ -134,7 +134,7 @@ public final class UserAccountStore {
 
     private static void updateLastLogin(Connection connection, String username) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
-                "UPDATE users SET last_login_at = ? WHERE username = ? COLLATE NOCASE")) {
+                "UPDATE users SET last_login_at = ? WHERE username = ?")) {
             statement.setString(1, Instant.now().toString());
             statement.setString(2, username);
             statement.executeUpdate();

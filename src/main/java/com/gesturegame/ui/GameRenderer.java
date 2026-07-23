@@ -10,6 +10,7 @@ import com.gesturegame.network.GestureCommand;
 import com.gesturegame.network.GestureStreamServer.DualHandState;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
+import javafx.scene.Scene;
 import javafx.scene.SnapshotParameters;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
@@ -124,19 +125,31 @@ public class GameRenderer {
     @FXML
     public void initialize() {
         gc = gameCanvas.getGraphicsContext2D();
-        if (gameCanvas.getParent() instanceof Pane) {
-            Pane parent = (Pane) gameCanvas.getParent();
-            gameCanvas.widthProperty().bind(parent.widthProperty());
-            gameCanvas.heightProperty().bind(parent.heightProperty());
-        }
-        gameCanvas.widthProperty().addListener((obs, oldW, newW) -> reinitOnResize());
-        gameCanvas.heightProperty().addListener((obs, oldH, newH) -> reinitOnResize());
+        // 不再绑定 Canvas 尺寸到父容器，避免 JavaFX 布局脉冲在 AnimationTimer 渲染后清空 Canvas 缓冲区
+        // Canvas 尺寸通过 scene 的宽高监听器手动同步，只在窗口真正缩放时才变更
+        gameCanvas.sceneProperty().addListener((obs, oldScene, newScene) -> {
+            if (newScene != null) {
+                syncCanvasToScene(newScene);
+                newScene.widthProperty().addListener((o, ov, nv) -> syncCanvasToScene(newScene));
+                newScene.heightProperty().addListener((o, ov, nv) -> syncCanvasToScene(newScene));
+            }
+        });
 
         // 鼠标支持（选歌界面用）
         gameCanvas.setOnMouseMoved(e -> mouseY = e.getY());
         gameCanvas.setOnMouseClicked(e -> { mouseY = e.getY(); mouseClicked = true; });
         gameCanvas.setOnMouseExited(e -> mouseY = -1);
         clearCanvas();
+    }
+
+    private void syncCanvasToScene(Scene scene) {
+        double w = scene.getWidth();
+        double h = scene.getHeight();
+        if (w > 0 && h > 0 && (Math.abs(gameCanvas.getWidth() - w) > 0.5 || Math.abs(gameCanvas.getHeight() - h) > 0.5)) {
+            gameCanvas.setWidth(w);
+            gameCanvas.setHeight(h);
+            reinitOnResize();
+        }
     }
 
     public void bindStateManager(AppStateManager appStateManager) {
@@ -148,9 +161,9 @@ public class GameRenderer {
     }
 
     private void setGameHudVisible(boolean visible) {
-        if (gameNameLabel != null) gameNameLabel.setVisible(visible);
-        if (scoreLabel != null) scoreLabel.setVisible(visible);
-        if (statusLabel != null) statusLabel.setVisible(visible);
+        if (gameNameLabel != null) { gameNameLabel.setVisible(visible); gameNameLabel.setManaged(visible); }
+        if (scoreLabel != null) { scoreLabel.setVisible(visible); scoreLabel.setManaged(visible); }
+        if (statusLabel != null) { statusLabel.setVisible(visible); statusLabel.setManaged(visible); }
     }
 
     /**
@@ -217,17 +230,18 @@ public class GameRenderer {
         // 保留全局退出判定及确认进度，但不再绘制统一文字提示。
         drawExitProgress(gesture, dualHands);
 
+        // 只在标签可见时才更新文字，避免隐藏标签的 setText 触发 layout 导致 Canvas 尺寸微变
         boolean tarotMode = "命运演算".equals(game.getName());
         boolean fruitNinjaMode = "切水果".equals(game.getName());
         boolean catchFruitMode = "接水果".equals(game.getName());
-        if (gameNameLabel != null) {
-            gameNameLabel.setText(tarotMode || fruitNinjaMode || catchFruitMode
-                    ? "" : game.getIcon() + "  " + game.getName());
+        boolean hudVisible = tarotMode || fruitNinjaMode || catchFruitMode;
+        if (gameNameLabel != null && gameNameLabel.isVisible()) {
+            gameNameLabel.setText(hudVisible ? "" : game.getIcon() + "  " + game.getName());
         }
-        if (scoreLabel != null) {
-            scoreLabel.setText(tarotMode || fruitNinjaMode || catchFruitMode ? "" : "分数: " + game.getScore());
+        if (scoreLabel != null && scoreLabel.isVisible()) {
+            scoreLabel.setText(hudVisible ? "" : "分数: " + game.getScore());
         }
-        if (statusLabel != null && tarotMode) {
+        if (statusLabel != null && statusLabel.isVisible() && tarotMode) {
             statusLabel.setText("");
         }
 
@@ -363,7 +377,12 @@ public class GameRenderer {
         if (w == lastInitWidth && h == lastInitHeight) {
             return;
         }
-        currentGame.init(w, h);
+        // 节奏大师用轻量 resize 避免 reset 状态导致闪烁
+        if (currentGame instanceof com.gesturegame.game.RhythmMaster) {
+            ((com.gesturegame.game.RhythmMaster) currentGame).handleResize(w, h);
+        } else {
+            currentGame.init(w, h);
+        }
         lastInitWidth = w;
         lastInitHeight = h;
         LOGGER.info(() -> "[GameRenderer] 画布缩放，重开当前局: " + w + "x" + h);

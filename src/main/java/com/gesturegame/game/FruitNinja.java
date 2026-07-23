@@ -209,6 +209,9 @@ public class FruitNinja implements GameInterface {
     }
 
     private void removeWebView() {
+        if (jsWindow != null) {
+            try { jsWindow.call("stopGame"); } catch (RuntimeException ignored) {}
+        }
         if (parentPane != null && webView != null && isWebViewAdded) {
             parentPane.getChildren().remove(webView);
             isWebViewAdded = false;
